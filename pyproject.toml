@@ -1,0 +1,44 @@
+# This is not a Python project.
+#
+# The file exists because the release pipeline needs one obvious, human-editable place
+# that says which version is current. Everything else — the git tag, the GitHub release,
+# the ghcr.io image tags — is derived from the `version` field below. Bump it in a commit
+# on `main` and .github/workflows/release.yml does the rest; leave it alone and nothing
+# is published, no matter how much else changed.
+#
+# The field layout follows PEP 621 so the file stays readable to anyone who has met a
+# pyproject.toml before, and so a TOML parser can read it if a script ever needs to.
+#
+# package.json carries the same version. The release workflow refuses to publish when the
+# two disagree, because an image labelled 1.2.0 that reports 1.1.0 is worse than no label.
+
+[project]
+name = "watcharr"
+version = "1.0.0"
+description = "Self-hosted companion app for a single Plex, Jellyfin or Emby server: watchlist, history, live activity, statistics, suggestions and a year in review."
+readme = "README.md"
+requires-python = ">=3.11"           # only for tooling that parses this file
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "PD-Codes" }]
+maintainers = [{ name = "PD-Codes" }]
+keywords = ["plex", "jellyfin", "emby", "self-hosted", "media-server", "statistics", "dashboard"]
+classifiers = [
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Environment :: Web Environment",
+  "Intended Audience :: End Users/Desktop",
+]
+
+[project.urls]
+Homepage = "https://github.com/PD-Codes/watcharr"
+Source = "https://github.com/PD-Codes/watcharr"
+Issues = "https://github.com/PD-Codes/watcharr/issues"
+Container = "https://github.com/PD-Codes/watcharr/pkgs/container/watcharr"
+
+# Read by .github/workflows/release.yml. Changing the image name here does not move the
+# publish target on its own — the workflow reads these values, so keep them in sync with
+# the repository they are published from.
+[tool.watcharr.release]
+registry = "ghcr.io"
+image = "pd-codes/watcharr"
+platforms = "linux/amd64,linux/arm64"
+node = "22"

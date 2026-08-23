@@ -1,0 +1,175 @@
+name: Release
+
+# Releases are driven by one number: `version` in pyproject.toml.
+#
+# Push a commit to main that raises it and this workflow tags the commit, publishes a
+# GitHub release and pushes multi-architecture images to ghcr.io. Push anything else and
+# it does nothing — the tag check below is what makes the run idempotent, so a re-run, a
+# revert or a merge commit cannot publish the same version twice.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the tag and the release
+  packages: write # push to ghcr.io
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag, build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags are needed to know what was already released
+
+      - name: Read release metadata
+        id: meta
+        run: |
+          set -euo pipefail
+
+          # Flat keys, one occurrence each — no TOML parser needed, and this way the job
+          # does not depend on a Python being present on the runner.
+          value() {
+            grep -m1 -E "^[[:space:]]*$1[[:space:]]*=" pyproject.toml \
+              | sed -E 's/^[^=]*=[[:space:]]*"?([^"]*)"?[[:space:]]*$/\1/'
+          }
+
+          VERSION="$(value version)"
+          REGISTRY="$(value registry)"
+          IMAGE="$(value image)"
+          PLATFORMS="$(value platforms)"
+          NODE="$(value node)"
+
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || { echo "::error::version '$VERSION' in pyproject.toml is not semver"; exit 1; }
+
+          # An image tagged 1.2.0 that reports 1.1.0 is worse than an untagged one.
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          [[ "$PKG_VERSION" == "$VERSION" ]] \
+            || { echo "::error::package.json is $PKG_VERSION but pyproject.toml is $VERSION"; exit 1; }
+
+          {
+            echo "version=$VERSION"
+            echo "registry=$REGISTRY"
+            echo "image=$IMAGE"
+            echo "platforms=$PLATFORMS"
+            echo "node=$NODE"
+            echo "major=${VERSION%%.*}"
+            echo "minor=$(echo "$VERSION" | cut -d. -f1,2)"
+          } >> "$GITHUB_OUTPUT"
+
+          # A hyphen means a pre-release (1.1.0-rc1): it gets its own tag, but it must
+          # never become what `docker pull …:latest` hands to a self-hoster.
+          if [[ "$VERSION" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip when this version was already released
+        id: check
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/v${{ steps.meta.outputs.version }}" >/dev/null; then
+            echo "::notice::v${{ steps.meta.outputs.version }} is already tagged — nothing to do."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.publish == 'true'
+        with:
+          node-version: ${{ steps.meta.outputs.node }}
+          cache: npm
+
+      - name: Install
+        if: steps.check.outputs.publish == 'true'
+        run: npm ci
+
+      # A broken release is expensive to withdraw, so the gate runs again here rather than
+      # trusting that CI passed on this exact commit.
+      - name: Typecheck and tests
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          npm run typecheck
+          npm test
+          npm run test:routes
+
+      - uses: docker/setup-qemu-action@v3
+        if: steps.check.outputs.publish == 'true'
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.check.outputs.publish == 'true'
+
+      - name: Log in to ghcr.io
+        if: steps.check.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ steps.meta.outputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        if: steps.check.outputs.publish == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ steps.meta.outputs.platforms }}
+          push: true
+          provenance: false # keeps the package page readable on ghcr.io
+          # `latest` is deliberately absent for pre-releases.
+          tags: |
+            ${{ steps.meta.outputs.registry }}/${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.prerelease == 'false' && format('{0}/{1}:{2}', steps.meta.outputs.registry, steps.meta.outputs.image, steps.meta.outputs.minor) || '' }}
+            ${{ steps.meta.outputs.prerelease == 'false' && format('{0}/{1}:{2}', steps.meta.outputs.registry, steps.meta.outputs.image, steps.meta.outputs.major) || '' }}
+            ${{ steps.meta.outputs.prerelease == 'false' && format('{0}/{1}:latest', steps.meta.outputs.registry, steps.meta.outputs.image) || '' }}
+          labels: |
+            org.opencontainers.image.title=Watcharr
+            org.opencontainers.image.description=Self-hosted companion app for a single Plex, Jellyfin or Emby server
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=GPL-3.0-or-later
+            org.opencontainers.image.vendor=PD-Codes
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # `gh release create` creates the tag itself, so the tag only ever exists for a
+      # version whose image is already in the registry.
+      - name: Create the GitHub release
+        if: steps.check.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: v${{ steps.meta.outputs.version }}
+          IMAGE: ${{ steps.meta.outputs.registry }}/${{ steps.meta.outputs.image }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<EOF
+          ## Container image
+
+          \`\`\`bash
+          docker pull $IMAGE:${{ steps.meta.outputs.version }}
+          \`\`\`
+
+          Built for ${{ steps.meta.outputs.platforms }}.
+          See the [README](https://github.com/${{ github.repository }}#readme) for setup and upgrade notes.
+          EOF
+
+          gh release create "$V" \
+            --target "${{ github.sha }}" \
+            --title "$V" \
+            --notes-file notes.md \
+            --generate-notes \
+            ${{ steps.meta.outputs.prerelease == 'true' && '--prerelease' || '' }}

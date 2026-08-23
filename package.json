@@ -1,0 +1,44 @@
+{
+  "name": "watcharr",
+  "version": "1.0.0",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "author": "PD-Codes",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PD-Codes/watcharr.git"
+  },
+  "homepage": "https://github.com/PD-Codes/watcharr#readme",
+  "bugs": "https://github.com/PD-Codes/watcharr/issues",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/migrate.mjs && next dev",
+    "build": "next build",
+    "start": "node scripts/migrate.mjs && next start",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node scripts/migrate.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx src/test/adapters.test.ts && tsx src/test/suggestions.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/db.test.ts",
+    "test:routes": "next build && tsx --require ./src/test/server-only-shim.cjs src/test/routes.test.ts",
+    "preview": "next build && tsx --require ./src/test/server-only-shim.cjs src/test/preview.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.36.4",
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.2",
+    "drizzle-kit": "^0.28.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,2213 @@
+/*
+ * Watcharr — "projection booth", on a Material 3 skeleton.
+ *
+ * Two rules govern everything below.
+ *
+ * 1. Amber is data. It marks something that is playing, or a value read off the
+ *    server. Nothing decorative is ever amber — not a button, not a nav pill, not
+ *    a heading. Material 3 would normally paint FABs and active navigation in the
+ *    primary colour; here those stay neutral, because a lit pixel has to mean
+ *    something.
+ *
+ * 2. The Material 3 parts are hand-written, not imported. Materialize/MDC ship
+ *    jQuery or custom elements that every interactive piece would have to become a
+ *    client component for, plus a CDN dependency this app is not allowed to have
+ *    (self-hosted, no mandatory outbound calls). What is actually wanted from
+ *    Material — the token system, elevation, shape scale, state layers, and the
+ *    rail / drawer / navigation-bar behaviour — is a stylesheet, so it is one.
+ *
+ * The scheme is dark-first; :root carries dark and light is the override, because
+ * the product is looked at in a dim room.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Material 3 surface roles, graphite tinted --- */
+  --ink: #08090b;
+  --surface: #101216;
+  --surface-container-low: #14171c;
+  --surface-container: #161a20;
+  --surface-container-high: #1c212a;
+  --surface-container-highest: #232935;
+  /* Kept as an alias: existing components were written against it. */
+  --surface-raised: var(--surface-container);
+
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.14);
+
+  --text: #e9ebef;
+  --text-dim: #8a919f;
+  /* Meets WCAG AA (4.66:1) on --surface-container; it carries 10px stat labels
+     and table headers, so it cannot be a large-text-only grey. */
+  --text-faint: #7d8494;
+  --on-accent: #1a1206;
+
+  /* The projector bulb. Live state and data, never chrome. */
+  --beam: #ffb020;
+  --beam-dim: rgba(255, 176, 32, 0.55);
+  --beam-wash: rgba(255, 176, 32, 0.16);
+  --beam-glow: rgba(255, 176, 32, 0.35);
+  --beam-soft: rgba(255, 176, 32, 0.28);
+
+  --danger: #ff6b6b;
+  --ok: #63d29a;
+
+  /* --- State layers (M3: 8% hover, 10% focus, 12% pressed) --- */
+  --state-hover: rgba(255, 255, 255, 0.08);
+  --state-focus: rgba(255, 255, 255, 0.1);
+  --state-press: rgba(255, 255, 255, 0.12);
+
+  /* --- Shape scale --- */
+  --shape-xs: 4px;
+  --shape-sm: 8px;
+  --shape-md: 12px;
+  --shape-lg: 16px;
+  --shape-xl: 28px;
+  --shape-full: 999px;
+  /* Legacy aliases used by components written before the scale existed. */
+  --radius: var(--shape-sm);
+  --radius-lg: var(--shape-md);
+
+  /* --- Elevation --- */
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px 1px rgba(0, 0, 0, 0.22);
+  --elev-2: 0 1px 2px rgba(0, 0, 0, 0.45), 0 2px 6px 2px rgba(0, 0, 0, 0.25);
+  --elev-3: 0 4px 8px 3px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.45);
+  --elev-4: 0 8px 24px 6px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.5);
+
+  /* --- Motion (M3 easing sets) --- */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-short: 120ms;
+  --dur-medium: 240ms;
+  --dur-long: 400ms;
+
+  --font-display-stack: var(--font-display), 'Archivo', system-ui, sans-serif;
+  --font-body-stack: var(--font-body), 'Inter Tight', system-ui, sans-serif;
+  --font-mono-stack: var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Height of the mobile chrome; used to keep content clear of it. */
+  --appbar-h: 56px;
+  --bottomnav-h: 68px;
+}
+
+/* Light scheme. Amber has to darken here or it fails contrast on paper-white. */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --ink: #f6f6f4;
+  --surface: #ffffff;
+  --surface-container-low: #f7f7f5;
+  --surface-container: #f1f1ee;
+  --surface-container-high: #e9e9e5;
+  --surface-container-highest: #e1e1dc;
+
+  --line: rgba(0, 0, 0, 0.09);
+  --line-strong: rgba(0, 0, 0, 0.18);
+
+  --text: #16181c;
+  --text-dim: #565c67;
+  --text-faint: #5c6270;
+  --on-accent: #ffffff;
+
+  --beam: #a35f00;
+  --beam-dim: rgba(163, 95, 0, 0.62);
+  --beam-wash: rgba(163, 95, 0, 0.1);
+  --beam-glow: rgba(163, 95, 0, 0.28);
+  --beam-soft: rgba(163, 95, 0, 0.3);
+
+  --danger: #b3261e;
+  --ok: #216e4e;
+
+  --state-hover: rgba(0, 0, 0, 0.06);
+  --state-focus: rgba(0, 0, 0, 0.08);
+  --state-press: rgba(0, 0, 0, 0.1);
+
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 3px 1px rgba(0, 0, 0, 0.06);
+  --elev-2: 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 6px 2px rgba(0, 0, 0, 0.07);
+  --elev-3: 0 4px 8px 3px rgba(0, 0, 0, 0.09), 0 1px 3px rgba(0, 0, 0, 0.12);
+  --elev-4: 0 8px 24px 6px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.14);
+}
+
+/* Someone who never touched the toggle but runs a light desktop gets light. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']):not([data-theme='light']) {
+    color-scheme: light;
+
+    --ink: #f6f6f4;
+    --surface: #ffffff;
+    --surface-container-low: #f7f7f5;
+    --surface-container: #f1f1ee;
+    --surface-container-high: #e9e9e5;
+    --surface-container-highest: #e1e1dc;
+
+    --line: rgba(0, 0, 0, 0.09);
+    --line-strong: rgba(0, 0, 0, 0.18);
+
+    --text: #16181c;
+    --text-dim: #565c67;
+    --text-faint: #5c6270;
+    --on-accent: #ffffff;
+
+    --beam: #a35f00;
+    --beam-dim: rgba(163, 95, 0, 0.62);
+    --beam-wash: rgba(163, 95, 0, 0.1);
+    --beam-glow: rgba(163, 95, 0, 0.28);
+    --beam-soft: rgba(163, 95, 0, 0.3);
+
+    --danger: #b3261e;
+    --ok: #216e4e;
+
+    --state-hover: rgba(0, 0, 0, 0.06);
+    --state-focus: rgba(0, 0, 0, 0.08);
+    --state-press: rgba(0, 0, 0, 0.1);
+
+    --elev-1: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 3px 1px rgba(0, 0, 0, 0.06);
+    --elev-2: 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 6px 2px rgba(0, 0, 0, 0.07);
+    --elev-3: 0 4px 8px 3px rgba(0, 0, 0, 0.09), 0 1px 3px rgba(0, 0, 0, 0.12);
+    --elev-4: 0 8px 24px 6px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.14);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font-body-stack);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* Stops iOS Safari inflating text in landscape, which broke the stat grid. */
+  -webkit-text-size-adjust: 100%;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: var(--beam);
+  color: var(--on-accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--beam);
+  outline-offset: 2px;
+  border-radius: var(--shape-xs);
+}
+
+/* ============================================================
+   Type roles
+   ============================================================ */
+
+/* Wide, signage-like display face — the broadcast lower-third voice. */
+.display,
+h1 {
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 112;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+
+h1 {
+  /* Fluid so a long title does not wrap to four lines on a phone. */
+  font-size: clamp(21px, 5vw, 25px);
+  line-height: 1.15;
+}
+
+/* Section heading inside a page: the quiet body-font label, not the display face. */
+h2,
+h3 {
+  font-family: var(--font-body-stack);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0 0 12px;
+}
+
+/* Quiet uppercase label that sits under or above a number. */
+.eyebrow,
+.stat-label,
+.drawer .group,
+.sidebar .group,
+th {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* Every number in the interface is monospaced and tabular so columns line up. */
+.num,
+.stat-value,
+.bar-value,
+.bar-rank,
+.timecode,
+td.num {
+  font-family: var(--font-mono-stack);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.muted {
+  color: var(--text-dim);
+}
+
+.subtitle {
+  color: var(--text-dim);
+  margin: 6px 0 26px;
+  max-width: 68ch;
+}
+
+/* ============================================================
+   Shell — navigation drawer (desktop) + app bar / navigation bar (mobile)
+   ============================================================ */
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Permanent navigation drawer. On mobile the same element becomes modal. */
+.sidebar {
+  width: 236px;
+  flex: 0 0 236px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  padding: 18px 12px 24px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: 40;
+}
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 10px;
+  margin-bottom: 18px;
+  min-height: 40px;
+}
+
+.wordmark span {
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 120;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
+/* The bulb: dark when the server is idle, lit while something is playing. */
+.bulb {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  flex: 0 0 9px;
+}
+
+.bulb.on {
+  background: var(--beam);
+  box-shadow: 0 0 0 3px var(--beam-wash), 0 0 12px var(--beam-glow);
+}
+
+/* M3 navigation-drawer item: full-height pill, state layer on hover. */
+.sidebar nav a {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: var(--shape-full);
+  color: var(--text-dim);
+  font-size: 13.5px;
+  transition: background var(--dur-short) var(--ease-standard),
+    color var(--dur-short) var(--ease-standard);
+}
+
+.sidebar nav a:hover {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+.sidebar nav a:active {
+  background: var(--state-press);
+}
+
+/* The section you are in keeps a filled pill and a lit edge. */
+.sidebar nav a.active {
+  color: var(--text);
+  background: var(--surface-container-high);
+}
+
+.sidebar nav a.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 20px;
+  margin-top: -10px;
+  border-radius: 0 3px 3px 0;
+  background: var(--beam);
+}
+
+.sidebar .group,
+.drawer .group {
+  margin: 20px 0 4px;
+  padding: 0 14px;
+}
+
+/* Icon + label, so a long destination name truncates instead of pushing the badge out. */
+.nav-label {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.nav-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar nav a svg,
+.drawer nav a svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  opacity: 0.9;
+}
+
+.sidebar-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+/* Column that carries the app bar above the page on mobile. */
+.content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: 30px 34px 64px;
+  max-width: 1180px;
+  /* Container queries let cards react to their column, not the viewport — a chart in
+     a half-width grid cell on desktop has the same room as a full-width one on a phone. */
+  container-type: inline-size;
+}
+
+/* --- Mobile top app bar --- */
+
+.appbar {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  align-items: center;
+  gap: 4px;
+  height: var(--appbar-h);
+  padding: 0 6px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.appbar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 118;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.appbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* --- Icon button (M3 standard icon button, 48px touch target) --- */
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--shape-full);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--dur-short) var(--ease-standard),
+    color var(--dur-short) var(--ease-standard);
+}
+
+.icon-btn:hover {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+.icon-btn:active {
+  background: var(--state-press);
+}
+
+.icon-btn svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+/* --- Modal navigation drawer (mobile) --- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: rgba(0, 0, 0, 0.55);
+  border: 0;
+  padding: 0;
+  animation: fade-in var(--dur-medium) var(--ease-standard) both;
+}
+
+.drawer {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 46;
+  width: min(300px, 84vw);
+  padding: 14px 12px 24px;
+  background: var(--surface-container-low);
+  border-right: 1px solid var(--line);
+  box-shadow: var(--elev-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: drawer-in var(--dur-long) var(--ease-emphasized) both;
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+.drawer nav a {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 10px 16px;
+  border-radius: var(--shape-full);
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.drawer nav a:hover,
+.drawer nav a:active {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+.drawer nav a.active {
+  background: var(--surface-container-high);
+  color: var(--text);
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px 10px 14px;
+}
+
+/* --- Bottom navigation bar (mobile, primary destinations only) --- */
+
+.bottomnav {
+  display: none;
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 35;
+  height: calc(var(--bottomnav-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--surface-container);
+  border-top: 1px solid var(--line);
+}
+
+.bottomnav ul {
+  display: flex;
+  align-items: stretch;
+  height: var(--bottomnav-h);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bottomnav li {
+  flex: 1;
+  min-width: 0;
+}
+
+.bottomnav a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 100%;
+  padding: 6px 2px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+}
+
+/* M3 navigation-bar active indicator: a pill behind the icon, not a colour change. */
+.bottomnav .ind {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 30px;
+  border-radius: var(--shape-full);
+  transition: background var(--dur-medium) var(--ease-standard);
+}
+
+.bottomnav a.active {
+  color: var(--text);
+}
+
+.bottomnav a.active .ind {
+  background: var(--surface-container-highest);
+}
+
+.bottomnav svg {
+  width: 20px;
+  height: 20px;
+}
+
+.bottomnav .bulb {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* ============================================================
+   Surfaces
+   ============================================================ */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--shape-md);
+  padding: 18px;
+}
+
+.card.elevated {
+  box-shadow: var(--elev-1);
+}
+
+.grid {
+  display: grid;
+  gap: 14px;
+}
+
+.grid.cols-4 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 178px), 1fr));
+}
+
+.grid.cols-2 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+}
+
+.grid.cols-3 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+
+/* Sections in a grid stretch, so neighbouring cards end at the same baseline. */
+.grid > section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.grid > section > .card {
+  flex: 1;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.section {
+  margin-top: 30px;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.section-head h2 {
+  margin: 0;
+}
+
+/* ============================================================
+   Metric cards
+   ============================================================ */
+
+.stat {
+  padding: 15px 16px 16px;
+}
+
+.stat-label {
+  margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+.stat-value {
+  margin: 9px 0 0;
+  font-size: clamp(21px, 5.5cqw, 25px);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.stat-hint {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* A clickable metric is a drill-down. It lifts, so the affordance is visible before
+   the pointer arrives — on a touch screen there is no hover to discover it with. */
+.stat-link {
+  display: block;
+  position: relative;
+  transition: border-color var(--dur-short) var(--ease-standard),
+    box-shadow var(--dur-medium) var(--ease-standard),
+    transform var(--dur-medium) var(--ease-emphasized);
+}
+
+/* Keeps the label clear of the chevron, including the info marker it may carry. */
+.stat-link .stat-label {
+  padding-right: 18px;
+}
+
+.stat-link::after {
+  content: '›';
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+
+.stat-link:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--elev-2);
+  transform: translateY(-1px);
+}
+
+.stat-link:active {
+  transform: none;
+}
+
+/* ============================================================
+   The beam — now playing
+   ============================================================ */
+
+.beam {
+  position: relative;
+  display: grid;
+  grid-template-columns: 82px 1fr;
+  gap: 18px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--shape-md);
+  overflow: hidden;
+}
+
+/* The projector wash only exists while something is actually playing. */
+.beam.live::before {
+  content: '';
+  position: absolute;
+  inset: -60% -10% auto -10%;
+  height: 200%;
+  background: radial-gradient(52% 46% at 10% 50%, var(--beam-wash), transparent 72%);
+  pointer-events: none;
+}
+
+.beam > * {
+  position: relative;
+}
+
+.beam-art {
+  width: 82px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: var(--shape-sm);
+  background: var(--surface-container);
+  border: 1px solid var(--line);
+}
+
+.beam-title {
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 108;
+  font-weight: 700;
+  font-size: clamp(16px, 4.5vw, 19px);
+  letter-spacing: -0.01em;
+  margin: 6px 0 2px;
+}
+
+.beam-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+/* A paused session is still a session, but the room lights come up. */
+.beam.paused .scrub-fill,
+.beam.paused .scrub-head {
+  background: var(--text-faint);
+  box-shadow: none;
+}
+
+.beam-sub {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 0;
+}
+
+.beam-meta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.timecode {
+  font-size: 12.5px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+/* Scrub line: a hairline with a lit playhead. */
+.scrub {
+  position: relative;
+  height: 2px;
+  background: var(--line-strong);
+  border-radius: 2px;
+  margin-top: 14px;
+}
+
+.scrub-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--beam);
+  border-radius: 2px;
+  animation: scrub-in 0.7s var(--ease-emphasized) both;
+}
+
+.scrub-head {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--beam);
+  box-shadow: 0 0 10px var(--beam-glow);
+  animation: scrub-in 0.7s var(--ease-emphasized) both;
+}
+
+@keyframes scrub-in {
+  from {
+    transform: scaleX(0);
+    transform-origin: left;
+    opacity: 0;
+  }
+}
+
+.beam-idle {
+  display: flex;
+  align-items: center;
+  min-height: 92px;
+  color: var(--text-dim);
+}
+
+/* ============================================================
+   Charts
+   ============================================================ */
+
+/* Columns grow in on load and the hovered one lights up while the rest step back. */
+.column-bar {
+  fill: var(--beam-dim);
+  transition: fill var(--dur-short) var(--ease-standard);
+  animation: grow-up 0.5s var(--ease-emphasized) both;
+}
+
+.columns:hover .column-bar {
+  fill: var(--beam-soft);
+}
+
+.column:hover .column-bar {
+  fill: var(--beam);
+}
+
+@keyframes grow-up {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+.area-line {
+  stroke-dasharray: 2000;
+  stroke-dashoffset: 2000;
+  animation: draw 1.1s var(--ease-emphasized) both;
+}
+
+.area-fill {
+  animation: fade-in 0.9s ease both;
+}
+
+.area-point circle {
+  opacity: 0;
+  transition: opacity var(--dur-short) var(--ease-standard);
+}
+
+.area-point:hover circle {
+  opacity: 1;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.spark {
+  width: 100%;
+  height: 20px;
+  margin-top: 8px;
+  display: block;
+  overflow: visible;
+}
+
+.trend {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  margin-right: 8px;
+}
+
+.trend.up {
+  color: var(--beam);
+}
+
+.trend.down {
+  color: var(--text-faint);
+}
+
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 150px) 1fr 74px;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 6px;
+  border-radius: var(--shape-sm);
+  font-size: 13px;
+  min-height: 34px;
+}
+
+.bar-row:hover {
+  background: var(--state-hover);
+}
+
+.bar-rank {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+.bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+a.bar-label:hover {
+  color: var(--beam);
+}
+
+.bar-track {
+  background: var(--state-hover);
+  border-radius: 2px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--beam-dim);
+  border-radius: 2px;
+  transition: background var(--dur-short) var(--ease-standard);
+  animation: grow-right 0.55s var(--ease-emphasized) both;
+  transform-origin: left;
+}
+
+@keyframes grow-right {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.bars:hover .bar-fill {
+  background: var(--beam-soft);
+}
+
+.bar-row:hover .bar-fill {
+  background: var(--beam);
+}
+
+.bars:hover .bar-row:not(:hover) .bar-label {
+  color: var(--text-dim);
+}
+
+.bar-value {
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.donut-wrap {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.donut {
+  width: 152px;
+  height: 152px;
+  flex: 0 0 auto;
+}
+
+.donut .slice {
+  transition: opacity var(--dur-short) var(--ease-standard);
+}
+
+.donut:hover .slice {
+  opacity: 0.4;
+}
+
+.donut .slice:hover {
+  opacity: 1;
+}
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+}
+
+.legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 9px;
+}
+
+/* ============================================================
+   Film strip heatmap — a year of watching as exposed frames
+   ============================================================ */
+
+.filmstrip {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 9px 0;
+  overflow-x: auto;
+  /* Momentum scrolling on iOS, and the strip snaps nowhere — it is a ribbon. */
+  -webkit-overflow-scrolling: touch;
+}
+
+.perf {
+  display: flex;
+  gap: 9px;
+  height: 4px;
+  min-width: max-content;
+}
+
+.perf span {
+  width: 6px;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--state-hover);
+  flex: 0 0 6px;
+}
+
+.frames {
+  display: grid;
+  grid-template-rows: repeat(7, 10px);
+  grid-auto-flow: column;
+  grid-auto-columns: 10px;
+  gap: 3px;
+  min-width: max-content;
+  margin: 7px 0;
+}
+
+.frame {
+  width: 10px;
+  height: 10px;
+  border-radius: 1px;
+  background: var(--beam);
+  display: block;
+}
+
+.frame.blank {
+  background: none;
+}
+
+.frame:hover {
+  outline: 1px solid var(--text);
+}
+
+a.frame {
+  cursor: pointer;
+}
+
+/* ============================================================
+   Tables
+   ============================================================ */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  /* A horizontally scrolled table on a phone loses its headers otherwise. */
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: var(--state-hover);
+}
+
+td a:hover {
+  color: var(--beam);
+}
+
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ============================================================
+   Forms — M3 filled fields
+   ============================================================ */
+
+label {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  margin-top: 5px;
+  padding: 11px 12px;
+  background: var(--surface-container);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-sm);
+  color: var(--text);
+  font-family: inherit;
+  /* 16px is the smallest size iOS Safari will not zoom into on focus. */
+  font-size: 16px;
+  min-height: 44px;
+  transition: border-color var(--dur-short) var(--ease-standard),
+    background var(--dur-short) var(--ease-standard);
+}
+
+input:hover,
+select:hover {
+  background: var(--surface-container-high);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--beam-dim);
+  outline: none;
+}
+
+/* --- Buttons (M3: filled, tonal, outlined, text) --- */
+
+button {
+  padding: 10px 20px;
+  background: var(--text);
+  border: 0;
+  border-radius: var(--shape-full);
+  color: var(--ink);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  min-height: 40px;
+  cursor: pointer;
+  transition: box-shadow var(--dur-medium) var(--ease-standard),
+    filter var(--dur-short) var(--ease-standard);
+}
+
+button:hover {
+  box-shadow: var(--elev-1);
+  filter: brightness(1.08);
+}
+
+button:active {
+  box-shadow: none;
+  filter: brightness(0.95);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  box-shadow: none;
+  filter: none;
+}
+
+button.tonal {
+  background: var(--surface-container-highest);
+  color: var(--text);
+}
+
+button.outlined {
+  background: none;
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+}
+
+button.outlined:hover {
+  background: var(--state-hover);
+  box-shadow: none;
+  filter: none;
+}
+
+button.link {
+  background: none;
+  color: var(--text-dim);
+  padding: 0;
+  min-height: 0;
+  font-weight: 400;
+  text-decoration: underline;
+  box-shadow: none;
+}
+
+button.link:hover {
+  background: none;
+  color: var(--text);
+  box-shadow: none;
+  filter: none;
+}
+
+.filters {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+.filters label {
+  margin: 0;
+}
+
+/* Width shrinks to fit, but the 16px font size stays: anything smaller makes iOS
+   Safari zoom the whole page in on focus and never zoom back out. */
+.filters input,
+.filters select {
+  width: auto;
+  min-width: 152px;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+/* --- Segmented button: the period switcher, one tap per option --- */
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-full);
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.seg a {
+  padding: 8px 14px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.seg a:last-child {
+  border-right: 0;
+}
+
+.seg a:hover {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+.seg a.on {
+  background: var(--surface-container-highest);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ============================================================
+   Badges, chips, progress
+   ============================================================ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: var(--shape-sm);
+  font-size: 11px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* An interactive chip is a target, so it gets a target-sized box. */
+a.badge,
+button.badge {
+  min-height: 32px;
+  background: none;
+  font-weight: 400;
+  transition: background var(--dur-short) var(--ease-standard);
+}
+
+a.badge:hover,
+button.badge:hover {
+  background: var(--state-hover);
+  color: var(--text);
+  box-shadow: none;
+  filter: none;
+}
+
+.badge.on {
+  background: var(--surface-container-highest);
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+/* Live is the one thing allowed to glow. */
+.badge.live {
+  color: var(--beam);
+  border-color: var(--beam-dim);
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress {
+  height: 2px;
+  background: var(--line-strong);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 7px;
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--beam-dim);
+}
+
+/* ============================================================
+   Posters
+   ============================================================ */
+
+.poster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(44vw, 132px), 1fr));
+  gap: 18px;
+}
+
+.poster {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: var(--shape-sm);
+  background: var(--surface-container);
+  border: 1px solid var(--line);
+  transition: border-color var(--dur-short) var(--ease-standard),
+    transform var(--dur-medium) var(--ease-emphasized);
+}
+
+a:hover .poster {
+  border-color: var(--beam-dim);
+  transform: translateY(-2px);
+}
+
+.poster-title {
+  font-size: 13px;
+  margin: 9px 0 2px;
+}
+
+.poster-meta {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+/* A suggestion card: poster links inward, the small button links out to the server. */
+.poster-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.poster-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.link-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-full);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.link-out:hover {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+.link-out svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ============================================================
+   Command palette
+   ============================================================ */
+
+.palette-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  justify-content: center;
+  padding: 12vh 16px 16px;
+  background: rgba(0, 0, 0, 0.6);
+  animation: fade-in var(--dur-medium) var(--ease-standard) both;
+}
+
+.palette {
+  width: min(560px, 100%);
+  max-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-container-low);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-xl);
+  box-shadow: var(--elev-4);
+  overflow: hidden;
+  animation: palette-in var(--dur-long) var(--ease-emphasized) both;
+}
+
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+}
+
+.palette-input {
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  padding: 16px 18px;
+  font-size: 16px;
+}
+
+.palette-input:focus {
+  border-color: var(--line);
+  outline: none;
+}
+
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 8px 12px;
+  border-radius: var(--shape-sm);
+  cursor: pointer;
+  font-size: 13.5px;
+}
+
+.palette-item .label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-item .sub {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.palette-item.on,
+.palette-item:hover {
+  background: var(--surface-container-high);
+}
+
+.palette-kind {
+  flex: 0 0 auto;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  width: 52px;
+}
+
+.palette-empty {
+  padding: 22px 18px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.palette-hint {
+  display: flex;
+  gap: 12px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+kbd {
+  font-family: var(--font-mono-stack);
+  font-size: 10.5px;
+  padding: 2px 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-xs);
+  color: var(--text-dim);
+}
+
+/* The desktop search trigger, sitting in the drawer. */
+.search-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  background: var(--surface-container);
+  border: 1px solid var(--line);
+  border-radius: var(--shape-full);
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  text-align: left;
+  box-shadow: none;
+}
+
+.search-trigger:hover {
+  background: var(--surface-container-high);
+  color: var(--text-dim);
+  box-shadow: none;
+  filter: none;
+}
+
+.search-trigger kbd {
+  margin-left: auto;
+}
+
+.search-trigger svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+/* ============================================================
+   Tooltips and info markers
+   ============================================================ */
+
+/* Rendered by components/Tooltip.tsx at the document level, so it is never clipped. */
+.tip {
+  position: fixed;
+  z-index: 80;
+  max-width: 280px;
+  padding: 7px 10px;
+  background: var(--surface-container-highest);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-xs);
+  font-size: 12px;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  pointer-events: none;
+  box-shadow: var(--elev-3);
+  animation: tip-in var(--dur-short) ease both;
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+  }
+}
+
+[data-tip] {
+  cursor: default;
+}
+
+.info {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  font-size: 8px;
+  font-style: italic;
+  letter-spacing: 0;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.info:hover {
+  color: var(--beam);
+  border-color: var(--beam-dim);
+}
+
+/* ============================================================
+   Auth and setup
+   ============================================================ */
+
+.center {
+  max-width: 400px;
+  margin: 13vh auto;
+  padding: 0 18px;
+}
+
+.center h1 {
+  margin-bottom: 4px;
+}
+
+/* ============================================================
+   Title detail, episodes and wrapped
+   ============================================================ */
+
+.title-head {
+  display: flex;
+  gap: 22px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 26px;
+}
+
+.title-head .poster {
+  width: 124px;
+  flex: 0 0 124px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.back-link:hover {
+  color: var(--beam);
+}
+
+/* One episode: a row that is entirely a link, so it works with a thumb. */
+.episode-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 48px;
+  padding: 8px 10px;
+  border-radius: var(--shape-sm);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.episode-row:last-child {
+  border-bottom: 0;
+}
+
+.episode-row:hover {
+  background: var(--state-hover);
+}
+
+.episode-row .ep-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.episode-row .ep-meta {
+  font-family: var(--font-mono-stack);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.wrapped-hero {
+  text-align: center;
+  padding: 40px 0 30px;
+}
+
+.wrapped-hero .year {
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 125;
+  font-size: clamp(56px, 13vw, 132px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 0.85;
+  margin: 0;
+  color: var(--text);
+}
+
+.wrapped-hero h2 {
+  margin: 14px 0 0;
+}
+
+.wrapped-hero .subtitle {
+  margin: 8px auto 0;
+}
+
+.wrapped-hero .chips {
+  justify-content: center;
+  margin-top: 22px;
+}
+
+.wrapped-rank {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  min-height: 52px;
+  padding: 9px 8px;
+  border-radius: var(--shape-sm);
+  border-bottom: 1px solid var(--line);
+}
+
+.wrapped-rank:last-child {
+  border-bottom: 0;
+}
+
+.wrapped-rank:hover {
+  background: var(--state-hover);
+}
+
+.wrapped-rank .rank {
+  font-family: var(--font-mono-stack);
+  font-size: 15px;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+.wrapped-rank:first-child .rank {
+  color: var(--beam);
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+
+/* Tablet: the drawer narrows before it disappears. */
+@media (max-width: 1080px) {
+  .main {
+    padding: 26px 24px 56px;
+  }
+}
+
+@media (max-width: 880px) {
+  .shell {
+    flex-direction: column;
+  }
+
+  /* The permanent drawer is replaced by the app bar + modal drawer + bottom bar. */
+  .sidebar {
+    display: none;
+  }
+
+  .appbar {
+    display: flex;
+  }
+
+  .bottomnav {
+    display: block;
+  }
+
+  .main {
+    padding: 18px 16px calc(var(--bottomnav-h) + env(safe-area-inset-bottom) + 28px);
+    max-width: none;
+  }
+
+  .subtitle {
+    margin-bottom: 20px;
+  }
+
+  .section {
+    margin-top: 24px;
+  }
+
+  .beam {
+    grid-template-columns: 62px 1fr;
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .beam-art {
+    width: 62px;
+  }
+
+  .bar-row {
+    grid-template-columns: 20px minmax(0, 1fr) 0 auto;
+    gap: 8px;
+  }
+
+  /* The track has no room next to a title on a phone; the number carries the value. */
+  .bar-row .bar-track {
+    display: none;
+  }
+
+  .title-head {
+    gap: 16px;
+  }
+
+  .title-head .poster {
+    width: 92px;
+    flex: 0 0 92px;
+  }
+
+  .filters {
+    gap: 10px;
+  }
+
+  .filters label,
+  .filters input,
+  .filters select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .filters button {
+    width: 100%;
+  }
+
+  .donut-wrap {
+    gap: 14px;
+  }
+
+  .wrapped-hero {
+    padding: 26px 0 20px;
+  }
+}
+
+/* Phones: tables stop pretending to be tables where a card reads better. */
+@media (max-width: 520px) {
+  .card {
+    padding: 14px;
+  }
+
+  .stat {
+    padding: 13px 14px 14px;
+  }
+
+  .grid {
+    gap: 10px;
+  }
+
+  .palette-scrim {
+    padding: 0;
+  }
+
+  .palette {
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+    border: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Travel and looping motion go away; state changes stay legible as a quick fade,
+     so "live" still reads as live instead of snapping between frames. */
+  *,
+  *::before,
+  *::after {
+    animation-iteration-count: 1 !important;
+    transition-duration: 120ms !important;
+    transition-timing-function: ease !important;
+  }
+
+  /* Anything that moves or travels stops outright. */
+  .beam-glow,
+  .scrub-head,
+  .spark,
+  .drawer,
+  .palette,
+  [class*='pulse'],
+  [class*='sweep'] {
+    animation: none !important;
+  }
+
+  .stat-link:hover,
+  a:hover .poster {
+    transform: none;
+  }
+}
+
+/* --- weekday x hour grid --- */
+.weekgrid-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.weekgrid {
+  display: grid;
+  grid-template-columns: 34px repeat(24, minmax(14px, 1fr));
+  gap: 3px;
+  align-items: center;
+  min-width: 520px;
+}
+
+.weekgrid-hour,
+.weekgrid-day {
+  font-family: var(--font-mono-stack);
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+.weekgrid-day {
+  font-size: 10px;
+  padding-right: 6px;
+}
+
+.weekgrid-hour {
+  text-align: center;
+}
+
+.weekgrid-cell {
+  height: 15px;
+  border-radius: 2px;
+  background: var(--beam);
+  display: block;
+}
+
+.weekgrid-cell:hover {
+  outline: 1px solid var(--text);
+}
+
+a.weekgrid-cell {
+  cursor: pointer;
+}
+
+/* A hint that the strip continues past the edge, shown only where it can scroll. */
+.scroll-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+@media (min-width: 881px) {
+  .scroll-hint {
+    display: none;
+  }
+}
+
+/* ============================================================
+   Error, empty and not-found screens
+   ============================================================ */
+
+.notice {
+  max-width: 460px;
+  margin: 16vh auto;
+  padding: 0 18px;
+  text-align: left;
+}
+
+.notice .eyebrow {
+  color: var(--beam);
+}
+
+.notice h1 {
+  margin-bottom: 8px;
+}
+
+.notice p {
+  color: var(--text-dim);
+  margin: 0 0 20px;
+}
+
+.notice .actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Technical detail is available but never the first thing read. */
+.notice details {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.notice summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-faint);
+  min-height: 32px;
+}
+
+.notice pre {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--shape-sm);
+  font-family: var(--font-mono-stack);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Secondary action next to a primary button, styled as a quiet outline. */
+.notice .actions a {
+  padding: 10px 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-full);
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 13px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.notice .actions a:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
+.notice .actions button {
+  min-height: 44px;
+}
+
+/* ============================================================
+   Loading skeleton
+   ============================================================ */
+
+/* Visually hidden but still announced. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sk-line,
+.sk-card,
+.sk-block {
+  background: var(--surface-container);
+  border-radius: var(--shape-sm);
+  /* Named so the reduced-motion block above stops it. */
+  animation: sk-pulse 1.4s ease-in-out infinite;
+}
+
+.sk-eyebrow {
+  width: 64px;
+  height: 10px;
+  margin-bottom: 12px;
+}
+
+.sk-title {
+  width: min(260px, 60%);
+  height: 25px;
+  margin-bottom: 10px;
+}
+
+.sk-subtitle {
+  width: min(380px, 80%);
+  height: 13px;
+  margin-bottom: 26px;
+}
+
+.sk-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.sk-card {
+  min-height: 92px;
+}
+
+.sk-block {
+  height: 220px;
+}
+
+@keyframes sk-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}

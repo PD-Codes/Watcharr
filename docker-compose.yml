@@ -1,0 +1,25 @@
+services:
+  app:
+    # `docker compose up -d` pulls the published image.
+    # `docker compose up -d --build` builds this checkout instead.
+    image: ghcr.io/pd-codes/watcharr:${WATCHARR_TAG:-latest}
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      # SQLite database file, kept on the named volume below.
+      DATABASE_PATH: /app/data/watcharr.db
+    volumes:
+      - watcharr-data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  watcharr-data:
