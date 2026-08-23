@@ -141,7 +141,10 @@ cd watcharr
 cp .env.example .env
 echo "SESSION_SECRET=$(openssl rand -hex 32)" >> .env
 
-npm ci
+# --ignore-scripts skips a needless native rebuild of better-sqlite3, which ships
+# prebuilt binaries for linux/macOS/Windows on x64 and arm64. Without it you need
+# Python and a C++ toolchain for no benefit.
+npm ci --ignore-scripts
 npm run build
 npm start
 ```
@@ -309,7 +312,7 @@ than a public issue.
 ## Development
 
 ```bash
-npm install
+npm ci --ignore-scripts
 npm run dev          # applies migrations, then starts the dev server on :3000
 
 npm run typecheck
