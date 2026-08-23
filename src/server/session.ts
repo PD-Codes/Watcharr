@@ -1,6 +1,6 @@
 import 'server-only';
 import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { and, eq, gt, lt } from 'drizzle-orm';
 import { db } from '@/db';
@@ -29,6 +29,24 @@ function unsign(value: string): string | null {
   const a = Buffer.from(mac, 'hex');
   const b = Buffer.from(expected, 'hex');
   return a.length === b.length && timingSafeEqual(a, b) ? id : null;
+}
+
+/**
+ * Whether the session cookie may carry the Secure flag.
+ *
+ * Tying this to NODE_ENV is the obvious thing and it is wrong: a browser silently discards
+ * a Secure cookie sent over plain HTTP, and a self-hosted deployment on a LAN is plain HTTP
+ * far more often than not. The symptom is vicious — the login request answers 200, the
+ * redirect fires, the next page finds no session and bounces straight back to the login
+ * screen, with no error logged anywhere. So the flag follows the actual scheme instead:
+ * what the reverse proxy reports, or, with no proxy in front, what APP_URL says.
+ *
+ * http://localhost is treated as a secure context by browsers, so it works either way.
+ */
+async function useSecureCookie(): Promise<boolean> {
+  const forwarded = (await headers()).get('x-forwarded-proto')?.split(',')[0]?.trim();
+  if (forwarded) return forwarded === 'https';
+  return (process.env.APP_URL ?? '').startsWith('https://');
 }
 
 export type SessionUser = typeof users.$inferSelect;
@@ -71,7 +89,7 @@ export async function createSession(user: MediaServerUser, serverToken: string) 
   (await cookies()).set(COOKIE, sign(id), {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: await useSecureCookie(),
     path: '/',
     maxAge: MAX_AGE_SECONDS,
   });

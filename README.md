@@ -163,7 +163,7 @@ configuration page.
 |---|---|---|
 | `SESSION_SECRET` | *(required)* | Signs session cookies and derives the key that encrypts media server tokens at rest. Generate with `openssl rand -hex 32`. **Changing it invalidates every stored token and signs everyone out.** |
 | `DATABASE_PATH` | `./data/watcharr.db` | SQLite file. The container defaults to `/app/data/watcharr.db`; keep that path on a volume. |
-| `APP_URL` | `http://localhost:3000` | Public base URL of this deployment. Used for the Plex sign-in callback. |
+| `APP_URL` | `http://localhost:3000` | Public base URL of this deployment — **the address you actually type into the browser**. Used for the Plex sign-in callback, and it decides whether the session cookie is marked `Secure`. If it says `https://` while you reach the app over plain HTTP, your browser will throw the session cookie away and sign-in will appear to do nothing. Behind a reverse proxy that sets `X-Forwarded-Proto`, that header wins. |
 | `PORT` | `3000` | Port the server listens on. |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | *(unset)* | Set to `0` **only** if your media server uses a self-signed certificate. It disables certificate checking process-wide. |
 

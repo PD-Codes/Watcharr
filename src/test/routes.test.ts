@@ -214,9 +214,30 @@ async function main() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: 'admin', password: 'secret' }),
     });
-    const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
+    const setCookie = login.headers.get('set-cookie') ?? '';
+    const cookie = setCookie.split(';')[0];
     console.log(`${login.ok && cookie ? 'ok  ' : 'FAIL'} - POST /api/auth/login → ${login.status}`);
     if (!login.ok || !cookie) failures += 1;
+
+    // A Secure cookie is discarded by browsers over plain HTTP, and the app is reached
+    // over plain HTTP in most self-hosted setups. Getting this wrong produces a login that
+    // answers 200 and then bounces back to /login with no error anywhere — so the flag has
+    // to follow the actual scheme. Node's fetch does not enforce Secure, which is exactly
+    // why this needs asserting rather than trusting the rest of the suite to notice.
+    {
+      const plain = !/;\s*Secure/i.test(setCookie);
+      console.log(`${plain ? 'ok  ' : 'FAIL'} - session cookie is not Secure over plain HTTP`);
+      if (!plain) failures += 1;
+
+      const behindProxy = await fetch(`${base}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https' },
+        body: JSON.stringify({ username: 'admin', password: 'secret' }),
+      });
+      const secure = /;\s*Secure/i.test(behindProxy.headers.get('set-cookie') ?? '');
+      console.log(`${secure ? 'ok  ' : 'FAIL'} - session cookie is Secure behind an https proxy`);
+      if (!secure) failures += 1;
+    }
 
     const userId = await seedContent();
 

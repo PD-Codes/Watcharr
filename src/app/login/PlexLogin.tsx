@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { t } from '@/i18n';
+import { COOKIE_REJECTED_MESSAGE, sessionCookieRejected } from './probe';
 
 type Pin = { pinId: string; code: string; authUrl: string };
 
@@ -32,6 +33,10 @@ export default function PlexLogin() {
       const data = (await poll.json()) as { ok?: boolean; pending?: boolean };
       if (data.ok) {
         if (timer.current) clearInterval(timer.current);
+        if (await sessionCookieRejected()) {
+          setError(COOKIE_REJECTED_MESSAGE);
+          return;
+        }
         router.push('/watchlist');
       }
     }, 2000);
