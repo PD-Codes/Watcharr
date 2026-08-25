@@ -1,20 +1,21 @@
 import Link from 'next/link';
+import { artUrl } from '@/components/format';
 import { notFound } from 'next/navigation';
 import OpenInServer from '@/components/OpenInServer';
-import { getConfig } from '@/server/config';
+import { getSettings } from '@/server/config';
 import { isEnabled } from '@/server/features';
 import { getSuggestions } from '@/server/suggestions';
-import { syncHistory } from '@/server/sync';
+import { reportSyncError, syncHistory } from '@/server/sync';
 import { requireUser } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
 
 export default async function SuggestionsPage() {
   const session = await requireUser();
-  const config = await getConfig();
-  if (!isEnabled(config?.features ?? null, 'suggestions')) notFound();
-  await syncHistory(session.user.id, session.user.serverUserId, session.serverToken).catch(() => {});
-  const { fromLibrary, fromTmdb } = await getSuggestions(session.user.id);
+  const settings = await getSettings();
+  if (!isEnabled(settings.features, 'suggestions')) notFound();
+  await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
+  const { fromLibrary, fromTmdb } = await getSuggestions(session.user.id, session.user.serverId);
 
   return (
     <>
@@ -34,14 +35,14 @@ export default async function SuggestionsPage() {
                   title over to the media server, which is where you can actually play it. */}
               <Link href={`/title/${encodeURIComponent(item.title)}`}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className="poster" src={`/api/art/${item.itemId}`} alt="" loading="lazy" />
+                <img className="poster" src={artUrl(session.server.slug, item.itemId)} alt="" loading="lazy" />
                 <p className="poster-title">{item.title}</p>
               </Link>
               <p className="poster-meta">
                 {item.year ?? ''} · {item.reason}
               </p>
               <div className="poster-actions">
-                <OpenInServer itemId={item.itemId} />
+                <OpenInServer itemId={item.itemId} serverId={session.user.serverId} />
               </div>
             </div>
           ))}

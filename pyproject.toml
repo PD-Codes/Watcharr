@@ -14,7 +14,7 @@
 
 [project]
 name = "watcharr"
-version = "1.0.2"
+version = "1.0.3"
 description = "Self-hosted companion app for a single Plex, Jellyfin or Emby server: watchlist, history, live activity, statistics, suggestions and a year in review."
 readme = "README.md"
 requires-python = ">=3.11"           # only for tooling that parses this file

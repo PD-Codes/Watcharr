@@ -1,0 +1,378 @@
+import 'server-only';
+import { and, desc, eq, sql } from 'drizzle-orm';
+import { db } from '@/db';
+import { notificationChannels, notificationLog } from '@/db/schema';
+import { publicArtUrl } from './artlink';
+import { getSettings } from './config';
+import { decryptSecret, encryptSecret } from './crypto';
+import type { ChannelType, NotificationEvent } from './features';
+
+export type { NotificationEvent };
+
+// Every channel below is a JSON or form POST over fetch — no SDK carries its own retry
+// queue, auth flow or SMTP stack, so none of this needed a dependency except email, where
+// hand-rolling STARTTLS/AUTH correctly is a real security surface. nodemailer is the one
+// exception to the zero-dependency rule for exactly that reason.
+
+const TIMEOUT_MS = 5_000;
+
+type Channel = { type: string; config: Record<string, string> };
+type Result = { ok: boolean; error?: string };
+
+/** One human-readable line, reused by every chat-style channel and the email subject. */
+export function describe(event: NotificationEvent, payload: Record<string, unknown>): string {
+  const p = payload as Record<string, any>;
+  const server = p.server?.label ? ` (${p.server.label})` : '';
+  switch (event) {
+    case 'playback.start':
+      return `▶ ${p.user ?? 'Someone'} started "${p.title}"${server}`;
+    case 'playback.stop':
+      return `⏹ ${p.user ?? 'Someone'} stopped "${p.title}"${p.percent != null ? ` at ${p.percent}%` : ''}${server}`;
+    case 'server.down':
+      return `⚠ ${p.server?.label ?? 'A media server'} is unreachable`;
+    case 'media.added':
+      return `＋ New: "${p.title}"${p.year ? ` (${p.year})` : ''}${server}`;
+    case 'monitor.alert':
+      return `⚠ ${p.message}`;
+    case 'digest':
+      return `📊 ${p.periodLabel}: ${p.watchtime}, ${p.plays} plays${p.topTitle ? ` · top: ${p.topTitle}` : ''}`;
+    default:
+      return `${event}`;
+  }
+}
+
+async function postJson(
+  url: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<Result> {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      cache: 'no-store',
+    });
+    return res.ok ? { ok: true } : { ok: false, error: `HTTP ${res.status}` };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function postForm(url: string, params: Record<string, string>): Promise<Result> {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      body: new URLSearchParams(params),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      cache: 'no-store',
+    });
+    return res.ok ? { ok: true } : { ok: false, error: `HTTP ${res.status}` };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function sendEmail(config: Record<string, string>, subject: string, text: string): Promise<Result> {
+  return transportSend(config, { to: config.to, subject, text });
+}
+
+async function transportSend(
+  config: Record<string, string>,
+  message: { to?: string; bcc?: string[]; subject: string; text?: string; html?: string },
+): Promise<Result> {
+  // Lazy import: nodemailer pulls in Node's tls/net machinery that only email needs, and
+  // most deployments will never configure a channel of this type.
+  const nodemailer = await import('nodemailer');
+  const transport = nodemailer.default.createTransport({
+    host: config.smtpHost,
+    port: Number(config.smtpPort) || 587,
+    secure: Number(config.smtpPort) === 465,
+    auth: config.smtpUser ? { user: config.smtpUser, pass: config.smtpPass } : undefined,
+  });
+  try {
+    await transport.sendMail({ from: config.from, ...message });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * Sends one HTML mail through the first configured email channel. The newsletter has its
+ * own recipient list but no reason to ask an admin for a second set of SMTP credentials —
+ * if mail already works for notifications, it works for this.
+ */
+export async function sendMail(
+  to: string[],
+  subject: string,
+  html: string,
+): Promise<Result> {
+  const rows = await db.select().from(notificationChannels).where(eq(notificationChannels.type, 'email'));
+  const config = rows.map((row) => decryptConfig(row.config)).find((c) => c.smtpHost);
+  if (!config) {
+    return { ok: false, error: 'No email channel is configured — add one under Notifications.' };
+  }
+  // BCC: subscribers must not learn each other's addresses from a mail they did not send.
+  return transportSend(config, { to: config.from || config.to, bcc: to, subject, html });
+}
+
+/** Poster URL for a payload, if the event carries enough to build one and APP_URL is set. */
+function posterFor(payload: Record<string, unknown>): string | null {
+  const p = payload as Record<string, any>;
+  const slug = p.server?.slug;
+  const itemId = p.itemId;
+  return typeof slug === 'string' && typeof itemId === 'string' ? publicArtUrl(slug, itemId) : null;
+}
+
+const AMBER = 0xffb020; // matches --beam; amber means "this is data", same rule as the charts
+
+/** One delivery attempt for one channel. */
+async function send(
+  channel: Channel,
+  event: NotificationEvent,
+  payload: Record<string, unknown>,
+): Promise<Result> {
+  const text = describe(event, payload);
+  const image = posterFor(payload);
+  const { config } = channel;
+  switch (channel.type as ChannelType | 'webhook') {
+    case 'webhook':
+      return postJson(config.url, { event, at: new Date().toISOString(), ...payload });
+    case 'discord':
+      return postJson(config.url, {
+        embeds: [
+          {
+            description: text.slice(0, 2000),
+            color: AMBER,
+            timestamp: new Date().toISOString(),
+            ...(image ? { thumbnail: { url: image } } : {}),
+          },
+        ],
+      });
+    case 'slack':
+      return postJson(config.url, {
+        text,
+        attachments: [{ color: '#ffb020', text, ...(image ? { thumb_url: image } : {}) }],
+      });
+    case 'telegram':
+      return postJson(`https://api.telegram.org/bot${config.botToken}/sendMessage`, {
+        chat_id: config.chatId,
+        text,
+      });
+    case 'pushover':
+      return postForm('https://api.pushover.net/1/messages.json', {
+        token: config.appToken,
+        user: config.userKey,
+        title: 'Watcharr',
+        message: text,
+      });
+    case 'pushbullet':
+      return postJson(
+        'https://api.pushbullet.com/v2/pushes',
+        { type: 'note', title: 'Watcharr', body: text },
+        { 'Access-Token': config.accessToken },
+      );
+    case 'email':
+      return sendEmail(config, `Watcharr: ${text}`, text);
+    default:
+      return { ok: false, error: `Unknown channel type "${channel.type}"` };
+  }
+}
+
+/** Every enabled destination subscribed to one event: legacy webhook plus channel rows. */
+async function channelsFor(event: NotificationEvent): Promise<(Channel & { id: number | null; name: string })[]> {
+  const { webhookUrl, webhookEvents } = await getSettings();
+  const channels: (Channel & { id: number | null; name: string })[] = [];
+  if (webhookUrl && webhookEvents.includes(event)) {
+    channels.push({ type: 'webhook', config: { url: webhookUrl }, id: null, name: 'Generic webhook' });
+  }
+
+  const rows = await db
+    .select({
+      id: notificationChannels.id,
+      type: notificationChannels.type,
+      name: notificationChannels.name,
+      config: notificationChannels.config,
+    })
+    .from(notificationChannels)
+    .where(
+      and(
+        eq(notificationChannels.enabled, true),
+        sql`EXISTS (SELECT 1 FROM json_each(${notificationChannels.events}) WHERE json_each.value = ${event})`,
+      ),
+    )
+    .catch(() => []);
+  channels.push(
+    ...rows.map((row) => ({ id: row.id, type: row.type, name: row.name, config: decryptConfig(row.config) })),
+  );
+  return channels;
+}
+
+async function logDelivery(
+  channel: { type: string; id: number | null; name: string },
+  event: NotificationEvent,
+  result: Result,
+) {
+  try {
+    await db.insert(notificationLog).values({
+      channelType: channel.type,
+      channelId: channel.id,
+      channelName: channel.name,
+      event,
+      success: result.ok,
+      error: result.ok ? null : (result.error ?? null),
+    });
+  } catch {
+    // The log is a convenience, never a reason to fail delivery bookkeeping.
+  }
+}
+
+/**
+ * Sends one event to every enabled destination subscribed to it: the legacy webhook field
+ * on app_settings, plus every matching row in notification_channels. Every attempt — success
+ * or failure — is recorded in notification_log, so a bad Discord URL is visible in the admin
+ * UI instead of vanishing after its one retry.
+ *
+ * ponytail: one retry per channel, then the event is dropped — no queue, no dead letter
+ * table. A notification is not a ledger; the log above is only a record of what happened,
+ * not a replay mechanism.
+ */
+export async function dispatch(event: NotificationEvent, payload: Record<string, unknown>) {
+  const channels = await channelsFor(event);
+
+  await Promise.all(
+    channels.map(async (channel) => {
+      let result = await send(channel, event, payload);
+      if (!result.ok) result = await send(channel, event, payload);
+      await logDelivery(channel, event, result);
+    }),
+  );
+}
+
+/** Fires a synthetic event straight at one channel, bypassing its event filter. */
+export async function sendTest(channelId: number | 'webhook'): Promise<Result> {
+  const payload = {
+    user: 'Test',
+    title: 'Watcharr test notification',
+    server: { label: 'Watcharr' },
+  };
+  let channel: (Channel & { id: number | null; name: string }) | undefined;
+  if (channelId === 'webhook') {
+    const { webhookUrl } = await getSettings();
+    if (!webhookUrl) return { ok: false, error: 'No webhook URL configured' };
+    channel = { type: 'webhook', config: { url: webhookUrl }, id: null, name: 'Generic webhook' };
+  } else {
+    const [row] = await db.select().from(notificationChannels).where(eq(notificationChannels.id, channelId));
+    if (!row) return { ok: false, error: 'Channel not found' };
+    channel = { type: row.type, config: decryptConfig(row.config), id: row.id, name: row.name };
+  }
+
+  const result = await send(channel, 'playback.start', payload);
+  await logDelivery(channel, 'playback.start', result);
+  return result;
+}
+
+export interface LogEntry {
+  id: number;
+  channelType: string;
+  channelName: string;
+  event: string;
+  success: boolean;
+  error: string | null;
+  createdAt: Date;
+}
+
+export async function listNotificationLog(limit = 100): Promise<LogEntry[]> {
+  return db.select().from(notificationLog).orderBy(desc(notificationLog.createdAt)).limit(limit);
+}
+
+/**
+ * Fire and forget. The sync runs inside a page render, so awaiting delivery would put a
+ * slow or hanging endpoint straight into the user's page load time.
+ */
+export function notify(event: NotificationEvent, payload: Record<string, unknown>) {
+  void dispatch(event, payload).catch(() => {});
+}
+
+// Channel config (bot tokens, webhook URLs, SMTP credentials) is encrypted as one blob,
+// the same way media server tokens are — see server/crypto.ts. A JSON column would leave
+// it sitting in the database in plain text.
+function decryptConfig(stored: string): Record<string, string> {
+  if (!stored) return {};
+  try {
+    return JSON.parse(decryptSecret(stored));
+  } catch {
+    return {};
+  }
+}
+
+/** What the admin UI is allowed to see: which fields are set, never their values. */
+export interface ChannelSummary {
+  id: number;
+  type: string;
+  name: string;
+  configuredFields: string[];
+  events: string[];
+  enabled: boolean;
+  createdAt: Date;
+}
+
+export async function listChannels(): Promise<ChannelSummary[]> {
+  const rows = await db.select().from(notificationChannels).orderBy(notificationChannels.id);
+  return rows.map((row) => {
+    const config = decryptConfig(row.config);
+    return {
+      id: row.id,
+      type: row.type,
+      name: row.name,
+      configuredFields: Object.keys(config).filter((k) => config[k]),
+      events: row.events,
+      enabled: row.enabled,
+      createdAt: row.createdAt,
+    };
+  });
+}
+
+export async function createChannel(input: {
+  type: string;
+  name: string;
+  config: Record<string, string>;
+  events: string[];
+}): Promise<{ id: number }> {
+  const [row] = await db
+    .insert(notificationChannels)
+    .values({ ...input, config: encryptSecret(JSON.stringify(input.config)) })
+    .returning({ id: notificationChannels.id });
+  return row;
+}
+
+/**
+ * Config is merged rather than replaced: the edit form only submits fields the admin
+ * actually typed into (blank means "leave unchanged"), same convention as server tokens.
+ */
+export async function updateChannel(
+  id: number,
+  input: Partial<{ name: string; config: Record<string, string>; events: string[]; enabled: boolean }>,
+): Promise<void> {
+  const patch: Partial<typeof notificationChannels.$inferInsert> = {};
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.events !== undefined) patch.events = input.events;
+  if (input.enabled !== undefined) patch.enabled = input.enabled;
+  if (input.config) {
+    const [current] = await db
+      .select({ config: notificationChannels.config })
+      .from(notificationChannels)
+      .where(eq(notificationChannels.id, id));
+    const merged = { ...(current ? decryptConfig(current.config) : {}), ...input.config };
+    patch.config = encryptSecret(JSON.stringify(merged));
+  }
+  if (Object.keys(patch).length) {
+    await db.update(notificationChannels).set(patch).where(eq(notificationChannels.id, id));
+  }
+}
+
+export async function deleteChannel(id: number): Promise<void> {
+  await db.delete(notificationChannels).where(eq(notificationChannels.id, id));
+}

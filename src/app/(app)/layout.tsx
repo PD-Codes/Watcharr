@@ -2,10 +2,10 @@ import { redirect } from 'next/navigation';
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { playbackSessions } from '@/db/schema';
-import { getConfig } from '@/server/config';
+import { getSettings, isConfigured } from '@/server/config';
 import { isEnabled } from '@/server/features';
-import { liveSessionFilter, syncActivity } from '@/server/sync';
-import { getSession } from '@/server/session';
+import { liveSessionFilter, reportSyncError, syncActivity } from '@/server/sync';
+import { getSession, isAdmin } from '@/server/session';
 import { t } from '@/i18n';
 import NavLink from './NavLink';
 import SignOutButton from './SignOutButton';
@@ -19,16 +19,16 @@ import CommandPalette, { SearchTrigger } from '@/components/CommandPalette';
 export const dynamic = 'force-dynamic';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const config = await getConfig();
-  if (!config) redirect('/setup');
+  if (!(await isConfigured())) redirect('/setup');
   const session = await getSession();
   if (!session) redirect('/login');
 
-  const suggestionsEnabled = isEnabled(config.features, 'suggestions');
-  const serverStatsEnabled = isEnabled(config.features, 'serverWideStats');
+  const settings = await getSettings();
+  const suggestionsEnabled = isEnabled(settings.features, 'suggestions');
+  const serverStatsEnabled = isEnabled(settings.features, 'serverWideStats');
 
   // Polling here rather than per page keeps the bulb honest on every route.
-  await syncActivity().catch(() => {});
+  await syncActivity().catch(reportSyncError('activity sync'));
 
   // Drives the bulb in the wordmark: lit while anything is playing on the server.
   const [live] = await db
@@ -38,7 +38,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const liveCount = Number(live?.count ?? 0);
 
   const nav = userNav(suggestionsEnabled);
-  const adminItems = session.user.isAdmin ? adminNav(serverStatsEnabled) : [];
+  const adminItems = isAdmin(session.user)
+    ? adminNav(serverStatsEnabled, session.user.globalAdmin)
+    : [];
 
   return (
     <div className="shell">

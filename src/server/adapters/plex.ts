@@ -3,6 +3,7 @@ import type {
   AuthResult,
   HistoryEntry,
   LibraryItem,
+  LibrarySection,
   PlayMethod,
   LoginCredentials,
   MediaServerAdapter,
@@ -29,13 +30,14 @@ type PlexMeta = {
   year?: number;
   duration?: number;
   viewedAt?: number;
+  addedAt?: number; // seconds since the epoch, like every other Plex timestamp
   viewOffset?: number;
   thumb?: string;
   accountID?: number;
   Genre?: { tag: string }[];
   User?: { id: string; title: string };
-  Player?: { state?: string; title?: string; product?: string };
-  Session?: { bandwidth?: number };
+  Player?: { state?: string; title?: string; product?: string; address?: string; local?: boolean };
+  Session?: { id?: string; bandwidth?: number };
   Media?: {
     container?: string;
     videoCodec?: string;
@@ -57,7 +59,16 @@ type PlexMeta = {
   };
 };
 
-type PlexContainer = { MediaContainer: { Metadata?: PlexMeta[]; myPlexUsername?: string; friendlyName?: string; version?: string } };
+type PlexContainer = {
+  MediaContainer: {
+    Metadata?: PlexMeta[];
+    totalSize?: number;
+    size?: number;
+    myPlexUsername?: string;
+    friendlyName?: string;
+    version?: string;
+  };
+};
 
 export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
   readonly type: ServerType = 'plex';
@@ -198,8 +209,20 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
         width: transcode?.width ?? media?.width,
         height: transcode?.height ?? media?.height,
         transcodeReason: transcode?.transcodeReason,
+        terminateKey: m.Session?.id,
+        remoteAddress: m.Player?.address,
       };
     });
+  }
+
+  /**
+   * Plex terminates by its own session id, which is unrelated to the sessionKey this
+   * adapter reports — the latter has to stay stable across polls for the stored row.
+   */
+  async terminateSession(terminateKey: string, reason?: string): Promise<void> {
+    const params = new URLSearchParams({ sessionId: terminateKey });
+    if (reason) params.set('reason', reason);
+    await this.server<void>(`/status/sessions/terminate?${params}`);
   }
 
   async getLibrary(): Promise<LibraryItem[]> {
@@ -216,7 +239,7 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     );
     // ponytail: Plex omits genres in section listings; scoring falls back to year/type.
     // Fetch /library/metadata/{key} per item if genre-accurate suggestions matter.
-    return pages.flatMap((page) =>
+    return pages.flatMap((page, index) =>
       (page.MediaContainer.Metadata ?? []).map((m) => ({
         itemId: m.ratingKey,
         title: m.title,
@@ -224,8 +247,50 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
         year: m.year,
         genres: (m.Genre ?? []).map((g) => g.tag),
         posterUrl: this.posterUrl(m.ratingKey),
+        // The pages come back in the order the sections were requested in.
+        sectionId: wanted[index].key,
       })),
     );
+  }
+
+  async getLibraries(): Promise<LibrarySection[]> {
+    const sections = await this.server<{
+      MediaContainer: { Directory?: { key: string; title: string; type: string }[] };
+    }>('/library/sections');
+    const wanted = (sections.MediaContainer.Directory ?? []).filter(
+      (d) => d.type === 'movie' || d.type === 'show',
+    );
+
+    // Container-Size=0 returns no items, only the paging header with the total.
+    return Promise.all(
+      wanted.map(async (d) => {
+        const page = await this.server<PlexContainer>(
+          `/library/sections/${d.key}/all?X-Plex-Container-Size=0`,
+        ).catch(() => ({ MediaContainer: {} }) as PlexContainer);
+        return {
+          id: d.key,
+          name: d.title,
+          mediaType: d.type,
+          itemCount: page.MediaContainer.totalSize ?? page.MediaContainer.size ?? 0,
+        };
+      }),
+    );
+  }
+
+  async getRecentlyAdded(limit: number, sectionId?: string): Promise<LibraryItem[]> {
+    const path = sectionId
+      ? `/library/sections/${encodeURIComponent(sectionId)}/recentlyAdded`
+      : '/library/recentlyAdded';
+    const page = await this.server<PlexContainer>(`${path}?X-Plex-Container-Size=${limit}`);
+    return (page.MediaContainer.Metadata ?? []).map((m) => ({
+      itemId: m.ratingKey,
+      title: m.grandparentTitle ?? m.title,
+      mediaType: m.type ?? 'unknown',
+      year: m.year,
+      genres: (m.Genre ?? []).map((g) => g.tag),
+      posterUrl: this.posterUrl(m.ratingKey),
+      addedAt: m.addedAt ? new Date(m.addedAt * 1000) : undefined,
+    }));
   }
 
   posterUrl(itemId: string): string {

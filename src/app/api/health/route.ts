@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { sql } from 'drizzle-orm';
-import { getAdapter, getConfig } from '@/server/config';
+import { createAdapter, type ServerType } from '@/server/adapters';
+import { listServers } from '@/server/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,16 +16,21 @@ export async function GET() {
     database = false;
   }
 
-  const config = await getConfig().catch(() => null);
-  const mediaServer = config
-    ? await getAdapter()
-        .then((a) => a.ping())
-        .catch(() => ({ ok: false }))
-    : { ok: false };
+  const servers = await listServers().catch(() => []);
+  // One entry per server; the overall state is the worst of them.
+  const mediaServers = await Promise.all(
+    servers.map(async (server) => ({
+      slug: server.slug,
+      label: server.label,
+      ...(await createAdapter(server.serverType as ServerType, server.serverUrl, server.serverToken)
+        .ping()
+        .catch(() => ({ ok: false }))),
+    })),
+  );
 
-  const ok = database && (!config || mediaServer.ok);
+  const ok = database && mediaServers.every((s) => s.ok);
   return NextResponse.json(
-    { ok, database, configured: Boolean(config), mediaServer },
+    { ok, database, configured: servers.length > 0, mediaServers },
     { status: ok ? 200 : 503 },
   );
 }

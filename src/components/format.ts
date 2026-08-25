@@ -34,6 +34,13 @@ export function percent(part: number, total: number): number {
   return total > 0 ? Math.round((part / total) * 100) : 0;
 }
 
+/**
+ * Artwork always goes through the proxy, so a media server token never reaches the
+ * browser. The slug picks the server; an item from a different one simply has no poster.
+ */
+export const artUrl = (serverSlug: string, itemId: string) =>
+  `/api/art/${serverSlug}/${encodeURIComponent(itemId)}`;
+
 /** Film style timecode: HH:MM:SS. Used wherever a playback position is shown. */
 export function formatTimecode(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));

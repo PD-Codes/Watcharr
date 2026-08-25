@@ -7,7 +7,7 @@ import AutoRefresh from '@/components/AutoRefresh';
 import { BarChart, StatCard } from '@/components/Charts';
 import { formatDate, formatDuration } from '@/components/format';
 import { getStreak, getTopTitles, getTotals } from '@/server/stats';
-import { liveSessionFilter, syncHistory } from '@/server/sync';
+import { liveSessionFilter, reportSyncError, syncHistory } from '@/server/sync';
 import { requireUser } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export default async function OverviewPage() {
   const session = await requireUser();
   // syncActivity already ran in the layout.
-  await syncHistory(session.user.id, session.user.serverUserId, session.serverToken).catch(() => {});
+  await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
 
   const scope = { userId: session.user.id };
   const [mine, everyone, totals, streak, titles, recent] = await Promise.all([
@@ -65,7 +65,11 @@ export default async function OverviewPage() {
           : `You have watched ${formatDuration(Number(allTime?.total ?? 0))} on this server.`}
       </p>
 
-      <Beam session={mine[0] ?? null} emptyLabel="Nothing is playing. Start something on your server." />
+      <Beam
+        session={mine[0] ?? null}
+        serverSlug={session.server.slug}
+        emptyLabel="Nothing is playing. Start something on your server."
+      />
 
       <div className="grid cols-4 section">
         <StatCard

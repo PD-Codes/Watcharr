@@ -1,7 +1,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { watchlist } from '@/db/schema';
-import { reconcileWatchlistStatus, syncWatchlist } from '@/server/sync';
+import { reconcileWatchlistStatus, reportSyncError, syncWatchlist } from '@/server/sync';
 import { requireUser } from '@/server/session';
 import WatchlistClient from './WatchlistClient';
 
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function WatchlistPage() {
   const session = await requireUser();
-  await syncWatchlist(session.user.id, session.serverToken).catch(() => {});
+  await syncWatchlist(session.user, session.serverToken).catch(reportSyncError('watchlist sync'));
   await reconcileWatchlistStatus(session.user.id);
 
   const items = await db

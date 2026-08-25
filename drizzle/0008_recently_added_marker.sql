@@ -1,0 +1,1 @@
+ALTER TABLE `app_config` ADD `last_added_item_id` text;

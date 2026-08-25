@@ -15,15 +15,25 @@ export interface LabelledValue {
   value: number;
 }
 
-export type Scope = { userId: number } | { userId: null };
+/**
+ * One user, or every user — optionally narrowed to a single media server. This and
+ * scoped() in playback.ts are the only two places that translate a scope into SQL, which
+ * is what keeps the server dimension out of every individual aggregate.
+ */
+export type Scope = { userId: number } | { userId: null; serverId?: number };
 
 // Timestamps are stored as epoch milliseconds, so every date function converts first.
 const localDay = (column: string) => sql.raw(`date(${column} / 1000, 'unixepoch', 'localtime')`);
 
-/** Restricts an aggregate to one user, or to the whole server when userId is null. */
-function scopeFilter(scope: Scope, alias = ''): SQL {
+/** Restricts an aggregate to one user, one server, or nothing at all. */
+export function scopeFilter(scope: Scope, alias = ''): SQL {
   const column = sql.raw(`${alias}user_id`);
-  return scope.userId === null ? sql`1 = 1` : sql`${column} = ${scope.userId}`;
+  if (scope.userId !== null) return sql`${column} = ${scope.userId}`;
+  // Rows carry no server_id of their own; the server is reached through the user.
+  if (scope.serverId !== undefined) {
+    return sql`${column} IN (SELECT id FROM users WHERE server_id = ${scope.serverId})`;
+  }
+  return sql`1 = 1`;
 }
 
 function sinceFilter(days?: number, alias = ''): SQL {
@@ -75,17 +85,32 @@ export async function getDailyActivity(scope: Scope, days = 30): Promise<Labelle
   return rows.map((r) => ({ label: r.day, value: Number(r.minutes) }));
 }
 
-export async function getTopGenres(scope: Scope, limit = 8): Promise<LabelledValue[]> {
+/**
+ * Ranking metric shared by the top lists. "How often" and "how long" produce very
+ * different leaderboards — a daily sitcom wins on plays, a film trilogy wins on time.
+ */
+export type RankBy = 'count' | 'time';
+
+/** Plays, or watch time in whole minutes. */
+function metric(by: RankBy): SQL {
+  return by === 'time' ? sql`sum(duration_ms) / 60000` : sql`count(*)`;
+}
+
+export async function getTopGenres(
+  scope: Scope,
+  limit = 8,
+  by: RankBy = 'count',
+): Promise<LabelledValue[]> {
   // genres is a JSON array column; json_each expands it into one row per genre.
-  const rows = await db.all<{ genre: string; plays: number }>(sql`
-    SELECT genre.value AS genre, count(*) AS plays
+  const rows = await db.all<{ genre: string; total: number }>(sql`
+    SELECT genre.value AS genre, ${metric(by)} AS total
     FROM watch_history, json_each(watch_history.genres) AS genre
     WHERE ${scopeFilter(scope, 'watch_history.')}
     GROUP BY genre.value
-    ORDER BY plays DESC, genre ASC
+    ORDER BY total DESC, genre ASC
     LIMIT ${limit}
   `);
-  return rows.map((r) => ({ label: r.genre, value: Number(r.plays) }));
+  return rows.map((r) => ({ label: r.genre, value: Number(r.total) }));
 }
 
 /**
@@ -93,29 +118,25 @@ export async function getTopGenres(scope: Scope, limit = 8): Promise<LabelledVal
  * resolves a GROUP BY name to the real column first, which would group by episode title
  * and list the same show once per episode.
  */
-export async function getTopTitles(scope: Scope, limit = 8): Promise<LabelledValue[]> {
-  const rows = await db.all<{ label: string; plays: number }>(sql`
-    SELECT coalesce(grandparent_title, title) AS label, count(*) AS plays
+export async function getTopTitles(
+  scope: Scope,
+  limit = 8,
+  by: RankBy = 'count',
+): Promise<LabelledValue[]> {
+  const rows = await db.all<{ label: string; total: number }>(sql`
+    SELECT coalesce(grandparent_title, title) AS label, ${metric(by)} AS total
     FROM watch_history
     WHERE ${scopeFilter(scope)}
     GROUP BY label
-    ORDER BY plays DESC, label ASC
+    ORDER BY total DESC, label ASC
     LIMIT ${limit}
   `);
-  return rows.map((r) => ({ label: r.label, value: Number(r.plays) }));
+  return rows.map((r) => ({ label: r.label, value: Number(r.total) }));
 }
 
 /** Same grouping as getTopTitles, but ranked by watch time instead of play count. */
-export async function getTopTitlesByTime(scope: Scope, limit = 8): Promise<LabelledValue[]> {
-  const rows = await db.all<{ label: string; minutes: number }>(sql`
-    SELECT coalesce(grandparent_title, title) AS label, sum(duration_ms) / 60000 AS minutes
-    FROM watch_history
-    WHERE ${scopeFilter(scope)}
-    GROUP BY label
-    ORDER BY minutes DESC, label ASC
-    LIMIT ${limit}
-  `);
-  return rows.map((r) => ({ label: r.label, value: Number(r.minutes) }));
+export function getTopTitlesByTime(scope: Scope, limit = 8): Promise<LabelledValue[]> {
+  return getTopTitles(scope, limit, 'time');
 }
 
 /** Watch time per weekday, Monday first. */
@@ -133,17 +154,21 @@ export async function getWeekdayActivity(scope: Scope): Promise<LabelledValue[]>
   return names.map((label, index) => ({ label, value: found.get((index + 1) % 7) ?? 0 }));
 }
 
-/** Devices the user played on, ranked by watch time. */
-export async function getTopDevices(scope: Scope, limit = 8): Promise<LabelledValue[]> {
-  const rows = await db.all<{ label: string; minutes: number }>(sql`
-    SELECT coalesce(device_name, 'Unknown') AS label, sum(duration_ms) / 60000 AS minutes
+/** Devices the user played on. */
+export async function getTopDevices(
+  scope: Scope,
+  limit = 8,
+  by: RankBy = 'time',
+): Promise<LabelledValue[]> {
+  const rows = await db.all<{ label: string; total: number }>(sql`
+    SELECT coalesce(device_name, 'Unknown') AS label, ${metric(by)} AS total
     FROM watch_history
     WHERE ${scopeFilter(scope)}
     GROUP BY label
-    ORDER BY minutes DESC, label ASC
+    ORDER BY total DESC, label ASC
     LIMIT ${limit}
   `);
-  return rows.map((r) => ({ label: r.label, value: Number(r.minutes) }));
+  return rows.map((r) => ({ label: r.label, value: Number(r.total) }));
 }
 
 export interface Highlights {
@@ -239,11 +264,16 @@ export async function getStreak(scope: Scope): Promise<number> {
   return streak;
 }
 
-export async function getUserLeaderboard(limit = 10): Promise<LabelledValue[]> {
+export async function getUserLeaderboard(
+  serverId?: number,
+  limit = 10,
+): Promise<LabelledValue[]> {
+  const onServer = serverId === undefined ? sql`1 = 1` : sql`u.server_id = ${serverId}`;
   const rows = await db.all<{ username: string; minutes: number }>(sql`
     SELECT u.username AS username, coalesce(sum(h.duration_ms), 0) / 60000 AS minutes
     FROM users u
     LEFT JOIN watch_history h ON h.user_id = u.id
+    WHERE ${onServer}
     GROUP BY u.id
     ORDER BY minutes DESC
     LIMIT ${limit}

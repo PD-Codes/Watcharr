@@ -41,6 +41,13 @@ export interface PlaybackSession {
   height?: number;
   /** Why the server had to transcode, as reported by the media server. */
   transcodeReason?: string;
+  /** Address the stream is delivered to, as reported by the media server. */
+  remoteAddress?: string;
+  /**
+   * Native handle for terminating this stream. Not the same value as sessionKey on Plex,
+   * which is why it is carried separately instead of being derived from the stored row.
+   */
+  terminateKey?: string;
   /**
    * Last time the client checked in about this playback, if the server reports it.
    * Media servers keep sessions around after a client disappears, so this is the only
@@ -68,6 +75,19 @@ export interface LibraryItem {
   year?: number;
   genres: string[];
   posterUrl?: string;
+  /** When the server first saw the item. Only filled in by the recently-added queries. */
+  addedAt?: Date;
+  /** Which library the item belongs to, where the backend reports it. */
+  sectionId?: string;
+}
+
+/** A library / section as the media server groups it. */
+export interface LibrarySection {
+  id: string;
+  name: string;
+  /** 'movie' | 'show' | whatever the backend calls it. */
+  mediaType: string;
+  itemCount: number;
 }
 
 export interface WatchlistEntry {
@@ -110,11 +130,30 @@ export interface MediaServerAdapter {
   /** Movies and series in the server's libraries. Used for search and suggestions. */
   getLibrary(): Promise<LibraryItem[]>;
 
+  /** The libraries themselves, with how many items each holds. */
+  getLibraries(): Promise<LibrarySection[]>;
+
+  /**
+   * Newest additions, newest first. Without a section id this spans every library, which
+   * is what the media.added notification watches; the newsletter passes one so an admin
+   * can leave a library out of it.
+   */
+  getRecentlyAdded(limit: number, sectionId?: string): Promise<LibraryItem[]>;
+
   /** Artwork URL for an item, proxied through the app so tokens stay server-side. */
   posterUrl(itemId: string): string;
 
   /** Server-side watchlist, where the backend has one. */
   getWatchlist?(token: string): Promise<WatchlistEntry[]>;
+
+  /** Stops a running stream. Takes the terminateKey of a live session, not a stored row. */
+  terminateSession?(terminateKey: string, reason?: string): Promise<void>;
+}
+
+export function supportsTerminate(
+  a: MediaServerAdapter,
+): a is MediaServerAdapter & Required<Pick<MediaServerAdapter, 'terminateSession'>> {
+  return typeof a.terminateSession === 'function';
 }
 
 /** Plex uses a PIN-based OAuth flow instead of username/password. */

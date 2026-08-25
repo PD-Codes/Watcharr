@@ -22,6 +22,76 @@
       "when": 1787488419882,
       "tag": "0002_playback_progress_at",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787643549202,
+      "tag": "0003_slim_mystique",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787644938897,
+      "tag": "0004_multi_server",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787644965372,
+      "tag": "0005_drop_legacy_config_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787647092752,
+      "tag": "0006_watched_threshold",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1787647182688,
+      "tag": "0007_webhook",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787647368000,
+      "tag": "0008_recently_added_marker",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787647442161,
+      "tag": "0009_geoip",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1787669566199,
+      "tag": "0010_fresh_killraven",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1787671702358,
+      "tag": "0011_robust_mauler",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1787680228856,
+      "tag": "0012_lyrical_sunfire",
+      "breakpoints": true
     }
   ]
 }

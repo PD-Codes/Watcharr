@@ -1,0 +1,1 @@
+ALTER TABLE `app_settings` ADD `watched_threshold` integer DEFAULT 85 NOT NULL;

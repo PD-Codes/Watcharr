@@ -41,6 +41,20 @@ console.log('ok - migrations are idempotent');
       'INSERT INTO playback_sessions (session_key, item_id, title, media_type, state, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)',
     )
     .run('legacy', 'lib-1', 'Legacy Session', 'movie', 'ended', seenAt);
+
+  // The multi-server migration has to find an owner for the global admin role and move
+  // the deployment settings out of app_config, so both need rows to work with.
+  sqlite
+    .prepare(
+      'INSERT INTO app_config (id, server_type, server_url, server_token, server_name, tmdb_api_key, features, created_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .run('jellyfin', 'http://server', 'token', 'Living Room Server', 'tmdb-key', '{"suggestions":false}', Date.now());
+  const addUser = sqlite.prepare(
+    'INSERT INTO users (server_user_id, username, is_admin, created_at) VALUES (?, ?, ?, ?)',
+  );
+  addUser.run('srv-viewer', 'viewer', 0, Date.now());
+  addUser.run('srv-admin', 'admin', 1, Date.now());
+  addUser.run('srv-admin-2', 'admin2', 1, Date.now());
   sqlite.close();
 
   execFileSync('node', ['scripts/migrate.mjs'], {
@@ -49,10 +63,39 @@ console.log('ok - migrations are idempotent');
   });
 
   const check = new Database(upgradePath, { readonly: true });
-  const row = check.prepare('SELECT progress_at FROM playback_sessions WHERE session_key = ?').get('legacy') as {
-    progress_at: number;
-  };
+  // Session keys gained a server prefix, because two servers can hand out the same one.
+  const row = check
+    .prepare('SELECT progress_at FROM playback_sessions WHERE session_key = ?')
+    .get('1:legacy') as { progress_at: number };
   assert.equal(row.progress_at, seenAt, 'existing rows are backfilled from last_seen_at');
+
+  const server = check.prepare('SELECT label, slug FROM app_config WHERE id = 1').get() as {
+    label: string;
+    slug: string;
+  };
+  assert.equal(server.label, 'Living Room Server', 'the label falls back to the reported name');
+  assert.equal(server.slug, 'server-1');
+
+  const settings = check.prepare('SELECT tmdb_api_key, features FROM app_settings WHERE id = 1').get() as {
+    tmdb_api_key: string;
+    features: string;
+  };
+  assert.equal(settings.tmdb_api_key, 'tmdb-key', 'the TMDB key moves to app_settings');
+  assert.equal(settings.features, '{"suggestions":false}', 'feature toggles move along with it');
+
+  // Exactly one global admin, and it has to be an admin — not simply the first row.
+  const admins = check
+    .prepare('SELECT username FROM users WHERE global_admin = 1')
+    .all() as { username: string }[];
+  assert.deepEqual(
+    admins.map((u) => u.username),
+    ['admin'],
+    'the oldest media server admin becomes the global admin',
+  );
+  const serverIds = check.prepare('SELECT DISTINCT server_id FROM users').all() as {
+    server_id: number;
+  }[];
+  assert.deepEqual(serverIds, [{ server_id: 1 }], 'existing users belong to the first server');
   check.close();
   rmSync(upgradeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   console.log('ok - migrations apply to a database that already has rows');
@@ -208,6 +251,65 @@ async function main() {
 
   assert.equal(await getTrend(scope, 30), null, 'no previous window means no trend');
   console.log('ok - getTrend');
+
+  // Concurrency is reconstructed from session intervals, so two sessions that overlap in
+  // time have to land in the same hourly bucket even though neither is running any more.
+  {
+    const { playbackSessions: sessions } = await import('../db/schema');
+    const { getConcurrencyOverTime } = await import('../server/playback');
+    const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+    await db.insert(sessions).values([
+      {
+        sessionKey: 'past-a',
+        userId: alice.id,
+        itemId: 'a',
+        title: 'A',
+        mediaType: 'movie',
+        state: 'ended',
+        bitrateKbps: 3000,
+        progressMs: 60 * 60_000,
+        durationMs: 90 * 60_000,
+        startedAt: minutesAgo(90),
+        lastSeenAt: minutesAgo(30),
+        progressAt: minutesAgo(30),
+      },
+      {
+        sessionKey: 'past-b',
+        userId: alice.id,
+        itemId: 'b',
+        title: 'B',
+        mediaType: 'movie',
+        state: 'ended',
+        bitrateKbps: 5000,
+        progressMs: 40 * 60_000,
+        durationMs: 40 * 60_000,
+        startedAt: minutesAgo(80),
+        lastSeenAt: minutesAgo(40),
+        progressAt: minutesAgo(40),
+      },
+    ]);
+
+    // The watched threshold is applied on read, so the same rows must reclassify when it
+    // moves. past-a finished 60 of 90 minutes (66%), past-b 40 of 40 (100%).
+    const { getCompletionSplit } = await import('../server/playback');
+    const strict = await getCompletionSplit(85);
+    assert.deepEqual(
+      { finished: strict.finished, abandoned: strict.abandoned, rate: strict.rate },
+      { finished: 1, abandoned: 1, rate: 50 },
+    );
+    const lenient = await getCompletionSplit(60);
+    assert.equal(lenient.finished, 2, 'a lower threshold reclassifies the same rows');
+    assert.equal(lenient.rate, 100);
+    console.log('ok - getCompletionSplit follows the threshold');
+
+    const series = await getConcurrencyOverTime(1);
+    assert.ok(series.length >= 24, 'a day of hourly buckets');
+    assert.equal(new Set(series.map((p) => p.label)).size, series.length, 'buckets are distinct');
+    const busiest = series.reduce((best, p) => (p.streams > best.streams ? p : best), series[0]);
+    assert.equal(busiest.streams, 2, 'both overlapping sessions fall into one bucket');
+    assert.equal(busiest.bandwidthKbps, 8000, 'bandwidth is summed per bucket');
+    console.log('ok - getConcurrencyOverTime');
+  }
 
   // Liveness: a session frozen for minutes must not count as playing.
   const { playbackSessions } = await import('../db/schema');

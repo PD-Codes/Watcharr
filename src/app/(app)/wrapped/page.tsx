@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { BarChart, ColumnChart, DonutChart, Heatmap, StatCard } from '@/components/Charts';
 import { formatDate, formatDuration, formatMinutes } from '@/components/format';
 import { getWrapped, getWrappedYears } from '@/server/wrapped';
-import { syncHistory } from '@/server/sync';
+import { reportSyncError, syncHistory } from '@/server/sync';
 import { requireUser } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ export default async function WrappedPage({
   searchParams: Promise<{ year?: string }>;
 }) {
   const session = await requireUser();
-  await syncHistory(session.user.id, session.user.serverUserId, session.serverToken).catch(() => {});
+  await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
 
   const years = await getWrappedYears(session.user.id);
   const requested = Number((await searchParams).year);

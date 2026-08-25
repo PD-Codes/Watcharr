@@ -25,10 +25,7 @@ jobs:
           node-version: '22'
           cache: npm
 
-      # --ignore-scripts for the same reason as the Dockerfile: better-sqlite3 ships
-      # prebuilt binaries but also a binding.gyp, and npm recompiles it for nothing.
-      # It is the only package here with an install script.
-      - run: npm ci --ignore-scripts
+      - run: npm ci
 
       - run: npm run typecheck
 

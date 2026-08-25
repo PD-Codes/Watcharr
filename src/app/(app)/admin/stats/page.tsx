@@ -1,5 +1,6 @@
 import { AreaChart, BarChart, ColumnChart, DonutChart, StatCard, WeekHourGrid } from '@/components/Charts';
 import { formatDuration, formatMinutes } from '@/components/format';
+import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { users } from '@/db/schema';
 import {
@@ -9,53 +10,77 @@ import {
   getTopDevices,
   getTopGenres,
   getTopTitles,
-  getTopTitlesByTime,
   getTotals,
   getRecords,
   getTrend,
   getUserLeaderboard,
   getWeekdayActivity,
   getWeekHourGrid,
+  type RankBy,
 } from '@/server/stats';
+import {
+  getClientSessions,
+  getClientWatchtime,
+  getCompletionSplit,
+  getConcurrencyPeak,
+} from '@/server/playback';
+import RankToggle from '@/components/RankToggle';
 import { notFound } from 'next/navigation';
-import { getConfig } from '@/server/config';
+import { getSettings } from '@/server/config';
 import { isEnabled } from '@/server/features';
 import { getLibrary } from '@/server/library';
-import { requireAdmin } from '@/server/session';
+import { adminScope, requireAdmin } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminStatsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string }>;
+  searchParams: Promise<{ days?: string; by?: string }>;
 }) {
-  await requireAdmin();
-  const config = await getConfig();
-  if (!isEnabled(config?.features ?? null, 'serverWideStats')) notFound();
-  const days = Number((await searchParams).days ?? 30);
-  const scope = { userId: null as null };
+  const session = await requireAdmin();
+  const settings = await getSettings();
+  if (!isEnabled(settings.features, 'serverWideStats')) notFound();
+  const params = await searchParams;
+  const days = Number(params.days ?? 30);
+  const by: RankBy = params.by === 'time' ? 'time' : 'count';
+  const rank = by === 'time' ? formatMinutes : (value: number) => `${value} plays`;
+  const scope = adminScope(session.user);
+  // A server admin sees their own server only; a global admin sees everything.
+  const onlyServer = session.user.globalAdmin ? undefined : session.user.serverId;
 
-  const [totals, daily, weekdays, genres, titles, titlesByTime, devices, hours, leaderboard, highlights, library, userRows] =
+  const [totals, daily, weekdays, genres, titles, devices, hours, leaderboard, highlights, library, userRows] =
     await Promise.all([
       getTotals(scope, days),
       getDailyActivity(scope, days),
       getWeekdayActivity(scope),
-      getTopGenres(scope),
-      getTopTitles(scope),
-      getTopTitlesByTime(scope),
-      getTopDevices(scope),
+      getTopGenres(scope, 8, by),
+      getTopTitles(scope, 8, by),
+      getTopDevices(scope, 8, by),
       getPeakHours(scope),
-      getUserLeaderboard(),
+      getUserLeaderboard(onlyServer),
       getHighlights(scope),
-      getLibrary().catch(() => []),
-      db.select({ id: users.id, username: users.username }).from(users),
+      getLibrary(session.user.serverId).catch(() => []),
+      onlyServer === undefined
+        ? db.select({ id: users.id, username: users.username }).from(users)
+        : db
+            .select({ id: users.id, username: users.username })
+            .from(users)
+            .where(eq(users.serverId, onlyServer)),
     ]);
 
-  const [trend, weekGrid, records] = await Promise.all([
+  // Clients are recorded per session, so they come from playback_sessions rather than
+  // from the history — same toggle, different table.
+  const completion = await getCompletionSplit(settings.watchedThreshold, days, scope);
+  const clients = await (by === 'time'
+    ? getClientWatchtime(days, scope)
+    : getClientSessions(days, scope));
+
+  const [trend, weekGrid, records, peak] = await Promise.all([
     getTrend(scope, days),
     getWeekHourGrid(scope),
     getRecords(scope),
+    getConcurrencyPeak(days, scope),
   ]);
 
   const userIdByName = new Map(userRows.map((user) => [user.username, user.id]));
@@ -70,6 +95,8 @@ export default async function AdminStatsPage({
       <p className="subtitle">Usage across all users.</p>
 
       <form className="filters">
+        {/* Keeps the ranking metric when only the period is submitted. */}
+        <input type="hidden" name="by" value={by} />
         <label>
           Period
           <select name="days" defaultValue={String(days)}>
@@ -129,6 +156,22 @@ export default async function AdminStatsPage({
           value={highlights.busiestDay ? formatMinutes(highlights.busiestDay.minutes) : '—'}
           hint={highlights.busiestDay?.day}
         />
+        <StatCard
+          label="Peak concurrent"
+          value={String(peak.streams)}
+          hint={
+            peak.streams
+              ? `${peak.transcodes} transcode · ${peak.directPlays} direct play`
+              : undefined
+          }
+          info="The most streams that ever overlapped in this period, and how they were being delivered at that moment."
+        />
+        <StatCard
+          label="Completion rate"
+          value={completion.rate === null ? '—' : `${completion.rate}%`}
+          hint={`${completion.finished} of ${completion.finished + completion.abandoned} sessions`}
+          info={`Streams that reached ${settings.watchedThreshold}% of the runtime. Recorded sessions only, so it starts from the day Watcharr was installed.`}
+        />
       </div>
 
       <section className="section">
@@ -145,21 +188,51 @@ export default async function AdminStatsPage({
         </div>
       </section>
 
-      <div className="grid cols-2 section">
+      <section className="section">
+        <h2>Watch time per user</h2>
+        <div className="card">
+          <BarChart
+            data={leaderboard}
+            format={formatMinutes}
+            hrefFor={(label) => `/admin/users/${userIdByName.get(label) ?? ''}`}
+          />
+        </div>
+      </section>
+
+      <div className="section toolbar">
+        <h2 style={{ margin: 0 }}>Top lists</h2>
+        <RankToggle base="/admin/stats" by={by} days={days} />
+      </div>
+
+      <div className="grid cols-2">
         <section>
-          <h2>Watch time per user</h2>
+          <h2>Titles</h2>
           <div className="card">
-            <BarChart
-              data={leaderboard}
-              format={formatMinutes}
-              hrefFor={(label) => `/admin/users/${userIdByName.get(label) ?? ''}`}
-            />
+            <BarChart data={titles} format={rank} hrefFor={titleHref} />
           </div>
         </section>
         <section>
-          <h2>Most played titles</h2>
+          <h2>Genres</h2>
           <div className="card">
-            <BarChart data={titles} format={(v) => `${v} plays`} hrefFor={titleHref} />
+            <BarChart data={genres} format={rank} />
+          </div>
+        </section>
+      </div>
+
+      <div className="grid cols-2 section">
+        <section>
+          <h2>Devices</h2>
+          <div className="card">
+            <BarChart data={devices} format={rank} />
+          </div>
+        </section>
+        <section>
+          <h2>Clients</h2>
+          <div className="card">
+            <BarChart
+              data={clients}
+              format={by === 'time' ? formatMinutes : (v) => `${v} sessions`}
+            />
           </div>
         </section>
       </div>
@@ -172,24 +245,9 @@ export default async function AdminStatsPage({
           </div>
         </section>
         <section>
-          <h2>Top genres</h2>
+          <h2>Genre share</h2>
           <div className="card">
-            <DonutChart data={genres.slice(0, 5)} format={(v) => `${v} plays`} />
-          </div>
-        </section>
-      </div>
-
-      <div className="grid cols-2 section">
-        <section>
-          <h2>Most watch time</h2>
-          <div className="card">
-            <BarChart data={titlesByTime} format={formatMinutes} hrefFor={titleHref} />
-          </div>
-        </section>
-        <section>
-          <h2>Devices</h2>
-          <div className="card">
-            <BarChart data={devices} format={formatMinutes} />
+            <DonutChart data={genres.slice(0, 5)} format={rank} />
           </div>
         </section>
       </div>

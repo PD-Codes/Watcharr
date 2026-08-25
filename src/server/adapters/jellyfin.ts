@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { apiFetch, joinUrl } from './http';
 import type {
   AuthResult,
   HistoryEntry,
   LibraryItem,
+  LibrarySection,
   PlayMethod,
   LoginCredentials,
   MediaServerAdapter,
@@ -12,8 +14,19 @@ import type {
 } from './types';
 
 const CLIENT = 'Watcharr';
-const DEVICE_ID = 'watcharr-server';
 const VERSION = '0.1.0';
+
+/**
+ * Jellyfin and Emby tie an access token to the pair (Client, DeviceId). A single shared
+ * device id therefore means every new login replaces the previous account's token: that
+ * user's Watcharr session keeps working — it is stored locally — while every background
+ * request on their behalf starts answering 401. One device per identity avoids it.
+ */
+const SERVER_DEVICE_ID = 'watcharr-server';
+
+function deviceIdFor(identity: string): string {
+  return `watcharr-${createHash('sha1').update(identity).digest('hex').slice(0, 16)}`;
+}
 
 type JfUser = {
   Id: string;
@@ -30,6 +43,7 @@ type JfItem = {
   ProductionYear?: number;
   Genres?: string[];
   RunTimeTicks?: number;
+  DateCreated?: string;
   UserData?: { LastPlayedDate?: string };
 };
 
@@ -47,6 +61,7 @@ type JfSession = {
   UserName: string;
   Client?: string;
   DeviceName?: string;
+  RemoteEndPoint?: string;
   NowPlayingItem?: JfItem & {
     RunTimeTicks?: number;
     Container?: string;
@@ -88,8 +103,8 @@ export class JellyfinAdapter implements MediaServerAdapter {
     private readonly adminToken: string,
   ) {}
 
-  private headers(token = this.adminToken): Record<string, string> {
-    const auth = `MediaBrowser Client="${CLIENT}", Device="${CLIENT}", DeviceId="${DEVICE_ID}", Version="${VERSION}", Token="${token}"`;
+  private headers(token = this.adminToken, device = SERVER_DEVICE_ID): Record<string, string> {
+    const auth = `MediaBrowser Client="${CLIENT}", Device="${CLIENT}", DeviceId="${device}", Version="${VERSION}", Token="${token}"`;
     return this.type === 'emby'
       ? { 'X-Emby-Authorization': auth, 'X-Emby-Token': token, 'Content-Type': 'application/json' }
       : { Authorization: auth, 'Content-Type': 'application/json' };
@@ -128,7 +143,9 @@ export class JellyfinAdapter implements MediaServerAdapter {
       this.url('/Users/AuthenticateByName'),
       {
         method: 'POST',
-        headers: this.headers(''),
+        // The device id is what the issued token gets bound to, so it has to be the
+        // account's own — not a constant every account shares.
+        headers: this.headers('', deviceIdFor(credentials.username)),
         body: JSON.stringify({ Username: credentials.username, Pw: credentials.password }),
       },
     );
@@ -187,6 +204,8 @@ export class JellyfinAdapter implements MediaServerAdapter {
           width: transcode?.Width ?? video?.Width,
           height: transcode?.Height ?? video?.Height,
           transcodeReason: transcode?.TranscodeReasons?.[0],
+          terminateKey: s.Id,
+          remoteAddress: s.RemoteEndPoint,
           lastCheckInAt: s.LastPlaybackCheckIn
             ? new Date(s.LastPlaybackCheckIn)
             : s.LastActivityDate
@@ -196,14 +215,102 @@ export class JellyfinAdapter implements MediaServerAdapter {
       });
   }
 
+  /**
+   * The message is sent first: after Playing/Stop the client usually tears the session
+   * down, and a message delivered to a gone session is never displayed.
+   */
+  async terminateSession(terminateKey: string, reason?: string): Promise<void> {
+    const headers = { ...this.headers(), 'Content-Type': 'application/json' };
+    if (reason) {
+      await apiFetch<void>(this.url(`/Sessions/${encodeURIComponent(terminateKey)}/Message`), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ Header: 'Playback stopped', Text: reason, TimeoutMs: 10_000 }),
+      }).catch(() => {});
+    }
+    await apiFetch<void>(this.url(`/Sessions/${encodeURIComponent(terminateKey)}/Playing/Stop`), {
+      method: 'POST',
+      headers,
+    });
+  }
+
   async getLibrary(): Promise<LibraryItem[]> {
+    // One request per library rather than one for everything: without ParentId the response
+    // carries no way back to the library an item came from, and the per-library statistics
+    // need exactly that. The requests run in parallel, so it costs latency, not time.
+    const sections = await this.getLibraries().catch(() => []);
+    const sources = sections.length ? sections.map((s) => s.id) : [undefined];
+
+    const pages = await Promise.all(
+      sources.map(async (sectionId) => {
+        const params = new URLSearchParams({
+          Recursive: 'true',
+          IncludeItemTypes: 'Movie,Series',
+          Fields: 'Genres,ProductionYear',
+          SortBy: 'SortName',
+          Limit: '5000',
+        });
+        if (sectionId) params.set('ParentId', sectionId);
+        const res = await apiFetch<{ Items: JfItem[] }>(this.url(`/Items?${params}`), {
+          headers: this.headers(),
+        }).catch(() => ({ Items: [] as JfItem[] }));
+        return res.Items.map((i) => ({
+          itemId: i.Id,
+          title: i.Name,
+          mediaType: (i.Type ?? 'unknown').toLowerCase(),
+          year: i.ProductionYear,
+          genres: i.Genres ?? [],
+          posterUrl: this.posterUrl(i.Id),
+          sectionId,
+        }));
+      }),
+    );
+    return pages.flat();
+  }
+
+  async getLibraries(): Promise<LibrarySection[]> {
+    const folders = await apiFetch<{ Name: string; ItemId: string; CollectionType?: string }[]>(
+      this.url('/Library/VirtualFolders'),
+      { headers: this.headers() },
+    );
+    const wanted = folders.filter(
+      (f) => f.CollectionType === 'movies' || f.CollectionType === 'tvshows',
+    );
+
+    // The count comes from a separate request per library: Jellyfin reports it in the
+    // paging metadata, so Limit=0 returns the total without any items.
+    return Promise.all(
+      wanted.map(async (folder) => {
+        const params = new URLSearchParams({
+          Recursive: 'true',
+          ParentId: folder.ItemId,
+          IncludeItemTypes: folder.CollectionType === 'movies' ? 'Movie' : 'Series',
+          Limit: '0',
+          EnableTotalRecordCount: 'true',
+        });
+        const res = await apiFetch<{ TotalRecordCount?: number }>(this.url(`/Items?${params}`), {
+          headers: this.headers(),
+        }).catch(() => ({ TotalRecordCount: 0 }));
+        return {
+          id: folder.ItemId,
+          name: folder.Name,
+          mediaType: folder.CollectionType === 'movies' ? 'movie' : 'show',
+          itemCount: res.TotalRecordCount ?? 0,
+        };
+      }),
+    );
+  }
+
+  async getRecentlyAdded(limit: number, sectionId?: string): Promise<LibraryItem[]> {
     const params = new URLSearchParams({
       Recursive: 'true',
       IncludeItemTypes: 'Movie,Series',
-      Fields: 'Genres,ProductionYear',
-      SortBy: 'SortName',
-      Limit: '5000',
+      Fields: 'Genres,ProductionYear,DateCreated',
+      SortBy: 'DateCreated',
+      SortOrder: 'Descending',
+      Limit: String(limit),
     });
+    if (sectionId) params.set('ParentId', sectionId);
     const res = await apiFetch<{ Items: JfItem[] }>(this.url(`/Items?${params}`), {
       headers: this.headers(),
     });
@@ -214,6 +321,7 @@ export class JellyfinAdapter implements MediaServerAdapter {
       year: i.ProductionYear,
       genres: i.Genres ?? [],
       posterUrl: this.posterUrl(i.Id),
+      addedAt: i.DateCreated ? new Date(i.DateCreated) : undefined,
     }));
   }
 

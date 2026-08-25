@@ -3,12 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { t } from '@/i18n';
-import { COOKIE_REJECTED_MESSAGE, sessionCookieRejected } from './probe';
 
 type Pin = { pinId: string; code: string; authUrl: string };
 
 /** Plex PIN OAuth: open plex.tv, approve the code, poll until a token comes back. */
-export default function PlexLogin() {
+export default function PlexLogin({ serverId }: { serverId: number }) {
   const router = useRouter();
   const [pin, setPin] = useState<Pin | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +17,11 @@ export default function PlexLogin() {
 
   async function start() {
     setError(null);
-    const res = await fetch('/api/auth/plex/pin', { method: 'POST' });
+    const res = await fetch('/api/auth/plex/pin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serverId }),
+    });
     if (!res.ok) return setError('Could not start the Plex sign-in flow');
     const next = (await res.json()) as Pin;
     setPin(next);
@@ -28,15 +31,11 @@ export default function PlexLogin() {
       const poll = await fetch('/api/auth/plex/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pinId: next.pinId }),
+        body: JSON.stringify({ pinId: next.pinId, serverId }),
       });
       const data = (await poll.json()) as { ok?: boolean; pending?: boolean };
       if (data.ok) {
         if (timer.current) clearInterval(timer.current);
-        if (await sessionCookieRejected()) {
-          setError(COOKIE_REJECTED_MESSAGE);
-          return;
-        }
         router.push('/watchlist');
       }
     }, 2000);

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { playbackSessions } from '@/db/schema';
-import { formatDuration, formatTimecode, percent } from './format';
+import { artUrl, formatDuration, formatTimecode, percent } from './format';
 
 type Session = typeof playbackSessions.$inferSelect & { username?: string | null };
 
@@ -17,10 +17,13 @@ const PLAY_METHOD_LABELS: Record<string, string> = {
  */
 export default function Beam({
   session,
+  serverSlug,
   showUser,
   emptyLabel = 'Nothing is playing.',
 }: {
   session: Session | null;
+  /** Which media server the artwork is fetched from. */
+  serverSlug: string;
   showUser?: boolean;
   emptyLabel?: string;
 }) {
@@ -50,7 +53,7 @@ export default function Beam({
     <div className={`beam ${paused ? 'paused' : 'live'}`}>
       <Link href={`/title/${encodeURIComponent(label)}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="beam-art" src={`/api/art/${session.itemId}`} alt="" />
+        <img className="beam-art" src={artUrl(serverSlug, session.itemId)} alt="" />
       </Link>
 
       <div>

@@ -1,15 +1,21 @@
 import { NextResponse } from 'next/server';
 import { createAdapter, SERVER_TYPES, type ServerType } from '@/server/adapters';
-import { getConfig, saveConfig } from '@/server/config';
+import { createServer, isConfigured, listServers, updateSettings } from '@/server/config';
 
 export async function GET() {
-  const cfg = await getConfig();
-  return NextResponse.json({ configured: Boolean(cfg), serverType: cfg?.serverType ?? null });
+  const servers = await listServers();
+  return NextResponse.json({
+    configured: servers.length > 0,
+    serverType: servers[0]?.serverType ?? null,
+  });
 }
 
-/** First-run setup. Refuses to run again once a configuration exists. */
+/**
+ * First-run setup for the first server. Refuses to run again once one exists — further
+ * servers are added from the admin area, which requires a global admin.
+ */
 export async function POST(request: Request) {
-  if (await getConfig()) {
+  if (await isConfigured()) {
     return NextResponse.json({ error: 'Already configured' }, { status: 409 });
   }
 
@@ -18,6 +24,7 @@ export async function POST(request: Request) {
     serverUrl?: string;
     serverToken?: string;
     tmdbApiKey?: string;
+    label?: string;
   };
 
   if (!body.serverType || !SERVER_TYPES.includes(body.serverType as ServerType)) {
@@ -34,12 +41,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Could not reach the media server' }, { status: 400 });
   }
 
-  await saveConfig({
+  await createServer({
     serverType,
     serverUrl: body.serverUrl,
     serverToken: body.serverToken,
     serverName: health.serverName,
-    tmdbApiKey: body.tmdbApiKey || undefined,
+    label: body.label,
   });
+  if (body.tmdbApiKey) await updateSettings({ tmdbApiKey: body.tmdbApiKey });
   return NextResponse.json({ ok: true, serverName: health.serverName });
 }

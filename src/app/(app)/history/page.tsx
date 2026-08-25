@@ -5,7 +5,7 @@ import { watchHistory } from '@/db/schema';
 import { Icon } from '@/components/Icons';
 import { formatDate, formatDuration, isoDay } from '@/components/format';
 import { historyFilters } from '@/server/history';
-import { syncHistory } from '@/server/sync';
+import { reportSyncError, syncHistory } from '@/server/sync';
 import { requireUser } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -42,7 +42,7 @@ export default async function HistoryPage({
   searchParams: Promise<Params>;
 }) {
   const session = await requireUser();
-  await syncHistory(session.user.id, session.user.serverUserId, session.serverToken).catch(() => {});
+  await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
 
   const params = await searchParams;
   const page = Math.max(1, Number(params.page ?? 1));

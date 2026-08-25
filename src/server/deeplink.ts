@@ -1,6 +1,6 @@
-// No 'server-only' here: itemDeepLink is pure and must stay unit-testable. getConfig()
+// No 'server-only' here: itemDeepLink is pure and must stay unit-testable. getServer()
 // carries the server-only marker itself, so the config path is still protected.
-import { getConfig } from './config';
+import { getServer } from './config';
 
 // Same reasoning as the artwork proxy: the item id is attacker-controlled. Anything outside
 // this set could escape the path (`../`) or open a fragment/query of its own.
@@ -37,8 +37,8 @@ export function itemDeepLink(
   }
 }
 
-/** Deep link for the configured server, or null while unconfigured. */
-export async function getItemDeepLink(itemId: string): Promise<string | null> {
-  const cfg = await getConfig();
-  return cfg ? itemDeepLink(cfg.serverType, cfg.serverUrl, itemId) : null;
+/** Deep link into one server's own web UI, or null when it cannot be built. */
+export async function getItemDeepLink(serverId: number, itemId: string): Promise<string | null> {
+  const server = await getServer(serverId);
+  return server ? itemDeepLink(server.serverType, server.serverUrl, itemId) : null;
 }

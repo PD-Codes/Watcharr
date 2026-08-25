@@ -5,7 +5,9 @@ import { getSession } from '@/server/session';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  if (!(await getSession())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const query = new URL(request.url).searchParams.get('q') ?? '';
-  return NextResponse.json({ items: await searchLibrary(query) });
+  // A user searches the library of the server they signed in through.
+  return NextResponse.json({ items: await searchLibrary(session.user.serverId, query) });
 }

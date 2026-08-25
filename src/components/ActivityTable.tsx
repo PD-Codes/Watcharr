@@ -1,8 +1,14 @@
 import Link from 'next/link';
 import type { playbackSessions } from '@/db/schema';
 import { formatDuration, percent } from './format';
+import IpLink from './IpLink';
+import TerminateButton from './TerminateButton';
 
-type Row = typeof playbackSessions.$inferSelect & { username?: string | null };
+type Row = typeof playbackSessions.$inferSelect & {
+  username?: string | null;
+  /** Resolved country, when the optional lookup is on. Local streams never have one. */
+  country?: string | null;
+};
 
 const PLAY_METHOD_LABELS: Record<string, string> = {
   directplay: 'Direct play',
@@ -20,7 +26,19 @@ export function streamSummary(row: Row): string {
   return parts.join(' · ');
 }
 
-export default function ActivityTable({ rows, showUser }: { rows: Row[]; showUser?: boolean }) {
+export default function ActivityTable({
+  rows,
+  showUser,
+  canTerminate,
+  showAddress,
+}: {
+  rows: Row[];
+  showUser?: boolean;
+  /** Renders the stop control. Enforced again on the server by the terminate route. */
+  canTerminate?: boolean;
+  /** Renders the resolvable address. Admin views only — this is viewer data. */
+  showAddress?: boolean;
+}) {
   if (!rows.length) return <p className="muted">Nothing is playing right now.</p>;
 
   return (
@@ -33,6 +51,7 @@ export default function ActivityTable({ rows, showUser }: { rows: Row[]; showUse
             <th scope="col">Progress</th>
             <th scope="col">Client</th>
             <th scope="col">Stream</th>
+            {canTerminate && <th scope="col">Action</th>}
           </tr>
         </thead>
         <tbody>
@@ -67,6 +86,19 @@ export default function ActivityTable({ rows, showUser }: { rows: Row[]; showUse
                 {row.clientName ?? '—'}
                 <br />
                 <span className="muted">{row.deviceName ?? ''}</span>
+                {row.isLocal !== null && (
+                  <>
+                    <br />
+                    <span className="badge" data-tip={showAddress ? undefined : (row.remoteAddress ?? undefined)}>
+                      {row.isLocal ? 'LAN' : (row.country ?? 'Remote')}
+                    </span>
+                    {showAddress && row.remoteAddress && (
+                      <div style={{ fontSize: 12, marginTop: 4 }}>
+                        <IpLink ip={row.remoteAddress} />
+                      </div>
+                    )}
+                  </>
+                )}
               </td>
               <td data-tip={row.transcodeReason ? `Reason: ${row.transcodeReason}` : 'Delivered stream'}>
                 {streamSummary(row)}
@@ -76,6 +108,11 @@ export default function ActivityTable({ rows, showUser }: { rows: Row[]; showUse
                     .join(' · ')}
                 </div>
               </td>
+              {canTerminate && (
+                <td>
+                  <TerminateButton sessionKey={row.sessionKey} />
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

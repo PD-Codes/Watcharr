@@ -3,9 +3,9 @@ import { notFound } from 'next/navigation';
 import { BarChart, StatCard } from '@/components/Charts';
 import { Icon } from '@/components/Icons';
 import OpenInServer from '@/components/OpenInServer';
-import { formatDate, formatDuration, formatMinutes } from '@/components/format';
+import { artUrl, formatDate, formatDuration, formatMinutes } from '@/components/format';
 import { getItemDetail } from '@/server/titles';
-import { requireUser } from '@/server/session';
+import { adminScope, isAdmin, requireUser } from '@/server/session';
 
 // No loading.tsx in this segment: streaming pins the status at 200 and this route has to
 // be able to answer 404. See the note in CLAUDE.md.
@@ -22,8 +22,8 @@ export default async function ItemPage({
   const session = await requireUser();
   const itemId = decodeURIComponent((await params).itemId);
 
-  const serverWide = (await searchParams).scope === 'server' && session.user.isAdmin;
-  const detail = await getItemDetail(itemId, serverWide ? { userId: null } : { userId: session.user.id });
+  const serverWide = (await searchParams).scope === 'server' && isAdmin(session.user);
+  const detail = await getItemDetail(itemId, serverWide ? adminScope(session.user) : { userId: session.user.id });
   if (!detail) notFound();
 
   return (
@@ -38,7 +38,7 @@ export default async function ItemPage({
 
       <div className="title-head">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="poster" src={`/api/art/${encodeURIComponent(detail.itemId)}`} alt="" />
+        <img className="poster" src={artUrl(session.server.slug, detail.itemId)} alt="" />
         <div>
           {detail.showLabel && <p className="eyebrow">{detail.showLabel}</p>}
           <h1>{detail.title}</h1>
@@ -55,7 +55,7 @@ export default async function ItemPage({
             ))}
           </ul>
           <p className="poster-actions">
-            <OpenInServer itemId={detail.itemId} />
+            <OpenInServer itemId={detail.itemId} serverId={session.user.serverId} />
           </p>
         </div>
       </div>

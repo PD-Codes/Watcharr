@@ -2,7 +2,7 @@ import 'server-only';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { suggestionsCache, watchHistory } from '@/db/schema';
-import { getConfig } from './config';
+import { getSettings } from './config';
 import { getLibrary } from './library';
 import { getSimilarTitles } from './tmdb';
 import { buildProfile, scoreItem, type SuggestionPayload } from './scoring';
@@ -11,7 +11,7 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export * from './scoring';
 
-async function build(userId: number): Promise<SuggestionPayload> {
+async function build(userId: number, serverId: number): Promise<SuggestionPayload> {
   const history = await db
     .select({
       itemId: watchHistory.itemId,
@@ -25,7 +25,7 @@ async function build(userId: number): Promise<SuggestionPayload> {
 
   const profile = buildProfile(history);
   const watched = new Set(profile.watchedItemIds);
-  const library = await getLibrary();
+  const library = await getLibrary(serverId);
 
   const fromLibrary = library
     .filter((item) => !watched.has(item.itemId))
@@ -43,16 +43,20 @@ async function build(userId: number): Promise<SuggestionPayload> {
       reason,
     }));
 
-  const config = await getConfig();
+  const settings = await getSettings();
   const fromTmdb =
-    config?.tmdbApiKey && profile.topTitle
-      ? await getSimilarTitles(config.tmdbApiKey, profile.topTitle)
+    settings.tmdbApiKey && profile.topTitle
+      ? await getSimilarTitles(settings.tmdbApiKey, profile.topTitle)
       : [];
 
   return { fromLibrary, fromTmdb };
 }
 
-export async function getSuggestions(userId: number, force = false): Promise<SuggestionPayload> {
+export async function getSuggestions(
+  userId: number,
+  serverId: number,
+  force = false,
+): Promise<SuggestionPayload> {
   if (!force) {
     const [cached] = await db
       .select()
@@ -61,7 +65,7 @@ export async function getSuggestions(userId: number, force = false): Promise<Sug
     if (cached && cached.expiresAt > new Date()) return cached.payload as SuggestionPayload;
   }
 
-  const payload = await build(userId);
+  const payload = await build(userId, serverId);
   const row = {
     userId,
     payload,

@@ -1,12 +1,15 @@
 import 'server-only';
 import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { and, eq, gt, lt } from 'drizzle-orm';
+import { and, desc, eq, gt, lt, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { authSessions, users } from '@/db/schema';
+import { authSessions, loginHistory, users } from '@/db/schema';
 import { decryptSecret, encryptSecret } from './crypto';
 import type { MediaServerUser } from './adapters';
+import { getServer } from './config';
+import { lookupCountry } from './geoip';
+import type { Scope } from './stats';
 
 const COOKIE = 'watcharr_session';
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
@@ -31,31 +34,75 @@ function unsign(value: string): string | null {
   return a.length === b.length && timingSafeEqual(a, b) ? id : null;
 }
 
-/**
- * Whether the session cookie may carry the Secure flag.
- *
- * Tying this to NODE_ENV is the obvious thing and it is wrong: a browser silently discards
- * a Secure cookie sent over plain HTTP, and a self-hosted deployment on a LAN is plain HTTP
- * far more often than not. The symptom is vicious — the login request answers 200, the
- * redirect fires, the next page finds no session and bounces straight back to the login
- * screen, with no error logged anywhere. So the flag follows the actual scheme instead:
- * what the reverse proxy reports, or, with no proxy in front, what APP_URL says.
- *
- * http://localhost is treated as a secure context by browsers, so it works either way.
- */
-async function useSecureCookie(): Promise<boolean> {
-  const forwarded = (await headers()).get('x-forwarded-proto')?.split(',')[0]?.trim();
-  if (forwarded) return forwarded === 'https';
-  return (process.env.APP_URL ?? '').startsWith('https://');
-}
-
 export type SessionUser = typeof users.$inferSelect;
 
+export interface LoginMeta {
+  ip?: string;
+  userAgent?: string;
+}
+
+/**
+ * One row per login attempt, successful or not — Tautulli's login/IP history. Best-effort:
+ * a logging failure must never be the reason a sign-in fails.
+ */
+export async function recordLogin(
+  serverId: number,
+  username: string,
+  success: boolean,
+  meta: LoginMeta = {},
+  userId?: number,
+): Promise<void> {
+  try {
+    const country = meta.ip ? await lookupCountry(meta.ip) : null;
+    await db.insert(loginHistory).values({
+      serverId,
+      userId: userId ?? null,
+      username,
+      success,
+      ip: meta.ip ?? null,
+      country,
+      userAgent: meta.userAgent ?? null,
+    });
+  } catch {
+    // Best-effort audit trail, never blocks a login.
+  }
+}
+
+/** A user's active (non-expired) sessions, newest first. Never includes the token itself. */
+export async function listUserSessions(userId: number) {
+  return db
+    .select({ id: authSessions.id, createdAt: authSessions.createdAt, expiresAt: authSessions.expiresAt })
+    .from(authSessions)
+    .where(and(eq(authSessions.userId, userId), gt(authSessions.expiresAt, new Date())))
+    .orderBy(desc(authSessions.createdAt));
+}
+
+/** Signs one session out remotely — the "someone has my login" button. */
+export async function revokeSession(id: string): Promise<void> {
+  await db.delete(authSessions).where(eq(authSessions.id, id));
+}
+
+/** Most recent login attempts. Scoped to one server unless the caller is a global admin. */
+export async function listLoginHistory(serverId?: number, limit = 200) {
+  return db
+    .select()
+    .from(loginHistory)
+    .where(serverId ? eq(loginHistory.serverId, serverId) : sql`1 = 1`)
+    .orderBy(desc(loginHistory.createdAt))
+    .limit(limit);
+}
+
 /** Upserts the media server user locally and issues a signed session cookie. */
-export async function createSession(user: MediaServerUser, serverToken: string) {
+export async function createSession(
+  serverId: number,
+  user: MediaServerUser,
+  serverToken: string,
+  meta: LoginMeta = {},
+) {
   const [row] = await db
     .insert(users)
     .values({
+      serverId,
       serverUserId: user.serverUserId,
       username: user.username,
       email: user.email,
@@ -64,7 +111,8 @@ export async function createSession(user: MediaServerUser, serverToken: string) 
       lastSeenAt: new Date(),
     })
     .onConflictDoUpdate({
-      target: users.serverUserId,
+      // The same account id can exist on two servers, so identity is the pair.
+      target: [users.serverId, users.serverUserId],
       set: {
         username: user.username,
         email: user.email,
@@ -74,6 +122,14 @@ export async function createSession(user: MediaServerUser, serverToken: string) 
       },
     })
     .returning();
+
+  // Bootstrapping the global admin. The person who ran setup owns the server token, so
+  // they are an admin on that server — and only a server admin can claim the role, which
+  // is why "whoever signs in first" cannot be hijacked by an ordinary user.
+  if (row.isAdmin && !row.globalAdmin && (await countGlobalAdmins()) === 0) {
+    await db.update(users).set({ globalAdmin: true }).where(eq(users.id, row.id));
+    row.globalAdmin = true;
+  }
 
   // Expired rows are cleaned up here instead of by a cron job.
   await db.delete(authSessions).where(lt(authSessions.expiresAt, new Date()));
@@ -89,10 +145,11 @@ export async function createSession(user: MediaServerUser, serverToken: string) 
   (await cookies()).set(COOKIE, sign(id), {
     httpOnly: true,
     sameSite: 'lax',
-    secure: await useSecureCookie(),
+    secure: process.env.NODE_ENV === 'production',
     path: '/',
     maxAge: MAX_AGE_SECONDS,
   });
+  void recordLogin(serverId, user.username, true, meta, row.id);
   return row;
 }
 
@@ -110,18 +167,61 @@ export async function getSession(): Promise<{ user: SessionUser; serverToken: st
   return row ? { user: row.user, serverToken: decryptSecret(row.serverToken) } : null;
 }
 
-/** For pages: sends anonymous visitors to the login screen instead of erroring out. */
+/**
+ * For pages: sends anonymous visitors to the login screen instead of erroring out.
+ * The user's own media server comes along, because almost every page needs its slug for
+ * artwork or its type for deep links.
+ */
 export async function requireUser() {
   const session = await getSession();
   if (!session) redirect('/login');
-  return session;
+  const server = await getServer(session.user.serverId);
+  if (!server) redirect('/login');
+  return { ...session, server };
+}
+
+/** Admin on their own media server, or across the whole deployment. */
+export function isAdmin(user: SessionUser): boolean {
+  return user.isAdmin || user.globalAdmin;
 }
 
 /** For pages: non-admins are sent back to their own dashboard. */
 export async function requireAdmin() {
   const session = await requireUser();
-  if (!session.user.isAdmin) redirect('/watchlist');
+  if (!isAdmin(session.user)) redirect('/watchlist');
   return session;
+}
+
+/** Server management and cross-server views. A server admin must not get here. */
+export async function requireGlobalAdmin() {
+  const session = await requireUser();
+  if (!session.user.globalAdmin) redirect('/watchlist');
+  return session;
+}
+
+/**
+ * What an admin is allowed to aggregate over: everything for a global admin, and only
+ * their own server for a server admin.
+ */
+export function adminScope(user: SessionUser): Scope {
+  return user.globalAdmin ? { userId: null } : { userId: null, serverId: user.serverId };
+}
+
+/** Whether an admin may look at another user's data. */
+export function canSee(admin: SessionUser, target: { serverId: number }): boolean {
+  return admin.globalAdmin || (admin.isAdmin && admin.serverId === target.serverId);
+}
+
+/**
+ * Refuses to remove the last global admin — the deployment would lose the only account
+ * that can manage servers and hand the role back out.
+ */
+export async function countGlobalAdmins(): Promise<number> {
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.globalAdmin, true));
+  return rows.length;
 }
 
 export async function destroySession() {

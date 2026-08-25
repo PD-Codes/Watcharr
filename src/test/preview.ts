@@ -113,8 +113,19 @@ async function seed() {
 
   const [mara] = await db
     .insert(users)
-    .values({ serverUserId: 'srv-mara', username: 'mara' })
+    .values({ serverId: admin.serverId, serverUserId: 'srv-mara', username: 'mara' })
     .returning();
+
+  // A second server, so the login picker and the per-server filters are visible while
+  // designing. It points at the same stub — the preview only needs it to exist.
+  const { createServer: createMediaServer } = await import('../server/config');
+  await createMediaServer({
+    serverType: 'jellyfin',
+    serverUrl: `http://127.0.0.1:${STUB_PORT}`,
+    serverToken: 'stub-token',
+    serverName: 'Attic Server',
+    label: 'Attic Server',
+  });
 
   const rand = rng(42);
   const history = [];
@@ -145,7 +156,7 @@ async function seed() {
       const ci = Math.floor(rand() * CLIENTS.length);
       const transcoded = rand() < 0.35;
       sessions.push({
-        sessionKey: `s-${day}-${p}`,
+        sessionKey: `1:s-${day}-${p}`,
         userId,
         itemId: `lib-${index}`,
         title,

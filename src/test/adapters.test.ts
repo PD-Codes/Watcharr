@@ -76,6 +76,8 @@ async function testJellyfinSessions() {
     width: 1280,
     height: 720,
     transcodeReason: 'VideoCodecNotSupported',
+    terminateKey: 's1',
+    remoteAddress: undefined,
     lastCheckInAt: new Date('2026-08-23T10:00:00.000Z'),
   });
 }

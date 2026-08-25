@@ -1,9 +1,22 @@
+/**
+ * Every media server request goes through here, which is why the timeout lives here and
+ * not at the call sites. Without it an unreachable server does not fail — the socket just
+ * never settles, the catch() around the sync never runs, and because the sync sits in the
+ * app layout, every single page hangs forever instead of rendering without live data.
+ */
+const DEFAULT_TIMEOUT_MS = 8_000;
+
 /** Thin fetch wrapper: JSON in, JSON out, non-2xx throws with the response body. */
-export async function apiFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(
+  url: string,
+  init: RequestInit & { timeoutMs?: number } = {},
+): Promise<T> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...rest } = init;
   const res = await fetch(url, {
-    ...init,
-    headers: { Accept: 'application/json', ...init.headers },
+    ...rest,
+    headers: { Accept: 'application/json', ...rest.headers },
     cache: 'no-store',
+    signal: rest.signal ?? AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');

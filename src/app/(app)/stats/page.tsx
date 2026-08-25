@@ -20,15 +20,17 @@ import {
   getTopDevices,
   getTopGenres,
   getTopTitles,
-  getTopTitlesByTime,
   getTotals,
   getTrend,
   getWeekdayActivity,
   getWeekHourGrid,
+  type RankBy,
 } from '@/server/stats';
+import RankToggle from '@/components/RankToggle';
 import {
   getBitrateBuckets,
   getClientSessions,
+  getCompletionSplit,
   getDeviceSessions,
   getPlaybackTotals,
   getPlayMethods,
@@ -37,7 +39,8 @@ import {
   getVideoCodecs,
 } from '@/server/playback';
 import { getLibrary } from '@/server/library';
-import { syncHistory } from '@/server/sync';
+import { getSettings } from '@/server/config';
+import { reportSyncError, syncHistory } from '@/server/sync';
 import { requireUser } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -55,14 +58,18 @@ const PERIODS: [number, string][] = [
 export default async function StatsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string }>;
+  searchParams: Promise<{ days?: string; by?: string }>;
 }) {
   const session = await requireUser();
-  await syncHistory(session.user.id, session.user.serverUserId, session.serverToken).catch(() => {});
+  await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
 
-  const days = Number((await searchParams).days ?? 30);
+  const params = await searchParams;
+  const days = Number(params.days ?? 30);
+  const by: RankBy = params.by === 'time' ? 'time' : 'count';
+  const rank = by === 'time' ? formatMinutes : (value: number) => `${value} plays`;
   const scope = { userId: session.user.id };
   const year = new Date().getFullYear();
+  const { watchedThreshold } = await getSettings();
 
   const [
     totals,
@@ -73,7 +80,6 @@ export default async function StatsPage({
     weekGrid,
     genres,
     titles,
-    titlesByTime,
     devices,
     hours,
     streak,
@@ -89,16 +95,15 @@ export default async function StatsPage({
     getMonthlyActivity(scope, year),
     getWeekdayActivity(scope),
     getWeekHourGrid(scope),
-    getTopGenres(scope),
-    getTopTitles(scope),
-    getTopTitlesByTime(scope),
-    getTopDevices(scope),
+    getTopGenres(scope, 8, by),
+    getTopTitles(scope, 8, by),
+    getTopDevices(scope, 8, by),
     getPeakHours(scope),
     getStreak(scope),
     getHighlights(scope),
     getRecords(scope),
     getRewatchSplit(scope),
-    getLibrary().catch(() => []),
+    getLibrary(session.user.serverId).catch(() => []),
     getDailyActivity(scope, 365),
   ]);
 
@@ -114,6 +119,8 @@ export default async function StatsPage({
       getClientSessions(undefined, scope),
       getDeviceSessions(undefined, scope),
     ]);
+
+  const completion = await getCompletionSplit(watchedThreshold, undefined, scope);
 
   const busiestHour = hours.reduce((best, hour) => (hour.value > best.value ? hour : best), hours[0]);
   // The library lists movies and series, so coverage has to compare titles with titles —
@@ -134,7 +141,11 @@ export default async function StatsPage({
       {/* One tap per period instead of select-then-submit, which needed three on a phone. */}
       <div className="seg" style={{ marginBottom: 22 }}>
         {PERIODS.map(([value, label]) => (
-          <Link key={value} href={`/stats?days=${value}`} className={days === value ? 'on' : undefined}>
+          <Link
+            key={value}
+            href={`/stats?days=${value}&by=${by}`}
+            className={days === value ? 'on' : undefined}
+          >
             {label}
           </Link>
         ))}
@@ -219,50 +230,47 @@ export default async function StatsPage({
         </div>
       </section>
 
-      <div className="grid cols-2 section">
+      <div className="section toolbar">
+        <h2 style={{ margin: 0 }}>Top lists</h2>
+        <RankToggle base="/stats" by={by} days={days} />
+      </div>
+
+      <div className="grid cols-2">
         <section>
-          <h2>Most played titles</h2>
+          <h2>Titles</h2>
           <div className="card">
-            <BarChart data={titles} format={(value) => `${value} plays`} hrefFor={titleHref} />
+            <BarChart data={titles} format={rank} hrefFor={titleHref} />
           </div>
         </section>
         <section>
-          <h2>Most watch time</h2>
+          <h2>Genres</h2>
           <div className="card">
-            <BarChart data={titlesByTime} format={formatMinutes} hrefFor={titleHref} />
+            <BarChart data={genres} format={rank} hrefFor={genreHref} />
           </div>
         </section>
       </div>
 
       <div className="grid cols-2 section">
-        <section>
-          <h2>Top genres</h2>
-          <div className="card">
-            <BarChart data={genres} format={(value) => `${value} plays`} hrefFor={genreHref} />
-          </div>
-        </section>
         <section>
           <h2>Devices</h2>
           <div className="card">
-            <BarChart data={devices} format={formatMinutes} />
+            <BarChart data={devices} format={rank} />
           </div>
         </section>
-      </div>
-
-      <div className="grid cols-2 section">
         <section>
           <h2>By weekday (minutes)</h2>
           <div className="card">
             <ColumnChart data={weekdays} format={formatMinutes} />
           </div>
         </section>
-        <section>
-          <h2>By hour of day</h2>
-          <div className="card">
-            <ColumnChart data={hours} format={(value) => `${value} plays`} labelEvery={2} />
-          </div>
-        </section>
       </div>
+
+      <section className="section">
+        <h2>By hour of day</h2>
+        <div className="card">
+          <ColumnChart data={hours} format={(value) => `${value} plays`} labelEvery={2} />
+        </div>
+      </section>
 
       <section className="section">
         <h2>{year} by month (minutes)</h2>
@@ -316,6 +324,21 @@ export default async function StatsPage({
       </p>
 
       <div className="grid cols-2">
+        <section>
+          <h2>Finished vs. abandoned</h2>
+          <div className="card">
+            <DonutChart
+              data={[
+                { label: 'Finished', value: completion.finished },
+                { label: 'Abandoned', value: completion.abandoned },
+              ]}
+              format={(value) => `${value} sessions`}
+            />
+            <p className="muted" style={{ margin: '12px 0 0' }}>
+              Counted as finished from {watchedThreshold}% of the runtime.
+            </p>
+          </div>
+        </section>
         <section>
           <h2>Playback method</h2>
           <div className="card">

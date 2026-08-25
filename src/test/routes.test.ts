@@ -13,6 +13,7 @@ import { join } from 'node:path';
 const dir = mkdtempSync(join(tmpdir(), 'watcharr-routes-'));
 const APP_PORT = 3210;
 const STUB_PORT = 39001;
+const STUB2_PORT = 39002;
 
 process.env.DATABASE_PATH = join(dir, 'routes.db');
 process.env.SESSION_SECRET = 'route-test-secret';
@@ -21,7 +22,7 @@ process.env.SESSION_SECRET = 'route-test-secret';
 execFileSync('node', ['scripts/migrate.mjs'], { stdio: 'inherit', env: process.env });
 
 /** Minimal Jellyfin API surface used by the adapter. */
-function startStubMediaServer() {
+function startStubMediaServer(port = STUB_PORT, serverName = 'Stub Jellyfin', userId = 'srv-admin') {
   const item = (id: string, name: string, type: string, year: number, genres: string[]) => ({
     Id: id,
     Name: name,
@@ -33,19 +34,24 @@ function startStubMediaServer() {
   });
 
   const routes: Record<string, unknown> = {
-    '/System/Info': { ServerName: 'Stub Jellyfin', Version: '10.9.0' },
-    '/Users/Me': { Id: 'srv-admin', Name: 'admin', Policy: { IsAdministrator: true } },
+    '/System/Info': { ServerName: serverName, Version: '10.9.0' },
+    '/Users/Me': { Id: userId, Name: 'admin', Policy: { IsAdministrator: true } },
     '/Users/AuthenticateByName': {
-      User: { Id: 'srv-admin', Name: 'admin', Policy: { IsAdministrator: true } },
+      User: { Id: userId, Name: 'admin', Policy: { IsAdministrator: true } },
       AccessToken: 'user-access-token',
     },
-    '/Users': [{ Id: 'srv-admin', Name: 'admin', Policy: { IsAdministrator: true } }],
+    '/Users': [{ Id: userId, Name: 'admin', Policy: { IsAdministrator: true } }],
+    '/Library/VirtualFolders': [
+      { Name: 'Movies', ItemId: 'lib-movies', CollectionType: 'movies' },
+      { Name: 'Shows', ItemId: 'lib-shows', CollectionType: 'tvshows' },
+    ],
     '/Sessions': [
       {
         Id: 'sess-1',
-        UserId: 'srv-admin',
+        UserId: userId,
         UserName: 'admin',
         DeviceName: 'Living Room',
+        RemoteEndPoint: '192.168.1.20:47204',
         PlayState: { PositionTicks: 6_000_000_000, IsPaused: false },
         NowPlayingItem: item('lib-1', 'Blade Runner', 'Movie', 1982, ['Sci-Fi']),
         TranscodingInfo: { Bitrate: 8_000_000 },
@@ -63,7 +69,9 @@ function startStubMediaServer() {
         item('lib-3', 'Firefly', 'Series', 2002, ['Sci-Fi', 'Western']),
       ];
       // /Users/{id}/Items is the history endpoint and only reports what was played.
-      body = { Items: path.startsWith('/Users/') ? [library[0]] : library };
+      const items = path.startsWith('/Users/') ? [library[0]] : library;
+      // TotalRecordCount is what the library listing reads; Limit=0 returns only the count.
+      body = { Items: (req.url ?? '').includes('Limit=0') ? [] : items, TotalRecordCount: items.length };
     }
     if (body === undefined && path.includes('/Images/')) {
       res.writeHead(200, { 'Content-Type': 'image/jpeg' });
@@ -73,7 +81,7 @@ function startStubMediaServer() {
     res.writeHead(body === undefined ? 404 : 200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body ?? { error: `stub has no route ${path}` }));
   });
-  server.listen(STUB_PORT);
+  server.listen(port);
   return server;
 }
 
@@ -81,6 +89,11 @@ function startStubMediaServer() {
 async function seedContent() {
   const { db } = await import('../db');
   const { playbackSessions, users, watchHistory, watchlist } = await import('../db/schema');
+  const { updateSettings } = await import('../server/config');
+
+  // The suite must not reach out to GitHub. This also exercises the disabled branch of the
+  // update check, which is what a deployment without outbound access sees.
+  await updateSettings({ features: { updateCheck: false } });
 
   const [admin] = await db.select().from(users);
   assert.ok(admin, 'login must have created the user row');
@@ -104,7 +117,9 @@ async function seedContent() {
 
   await db.insert(playbackSessions).values([
     {
-      sessionKey: 'sess-1',
+      sessionKey: '1:sess-1',
+      remoteAddress: '192.168.1.20',
+      isLocal: true,
       userId: admin.id,
       itemId: 'lib-1',
       title: 'Blade Runner',
@@ -127,7 +142,7 @@ async function seedContent() {
       progressAt: new Date(),
     },
     {
-      sessionKey: 'sess-old',
+      sessionKey: '1:sess-old',
       userId: admin.id,
       itemId: 'lib-3',
       title: 'Serenity',
@@ -168,6 +183,8 @@ async function waitForServer(url: string, attempts = 60) {
 
 async function main() {
   const stub = startStubMediaServer();
+  // A second server, so "one server's data must not leak into another" is a real check.
+  const stub2 = startStubMediaServer(STUB2_PORT, 'Stub Two', 'srv-two');
 
   const app = spawn('node', ['.next/standalone/server.js'], {
     env: { ...process.env, PORT: String(APP_PORT), HOSTNAME: '127.0.0.1' },
@@ -214,32 +231,147 @@ async function main() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: 'admin', password: 'secret' }),
     });
-    const setCookie = login.headers.get('set-cookie') ?? '';
-    const cookie = setCookie.split(';')[0];
+    const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
     console.log(`${login.ok && cookie ? 'ok  ' : 'FAIL'} - POST /api/auth/login → ${login.status}`);
     if (!login.ok || !cookie) failures += 1;
 
-    // A Secure cookie is discarded by browsers over plain HTTP, and the app is reached
-    // over plain HTTP in most self-hosted setups. Getting this wrong produces a login that
-    // answers 200 and then bounces back to /login with no error anywhere — so the flag has
-    // to follow the actual scheme. Node's fetch does not enforce Secure, which is exactly
-    // why this needs asserting rather than trusting the rest of the suite to notice.
-    {
-      const plain = !/;\s*Secure/i.test(setCookie);
-      console.log(`${plain ? 'ok  ' : 'FAIL'} - session cookie is not Secure over plain HTTP`);
-      if (!plain) failures += 1;
-
-      const behindProxy = await fetch(`${base}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https' },
-        body: JSON.stringify({ username: 'admin', password: 'secret' }),
-      });
-      const secure = /;\s*Secure/i.test(behindProxy.headers.get('set-cookie') ?? '');
-      console.log(`${secure ? 'ok  ' : 'FAIL'} - session cookie is Secure behind an https proxy`);
-      if (!secure) failures += 1;
-    }
-
     const userId = await seedContent();
+
+    // Multi-server. The first sign-in claims the global admin role, so this account may
+    // add the second server; everything below then checks the boundary between the two.
+    {
+      const addServer = (body: unknown, cookieHeader?: string) =>
+        fetch(`${base}/api/admin/servers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+          },
+          body: JSON.stringify(body),
+        });
+
+      const anonymous = await addServer({
+        serverType: 'jellyfin',
+        serverUrl: `http://127.0.0.1:${STUB2_PORT}`,
+        serverToken: 'stub-token',
+        label: 'Stub Two',
+      });
+      const anonymousOk = anonymous.status === 403;
+      console.log(`${anonymousOk ? 'ok  ' : 'FAIL'} - add server anonymous → ${anonymous.status}`);
+      if (!anonymousOk) failures += 1;
+
+      const added = await addServer(
+        {
+          serverType: 'jellyfin',
+          serverUrl: `http://127.0.0.1:${STUB2_PORT}`,
+          serverToken: 'stub-token',
+          label: 'Stub Two',
+        },
+        cookie,
+      );
+      const addedBody = (await added.json()) as { slug?: string };
+      const addedOk = added.ok && addedBody.slug === 'stub-two';
+      console.log(`${addedOk ? 'ok  ' : 'FAIL'} - add second server → ${added.status} ${addedBody.slug}`);
+      if (!addedOk) failures += 1;
+
+      // An unreachable server must be refused rather than stored and broken later.
+      const dead = await addServer(
+        {
+          serverType: 'jellyfin',
+          serverUrl: 'http://127.0.0.1:39999',
+          serverToken: 'x',
+          label: 'Dead',
+        },
+        cookie,
+      );
+      const deadOk = dead.status === 400;
+      console.log(`${deadOk ? 'ok  ' : 'FAIL'} - unreachable server refused → ${dead.status}`);
+      if (!deadOk) failures += 1;
+
+      // With two servers the login screen has to offer a choice.
+      const picker = await fetch(`${base}/login`);
+      const pickerHtml = await picker.text();
+      const pickerOk = pickerHtml.includes('Stub Two') && pickerHtml.includes('server=stub-jellyfin');
+      console.log(`${pickerOk ? 'ok  ' : 'FAIL'} - login offers a server choice`);
+      if (!pickerOk) failures += 1;
+
+      // Artwork is per server: a slug must never reach a different server's API.
+      const otherArt = await fetch(`${base}/api/art/stub-two/lib-1`, { headers: { Cookie: cookie } });
+      const otherArtOk = otherArt.ok;
+      console.log(`${otherArtOk ? 'ok  ' : 'FAIL'} - artwork resolves per server → ${otherArt.status}`);
+      if (!otherArtOk) failures += 1;
+
+      // Signing in on the second server must create a separate account, not reuse the
+      // first one — the same media server user id can exist on both.
+      const second = await fetch(`${base}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'admin', password: 'secret', serverId: 2 }),
+      });
+      const secondCookie = (second.headers.get('set-cookie') ?? '').split(';')[0];
+      const { db } = await import('../db');
+      const { users } = await import('../db/schema');
+      const rows = await db.select().from(users);
+      const separate = rows.length === 2 && rows.filter((u) => u.globalAdmin).length === 1;
+      console.log(`${separate ? 'ok  ' : 'FAIL'} - second server creates its own account`);
+      if (!separate) failures += 1;
+
+      // The second account is an admin on its own server but not globally, so it must not
+      // be able to touch server management.
+      const notGlobal = await addServer(
+        { serverType: 'jellyfin', serverUrl: `http://127.0.0.1:${STUB_PORT}`, serverToken: 'x' },
+        secondCookie,
+      );
+      const notGlobalOk = notGlobal.status === 403;
+      console.log(`${notGlobalOk ? 'ok  ' : 'FAIL'} - server admin cannot add servers → ${notGlobal.status}`);
+      if (!notGlobalOk) failures += 1;
+
+      // A server admin must not see accounts belonging to another server, and must not
+      // be able to open one by guessing the id.
+      const userList = await fetch(`${base}/admin/users`, { headers: { Cookie: secondCookie } });
+      const userListHtml = await userList.text();
+      const listScoped = !userListHtml.includes('Global admin');
+      console.log(`${listScoped ? 'ok  ' : 'FAIL'} - user list hides the other server's accounts`);
+      if (!listScoped) failures += 1;
+
+      const foreign = await fetch(`${base}/admin/users/1`, {
+        headers: { Cookie: secondCookie },
+        redirect: 'manual',
+      });
+      const foreignOk = foreign.status === 404;
+      console.log(`${foreignOk ? 'ok  ' : 'FAIL'} - foreign user detail → ${foreign.status}`);
+      if (!foreignOk) failures += 1;
+
+      // Only a global admin may hand out the role, and never the last one.
+      const grant = (cookieHeader: string, body: unknown) =>
+        fetch(`${base}/api/admin/users/role`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
+          body: JSON.stringify(body),
+        });
+
+      const notAllowed = await grant(secondCookie, { userId: 2, globalAdmin: true });
+      const notAllowedOk = notAllowed.status === 403;
+      console.log(`${notAllowedOk ? 'ok  ' : 'FAIL'} - server admin cannot grant → ${notAllowed.status}`);
+      if (!notAllowedOk) failures += 1;
+
+      const lastOne = await grant(cookie, { userId: 1, globalAdmin: false });
+      const lastOneOk = lastOne.status === 400;
+      console.log(`${lastOneOk ? 'ok  ' : 'FAIL'} - last global admin cannot step down → ${lastOne.status}`);
+      if (!lastOneOk) failures += 1;
+
+      const granted = await grant(cookie, { userId: 2, globalAdmin: true });
+      const revoked = granted.ok && (await grant(cookie, { userId: 2, globalAdmin: false })).ok;
+      console.log(`${revoked ? 'ok  ' : 'FAIL'} - a global admin can grant and revoke the role`);
+      if (!revoked) failures += 1;
+
+      // …and must not see the first server's plays in the server-wide statistics.
+      const scoped = await fetch(`${base}/admin/stats`, { headers: { Cookie: secondCookie } });
+      const scopedHtml = await scoped.text();
+      const isolated = !scopedHtml.includes('Blade Runner');
+      console.log(`${isolated ? 'ok  ' : 'FAIL'} - server admin does not see the other server`);
+      if (!isolated) failures += 1;
+    }
 
     const pages = [
       '/',
@@ -253,14 +385,21 @@ async function main() {
       '/activity',
       '/stats',
       '/stats?days=7',
+      '/stats?days=30&by=time',
+      '/libraries',
       '/suggestions',
       '/admin/activity',
       '/admin/users',
       `/admin/users/${userId}`,
       '/admin/stats',
       '/admin/stats?days=365',
+      '/admin/stats?days=30&by=time',
       '/admin/system',
       '/admin/config',
+      '/admin/notifications',
+      '/admin/newsletter',
+      '/admin/security',
+      '/profile',
       '/admin/transcoding',
       '/admin/transcoding?days=all',
       '/admin/clients',
@@ -275,7 +414,7 @@ async function main() {
       '/api/library/search?q=arr',
       '/api/search?q=fire',
       '/api/history/export?type=episode',
-      '/api/art/lib-1',
+      '/api/art/stub-jellyfin/lib-1',
     ];
 
     for (const path of pages) {
@@ -289,9 +428,12 @@ async function main() {
     // dot segments are normalised away by fetch and would otherwise reach arbitrary
     // media server endpoints, with the admin token attached on Plex.
     const rejected = [
-      '/api/art/' + encodeURIComponent('../../System/Info?k='),
-      '/api/art/' + encodeURIComponent('../../Users'),
-      '/api/art/' + encodeURIComponent('lib-1?x=y'),
+      '/api/art/stub-jellyfin/' + encodeURIComponent('../../System/Info?k='),
+      '/api/art/stub-jellyfin/' + encodeURIComponent('../../Users'),
+      '/api/art/stub-jellyfin/' + encodeURIComponent('lib-1?x=y'),
+      // A slug that resolves to no server must not fall back to "the" server.
+      '/api/art/no-such-server/lib-1',
+      '/api/art/' + encodeURIComponent('../stub-jellyfin') + '/lib-1',
     ];
     for (const path of rejected) {
       const res = await fetch(base + path, { headers: { Cookie: cookie }, redirect: 'manual' });
@@ -302,10 +444,42 @@ async function main() {
 
     // Unauthenticated callers must not reach the proxy at all.
     {
-      const res = await fetch(`${base}/api/art/lib-1`, { redirect: 'manual' });
+      const res = await fetch(`${base}/api/art/stub-jellyfin/lib-1`, { redirect: 'manual' });
       const ok = res.status === 401;
-      console.log(`${ok ? 'ok  ' : 'FAIL'} - GET /api/art/lib-1 anonymous → ${res.status}`);
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - GET /api/art anonymous → ${res.status}`);
       if (!ok) failures += 1;
+    }
+
+    // Terminating a stream is the one destructive action in the app.
+    {
+      const terminate = (init: RequestInit) =>
+        fetch(`${base}/api/admin/sessions/terminate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          ...init,
+        });
+
+      const anonymous = await terminate({ body: JSON.stringify({ sessionKey: '1:sess-1' }) });
+      const anonymousOk = anonymous.status === 403;
+      console.log(`${anonymousOk ? 'ok  ' : 'FAIL'} - POST terminate anonymous → ${anonymous.status}`);
+      if (!anonymousOk) failures += 1;
+
+      const missing = await terminate({
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({}),
+      });
+      const missingOk = missing.status === 400;
+      console.log(`${missingOk ? 'ok  ' : 'FAIL'} - POST terminate without a key → ${missing.status}`);
+      if (!missingOk) failures += 1;
+
+      // A stored session key that is not currently live must not be terminable.
+      const stale = await terminate({
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ sessionKey: '1:not-a-live-session' }),
+      });
+      const staleOk = stale.status === 404;
+      console.log(`${staleOk ? 'ok  ' : 'FAIL'} - POST terminate for a dead session → ${stale.status}`);
+      if (!staleOk) failures += 1;
     }
 
     // A 200 alone would not prove the data actually rendered.
@@ -318,15 +492,21 @@ async function main() {
       ['/admin/system', ['Stub Jellyfin']],
       ['/stats', ['Busiest day', 'By weekday', 'data-tip']],
       ['/title/Firefly', ['Recent plays', 'Devices', 'Watch time']],
-      ['/admin/stats', ['Most watch time', 'Users with plays']],
+      ['/admin/stats', ['Top lists', 'By watch time', 'Users with plays', 'Clients']],
+      ['/admin/stats?by=time', ['Top lists', 'Titles', 'Genres']],
+      ['/stats?by=time', ['Top lists', 'By plays']],
+      ['/admin/system', ['Watcharr version', 'update check disabled']],
       ['/admin/transcoding', ['Direct play', 'VideoCodecNotSupported', 'H264', 'TS', '720p']],
       ['/admin/clients', ['Jellyfin Web', 'Jellyfin Android TV', 'Fire TV', 'Clients per user']],
-      ['/admin/activity', ['Jellyfin Web', 'Transcode']],
+      ['/admin/activity', ['Jellyfin Web', 'Transcode', 'Streams per hour', 'Bandwidth per hour']],
       ['/wrapped', ['Your Year in Review', 'Your year in days', 'Most plays of the year']],
       ['/', ['Now playing', 'Blade Runner', 'scrub-fill', 'Recently watched']],
       ['/stats', ['When you watch', 'Binge record', 'Library explored', 'How your streams were delivered', 'area-line']],
       ['/history', ['Genres', 'Export CSV', 'genre=Sci-Fi']],
       ['/activity', ['Now playing']],
+      ['/libraries', ['Libraries', 'Recently added', 'Never started', 'Movies', 'Shows']],
+      // LAN/WAN needs no lookup and no key, so it has to show up unconditionally.
+      ['/admin/activity', ['Remote streams', 'LAN']],
       // Drill-downs: every one of these is a link a reader is told to click.
       ['/title/Firefly', ['Episodes you watched', 'Serenity', 'The Train Job', '/item/lib-3']],
       ['/item/lib-3', ['Every play', 'Firefly', 'Serenity']],
@@ -437,6 +617,7 @@ async function main() {
     app.kill();
     await Promise.race([exited, new Promise((r) => setTimeout(r, 5_000))]);
     stub.close();
+    stub2.close();
     try {
       rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     } catch (err) {

@@ -45,7 +45,7 @@ export async function GET(request: Request) {
   }
 
   // The media server may be down; the palette stays useful without library hits.
-  const library = await searchLibrary(q, PER_KIND).catch(() => []);
+  const library = await searchLibrary(session.user.serverId, q, PER_KIND).catch(() => []);
   for (const item of library) {
     results.push({
       kind: 'library',
@@ -55,10 +55,14 @@ export async function GET(request: Request) {
     });
   }
 
-  if (session.user.isAdmin) {
+  if (session.user.isAdmin || session.user.globalAdmin) {
+    // A server admin must not find accounts that live on another server.
+    const visible = session.user.globalAdmin
+      ? sql`1 = 1`
+      : sql`server_id = ${session.user.serverId}`;
     const found = await db.all<{ id: number; username: string }>(sql`
       SELECT id, username FROM users
-      WHERE username LIKE ${needle}
+      WHERE username LIKE ${needle} AND ${visible}
       ORDER BY username
       LIMIT ${PER_KIND}
     `);

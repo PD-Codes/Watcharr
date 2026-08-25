@@ -2,7 +2,7 @@
 
 # Watcharr
 
-**Self-hosted companion app for a single Plex, Jellyfin or Emby server.**
+**Self-hosted companion app for your Plex, Jellyfin and Emby servers.**
 
 Watchlist · history · live activity · statistics · suggestions · year in review
 
@@ -21,8 +21,8 @@ Watchlist · history · live activity · statistics · suggestions · year in re
 application** — Sonarr, Radarr, Lidarr, Readarr, Prowlarr, Bazarr and the rest are separate
 projects by separate people. The name simply rhymes.
 
-Watcharr does not download, index, request, rename or manage anything. It reads from one
-media server you already run and shows you what was watched on it. If you are looking for
+Watcharr does not download, index, request, rename or manage anything. It reads from the
+media servers you already run and shows you what was watched on them. If you are looking for
 request management, use [Overseerr](https://overseerr.dev/) or
 [Jellyseerr](https://github.com/Fallenbagel/jellyseerr).
 
@@ -141,10 +141,7 @@ cd watcharr
 cp .env.example .env
 echo "SESSION_SECRET=$(openssl rand -hex 32)" >> .env
 
-# --ignore-scripts skips a needless native rebuild of better-sqlite3, which ships
-# prebuilt binaries for linux/macOS/Windows on x64 and arm64. Without it you need
-# Python and a C++ toolchain for no benefit.
-npm ci --ignore-scripts
+npm ci
 npm run build
 npm start
 ```
@@ -163,7 +160,7 @@ configuration page.
 |---|---|---|
 | `SESSION_SECRET` | *(required)* | Signs session cookies and derives the key that encrypts media server tokens at rest. Generate with `openssl rand -hex 32`. **Changing it invalidates every stored token and signs everyone out.** |
 | `DATABASE_PATH` | `./data/watcharr.db` | SQLite file. The container defaults to `/app/data/watcharr.db`; keep that path on a volume. |
-| `APP_URL` | `http://localhost:3000` | Public base URL of this deployment — **the address you actually type into the browser**. Used for the Plex sign-in callback, and it decides whether the session cookie is marked `Secure`. If it says `https://` while you reach the app over plain HTTP, your browser will throw the session cookie away and sign-in will appear to do nothing. Behind a reverse proxy that sets `X-Forwarded-Proto`, that header wins. |
+| `APP_URL` | `http://localhost:3000` | Public base URL of this deployment. Used for the Plex sign-in callback. |
 | `PORT` | `3000` | Port the server listens on. |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | *(unset)* | Set to `0` **only** if your media server uses a self-signed certificate. It disables certificate checking process-wide. |
 
@@ -312,7 +309,7 @@ than a public issue.
 ## Development
 
 ```bash
-npm ci --ignore-scripts
+npm install
 npm run dev          # applies migrations, then starts the dev server on :3000
 
 npm run typecheck

@@ -94,7 +94,6 @@ jobs:
           node-version: ${{ steps.meta.outputs.node }}
           cache: npm
 
-      # --ignore-scripts skips a pointless better-sqlite3 rebuild; see the Dockerfile.
       - name: Install
         if: steps.check.outputs.publish == 'true'
         run: npm ci --ignore-scripts

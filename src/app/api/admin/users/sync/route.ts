@@ -9,11 +9,11 @@ export const dynamic = 'force-dynamic';
 /** Imports media server accounts that have not signed in to Watcharr yet. */
 export async function POST() {
   const session = await getSession();
-  if (!session?.user.isAdmin) {
+  if (!session || !(session.user.isAdmin || session.user.globalAdmin)) {
     return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
   }
 
-  const adapter = await getAdapter();
+  const adapter = await getAdapter(session.user.serverId);
   const serverUsers = await adapter.listUsers();
   if (!serverUsers.length) return NextResponse.json({ ok: true, imported: 0 });
 
@@ -21,6 +21,7 @@ export async function POST() {
     .insert(users)
     .values(
       serverUsers.map((u) => ({
+        serverId: session.user.serverId,
         serverUserId: u.serverUserId,
         username: u.username,
         email: u.email,

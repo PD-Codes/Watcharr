@@ -3,9 +3,9 @@ import { notFound } from 'next/navigation';
 import { BarChart, ColumnChart, StatCard } from '@/components/Charts';
 import { Icon } from '@/components/Icons';
 import OpenInServer from '@/components/OpenInServer';
-import { formatDate, formatDuration, formatMinutes } from '@/components/format';
+import { artUrl, formatDate, formatDuration, formatMinutes } from '@/components/format';
 import { getTitleDetail } from '@/server/titles';
-import { requireUser } from '@/server/session';
+import { adminScope, isAdmin, requireUser } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,8 +20,8 @@ export default async function TitlePage({
   const label = decodeURIComponent((await params).label);
 
   // Admins can look at a title across the whole server; everyone else sees their own plays.
-  const serverWide = (await searchParams).scope === 'server' && session.user.isAdmin;
-  const detail = await getTitleDetail(label, serverWide ? { userId: null } : { userId: session.user.id });
+  const serverWide = (await searchParams).scope === 'server' && isAdmin(session.user);
+  const detail = await getTitleDetail(label, serverWide ? adminScope(session.user) : { userId: session.user.id });
   if (!detail) notFound();
 
   const isShow = detail.distinctItems > 1;
@@ -36,7 +36,7 @@ export default async function TitlePage({
       <div className="title-head">
         {detail.itemId && (
           /* eslint-disable-next-line @next/next/no-img-element */
-          <img className="poster" src={`/api/art/${detail.itemId}`} alt="" />
+          <img className="poster" src={artUrl(session.server.slug, detail.itemId)} alt="" />
         )}
         <div>
           <h1>{detail.label}</h1>
@@ -56,8 +56,8 @@ export default async function TitlePage({
             ))}
           </ul>
           <p className="chips">
-            <OpenInServer itemId={detail.itemId} />
-            {session.user.isAdmin && (
+            <OpenInServer itemId={detail.itemId} serverId={session.user.serverId} />
+            {isAdmin(session.user) && (
               <Link
                 className="badge"
                 href={`/title/${encodeURIComponent(detail.label)}${serverWide ? '' : '?scope=server'}`}

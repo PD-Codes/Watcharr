@@ -18,15 +18,17 @@ export function userNav(suggestionsEnabled: boolean): NavItem[] {
     { href: '/history', label: t('nav.history'), icon: 'history' },
     { href: '/activity', label: t('nav.activity'), icon: 'activity' },
     { href: '/stats', label: t('nav.stats'), icon: 'stats' },
+    { href: '/libraries', label: 'Libraries', icon: 'server' },
     ...(suggestionsEnabled
       ? [{ href: '/suggestions', label: t('nav.suggestions'), icon: 'suggestions' as const }]
       : []),
     { href: '/wrapped', label: t('nav.wrapped'), icon: 'wrapped' },
+    { href: '/profile', label: 'Profile', icon: 'users' },
   ];
 }
 
-/** Admin-only destinations. */
-export function adminNav(serverStatsEnabled: boolean): NavItem[] {
+/** Admin-only destinations. Server management is reserved for global admins. */
+export function adminNav(serverStatsEnabled: boolean, globalAdmin = false): NavItem[] {
   return [
     { href: '/admin/activity', label: t('nav.adminActivity'), icon: 'activity' },
     { href: '/admin/users', label: t('nav.adminUsers'), icon: 'users' },
@@ -36,7 +38,15 @@ export function adminNav(serverStatsEnabled: boolean): NavItem[] {
     { href: '/admin/transcoding', label: t('nav.adminTranscoding'), icon: 'transcode' },
     { href: '/admin/clients', label: t('nav.adminClients'), icon: 'devices' },
     { href: '/admin/system', label: t('nav.adminSystem'), icon: 'server' },
-    { href: '/admin/config', label: t('nav.adminConfig'), icon: 'settings' },
+    { href: '/admin/security', label: 'Security', icon: 'users' },
+    ...(globalAdmin
+      ? [
+          { href: '/admin/servers', label: 'Servers', icon: 'server' as const },
+          { href: '/admin/notifications', label: 'Notifications', icon: 'activity' as const },
+          { href: '/admin/newsletter', label: 'Newsletter', icon: 'wrapped' as const },
+          { href: '/admin/config', label: t('nav.adminConfig'), icon: 'settings' as const },
+        ]
+      : []),
   ];
 }
 
