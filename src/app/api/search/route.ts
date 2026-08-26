@@ -35,12 +35,34 @@ export async function GET(request: Request) {
     ORDER BY max(watched_at) DESC
     LIMIT ${PER_KIND}
   `);
+
+  // Episodes are their own results, not just a route into their show: searching for an
+  // episode name used to land on the series page with no sign of what was matched.
+  const episodes = await db.all<{ item_id: string; title: string; show: string | null }>(sql`
+    SELECT item_id, max(title) AS title, max(grandparent_title) AS show
+    FROM watch_history
+    WHERE user_id = ${session.user.id}
+      AND grandparent_title IS NOT NULL
+      AND title LIKE ${needle}
+    GROUP BY item_id
+    ORDER BY max(watched_at) DESC
+    LIMIT ${PER_KIND}
+  `);
   for (const t of titles) {
     results.push({
       kind: 'title',
       label: t.label,
       sub: `${Number(t.plays)} plays`,
       href: `/title/${encodeURIComponent(t.label)}`,
+    });
+  }
+
+  for (const episode of episodes) {
+    results.push({
+      kind: 'title',
+      label: episode.title,
+      sub: episode.show ?? undefined,
+      href: `/item/${encodeURIComponent(episode.item_id)}`,
     });
   }
 

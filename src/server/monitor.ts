@@ -3,6 +3,8 @@ import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { monitorAlerts, playbackSessions, users } from '@/db/schema';
 import { getSettings } from './config';
+import type { Translate } from '@/i18n';
+import { getDefaultT } from '@/i18n/server';
 import { liveSessionFilter } from './sync';
 import { notify } from './notifications';
 
@@ -39,6 +41,10 @@ async function fire(rule: string, message: string, value: number, threshold?: nu
  */
 export async function checkThresholds() {
   const settings = await getSettings();
+  // The wording is resolved once and stored with the alert. A message in monitor_alerts
+  // therefore keeps the language it was sent in — re-translating history when an admin
+  // switches languages would rewrite what people were actually notified with.
+  const t = await getDefaultT();
 
   if (settings.monitorMaxStreamsPerUser || settings.monitorBandwidthMbps || settings.monitorTranscodeAlert) {
     const live = await db
@@ -63,7 +69,11 @@ export async function checkThresholds() {
         if (cooled(`streams:${username}`)) continue;
         await fire(
           'max_streams_per_user',
-          `${username} has ${count} concurrent streams (limit ${settings.monitorMaxStreamsPerUser})`,
+          t('monitor.maxStreams', {
+            username,
+            count,
+            limit: settings.monitorMaxStreamsPerUser,
+          }),
           count,
           settings.monitorMaxStreamsPerUser,
         );
@@ -75,7 +85,7 @@ export async function checkThresholds() {
       if (totalMbps > settings.monitorBandwidthMbps && !cooled('bandwidth')) {
         await fire(
           'bandwidth',
-          `Total delivered bandwidth is ${totalMbps} Mbps (limit ${settings.monitorBandwidthMbps})`,
+          t('monitor.bandwidth', { value: totalMbps, limit: settings.monitorBandwidthMbps }),
           totalMbps,
           settings.monitorBandwidthMbps,
         );
@@ -85,18 +95,63 @@ export async function checkThresholds() {
     if (settings.monitorTranscodeAlert) {
       const transcoding = live.filter((row) => row.playMethod === 'transcode');
       if (transcoding.length > 0 && !cooled('transcode')) {
-        await fire('transcode', `${transcoding.length} stream(s) currently transcoding`, transcoding.length);
+        await fire(
+          'transcode',
+          t('monitor.transcode', { count: transcoding.length }),
+          transcoding.length,
+        );
       }
     }
   }
 
   if (settings.monitorFailedLoginThreshold) {
-    await checkFailedLogins(settings.monitorFailedLoginThreshold, settings.monitorFailedLoginWindowMin);
+    await checkFailedLogins(
+      t,
+      settings.monitorFailedLoginThreshold,
+      settings.monitorFailedLoginWindowMin,
+    );
+  }
+
+  if (settings.monitorNewAddressAlert) {
+    await checkNewAddresses(t, settings.monitorFailedLoginWindowMin);
+  }
+}
+
+/**
+ * A successful login from an address this account has never used. On a shared password
+ * this is the only tell there is: someone who knows the credentials produces no failed
+ * attempt at all, so checkFailedLogins() above would stay silent forever.
+ *
+ * "Never used" means no earlier successful login for that user/address pair before the
+ * window started. A pair therefore stops being new once the window has moved past it,
+ * which is what keeps a returning device from alerting twice.
+ */
+async function checkNewAddresses(t: Translate, windowMin: number) {
+  const rows = await db.all<{ username: string; ip: string }>(sql`
+    SELECT l.username AS username, l.ip AS ip
+    FROM login_history l
+    WHERE l.success = 1
+      AND l.ip IS NOT NULL
+      AND l.user_id IS NOT NULL
+      AND l.created_at >= (unixepoch('now', ${`-${windowMin} minutes`}) * 1000)
+      AND NOT EXISTS (
+        SELECT 1 FROM login_history p
+        WHERE p.success = 1
+          AND p.user_id = l.user_id
+          AND p.ip = l.ip
+          AND p.created_at < (unixepoch('now', ${`-${windowMin} minutes`}) * 1000)
+      )
+    GROUP BY l.user_id, l.ip
+  `);
+
+  for (const row of rows) {
+    if (cooled(`new_address:${row.username}:${row.ip}`)) continue;
+    await fire('new_address', t('monitor.newAddress', { username: row.username, ip: row.ip }), 1);
   }
 }
 
 /** Repeated failed logins from the same IP within the configured window — a brute-force tell. */
-async function checkFailedLogins(threshold: number, windowMin: number) {
+async function checkFailedLogins(t: Translate, threshold: number, windowMin: number) {
   const rows = await db.all<{ ip: string; attempts: number }>(sql`
     SELECT ip, count(*) AS attempts
     FROM login_history
@@ -111,7 +166,7 @@ async function checkFailedLogins(threshold: number, windowMin: number) {
     if (cooled(`failed_login:${row.ip}`)) continue;
     await fire(
       'failed_logins',
-      `${row.attempts} failed logins from ${row.ip} in the last ${windowMin} minutes`,
+      t('monitor.failedLogins', { count: row.attempts, ip: row.ip, minutes: windowMin }),
       row.attempts,
       threshold,
     );

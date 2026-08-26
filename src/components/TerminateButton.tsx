@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useT } from '@/i18n/client';
 
 /**
  * Stops one running stream. The confirmation doubles as the message box: whatever is
@@ -9,11 +10,12 @@ import { useRouter } from 'next/navigation';
  */
 export default function TerminateButton({ sessionKey }: { sessionKey: string }) {
   const router = useRouter();
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function stop() {
-    const reason = window.prompt('Stop this stream? Optional message for the viewer:', '');
+    const reason = window.prompt(t('terminate.prompt'), '');
     if (reason === null) return;
 
     setBusy(true);
@@ -28,10 +30,10 @@ export default function TerminateButton({ sessionKey }: { sessionKey: string }) 
         router.refresh();
       } else {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? 'Could not stop the stream');
+        setError(body?.error ?? t('terminate.failed'));
       }
     } catch {
-      setError('Could not reach the server');
+      setError(t('error.unreachable'));
     } finally {
       setBusy(false);
     }
@@ -40,7 +42,7 @@ export default function TerminateButton({ sessionKey }: { sessionKey: string }) 
   return (
     <>
       <button type="button" className="outlined" onClick={stop} disabled={busy}>
-        {busy ? 'Stopping…' : 'Stop'}
+        {busy ? t('terminate.stopping') : t('terminate.stop')}
       </button>
       {error && (
         <p className="muted" role="alert" style={{ margin: '6px 0 0' }}>

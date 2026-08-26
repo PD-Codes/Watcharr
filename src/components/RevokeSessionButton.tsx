@@ -2,15 +2,17 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useT } from '@/i18n/client';
 
 /** Signs one session out remotely. Same confirm-then-fetch shape as TerminateButton. */
 export default function RevokeSessionButton({ id }: { id: string }) {
   const router = useRouter();
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function revoke() {
-    if (!window.confirm('Sign this session out?')) return;
+    if (!window.confirm(t('session.revokeConfirm'))) return;
     setBusy(true);
     setError(null);
     try {
@@ -23,10 +25,10 @@ export default function RevokeSessionButton({ id }: { id: string }) {
         router.refresh();
       } else {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? 'Could not revoke the session');
+        setError(body?.error ?? t('session.revokeFailed'));
       }
     } catch {
-      setError('Could not reach the server');
+      setError(t('error.unreachable'));
     } finally {
       setBusy(false);
     }
@@ -35,7 +37,7 @@ export default function RevokeSessionButton({ id }: { id: string }) {
   return (
     <>
       <button type="button" className="outlined" onClick={revoke} disabled={busy}>
-        {busy ? 'Signing out…' : 'Sign out'}
+        {busy ? t('session.signingOut') : t('action.signOut')}
       </button>
       {error && (
         <p className="muted" role="alert" style={{ margin: '6px 0 0' }}>

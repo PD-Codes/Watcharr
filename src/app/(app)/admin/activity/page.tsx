@@ -10,6 +10,7 @@ import { getAdapter } from '@/server/config';
 import { supportsTerminate } from '@/server/adapters';
 import { adminScope, requireAdmin } from '@/server/session';
 import { lookupCountry } from '@/server/geoip';
+import { getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,7 @@ export default async function AdminActivityPage({
   searchParams: Promise<{ days?: string }>;
 }) {
   const session = await requireAdmin();
+  const t = await getT();
   const requested = Number((await searchParams).days ?? 7);
   const days = PERIODS.includes(requested as (typeof PERIODS)[number]) ? requested : 7;
   await syncActivity().catch(reportSyncError('activity sync'));
@@ -46,6 +48,10 @@ export default async function AdminActivityPage({
       height: playbackSessions.height,
       bitrateKbps: playbackSessions.bitrateKbps,
       transcodeReason: playbackSessions.transcodeReason,
+      audioChannels: playbackSessions.audioChannels,
+      subtitleCodec: playbackSessions.subtitleCodec,
+      sourceVideoCodec: playbackSessions.sourceVideoCodec,
+      sourceHeight: playbackSessions.sourceHeight,
       startedAt: playbackSessions.startedAt,
       lastSeenAt: playbackSessions.lastSeenAt,
       progressAt: playbackSessions.progressAt,
@@ -87,28 +93,28 @@ export default async function AdminActivityPage({
   return (
     <>
       <AutoRefresh seconds={10} />
-      <p className="eyebrow">Admin</p>
-      <h1>All Activity</h1>
-      <p className="subtitle">Every active stream on the server.</p>
+      <p className="eyebrow">{t('nav.admin')}</p>
+      <h1>{t('nav.adminActivity')}</h1>
+      <p className="subtitle">{t('adminActivity.subtitle')}</p>
 
       <div className="grid cols-4">
-        <StatCard label="Active streams" value={String(rows.length)} />
-        <StatCard label="Transcoding" value={String(transcodes)} />
+        <StatCard label={t('adminActivity.activeStreams')} value={String(rows.length)} />
+        <StatCard label={t('adminActivity.transcoding')} value={String(transcodes)} />
         <StatCard
-          label="Remote streams"
+          label={t('adminActivity.remoteStreams')}
           value={`${rows.filter((r) => r.isLocal === false).length} / ${rows.length}`}
-          info="Streams delivered to an address outside the local network."
+          info={t('adminActivity.remoteStreamsInfo')}
         />
         <StatCard
-          label="Total bandwidth"
+          label={t('adminActivity.totalBandwidth')}
           value={`${(bandwidth / 1000).toFixed(1)} Mbps`}
-          info="Sum of the delivered bitrate of all active streams."
+          info={t('adminActivity.totalBandwidthInfo')}
         />
         <StatCard
-          label="Direct play"
+          label={t('stream.directPlay')}
           value={`${rows.length - transcodes} / ${rows.length}`}
           href="/admin/transcoding"
-          info="Streams the server sends without re-encoding. Opens the transcoding statistics."
+          info={t('adminActivity.directPlayInfo')}
         />
       </div>
 
@@ -117,7 +123,7 @@ export default async function AdminActivityPage({
       </div>
 
       <div className="section toolbar">
-        <h2 style={{ margin: 0 }}>History</h2>
+        <h2 style={{ margin: 0 }}>{t('nav.history')}</h2>
         <div className="seg">
           {PERIODS.map((period) => (
             <a
@@ -125,30 +131,38 @@ export default async function AdminActivityPage({
               href={`/admin/activity?days=${period}`}
               className={period === days ? 'on' : undefined}
             >
-              {period}d
+              {t('adminActivity.daysShort', { count: period })}
             </a>
           ))}
         </div>
       </div>
 
       <section className="section">
-        <h2>{days <= 7 ? 'Streams per hour' : 'Streams per day'}</h2>
+        <h2>
+          {days <= 7
+            ? t('adminActivity.streamsPerHour')
+            : t('adminActivity.streamsPerDay')}
+        </h2>
         <div className="card">
           <AreaChart
             data={streamSeries}
-            format={(v) => `${v} streams`}
-            label={`Streams over the last ${days} days`}
+            format={(v) => t('common.streams', { count: v })}
+            label={t('adminActivity.streamsChart', { days })}
           />
         </div>
       </section>
 
       <section className="section">
-        <h2>{days <= 7 ? 'Bandwidth per hour' : 'Bandwidth per day'}</h2>
+        <h2>
+          {days <= 7
+            ? t('adminActivity.bandwidthPerHour')
+            : t('adminActivity.bandwidthPerDay')}
+        </h2>
         <div className="card">
           <AreaChart
             data={bandwidthSeries}
             format={(v) => `${v} Mbps`}
-            label={`Delivered bandwidth over the last ${days} days`}
+            label={t('adminActivity.bandwidthChart', { days })}
           />
         </div>
       </section>

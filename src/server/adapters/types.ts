@@ -41,6 +41,18 @@ export interface PlaybackSession {
   height?: number;
   /** Why the server had to transcode, as reported by the media server. */
   transcodeReason?: string;
+  audioChannels?: number;
+  /** Codec of the burned-in or delivered subtitle track, where one is playing. */
+  subtitleCodec?: string;
+
+  // What the file holds, as opposed to the fields above, which describe what is being
+  // delivered. During a transcode the two differ, and only having one of them makes a
+  // stream panel unreadable: "H264 1080p" says nothing without the 4K HEVC it came from.
+  sourceVideoCodec?: string;
+  sourceAudioCodec?: string;
+  sourceContainer?: string;
+  sourceHeight?: number;
+  sourceBitrateKbps?: number;
   /** Address the stream is delivered to, as reported by the media server. */
   remoteAddress?: string;
   /**
@@ -79,6 +91,15 @@ export interface LibraryItem {
   addedAt?: Date;
   /** Which library the item belongs to, where the backend reports it. */
   sectionId?: string;
+
+  // Media info, for the per-library table. Optional throughout: a backend that does not
+  // report a field leaves it out rather than reporting a zero that would be aggregated.
+  fileSizeBytes?: number;
+  videoCodec?: string;
+  height?: number;
+  durationMs?: number;
+  /** Last play according to the media server itself, which reaches back before Watcharr. */
+  lastPlayedAt?: Date;
 }
 
 /** A library / section as the media server groups it. */
@@ -87,7 +108,11 @@ export interface LibrarySection {
   name: string;
   /** 'movie' | 'show' | whatever the backend calls it. */
   mediaType: string;
+  /** Movies, or series — the top level of the library, never its children. */
   itemCount: number;
+  /** Only for show libraries, and only where the backend reports a total. */
+  seasonCount?: number;
+  episodeCount?: number;
 }
 
 export interface WatchlistEntry {

@@ -6,6 +6,8 @@ import type { LibraryItem } from './adapters';
 import { publicArtUrl } from './artlink';
 import { createAdapter, type ServerType } from './adapters';
 import { getSettings, listServers, updateSettings, type ServerRow } from './config';
+import { DEFAULT_LOCALE, isLocale, translator, type Locale } from '@/i18n';
+import { getDefaultLocale } from '@/i18n/server';
 import { sendMail } from './notifications';
 
 // The recently-added newsletter. Two owners on purpose: a global admin decides the
@@ -84,8 +86,12 @@ export async function collectNewsletter(): Promise<NewsletterEntry[]> {
  * Renders one issue. Table-based and inline-styled on purpose: mail clients ignore most of
  * a stylesheet, and this has to survive Gmail as well as it survives the static URL.
  */
-export async function renderNewsletter(entries: NewsletterEntry[]): Promise<string> {
+export async function renderNewsletter(
+  entries: NewsletterEntry[],
+  locale: Locale = DEFAULT_LOCALE,
+): Promise<string> {
   const settings = await getSettings();
+  const t = translator(locale);
   const intro = settings.newsletterIntro.trim();
 
   const sections = entries
@@ -125,24 +131,27 @@ export async function renderNewsletter(entries: NewsletterEntry[]): Promise<stri
   <div style="max-width:640px;margin:0 auto">
     <h1 style="font-size:20px;color:#ffb020;margin:0 0 4px">${escapeHtml(settings.newsletterSubject)}</h1>
     <p style="font-size:12px;color:#9b958c;margin:0">
-      The last ${settings.newsletterDays} days on the server.
+      ${escapeHtml(t('newsletterMail.period', { days: settings.newsletterDays }))}
     </p>
     ${intro ? `<p style="font-size:13px;color:#e9e6e1;margin:16px 0 0">${escapeHtml(intro)}</p>` : ''}
-    ${sections || '<p style="color:#9b958c;font-size:13px;margin-top:20px">Nothing was added in this period.</p>'}
+    ${sections || `<p style="color:#9b958c;font-size:13px;margin-top:20px">${escapeHtml(t('newsletterMail.nothing'))}</p>`}
     <p style="font-size:11px;color:#6f6a63;margin-top:32px">
-      You receive this because you subscribed in Watcharr. Unsubscribe on your profile page.
+      ${escapeHtml(t('newsletterMail.footer'))}
     </p>
   </div>
 </body></html>`;
 }
 
 /** Everyone who asked for it. */
-export async function listSubscribers(): Promise<{ userId: number; username: string; email: string }[]> {
+export async function listSubscribers(): Promise<
+  { userId: number; username: string; email: string; locale: string | null }[]
+> {
   return db
     .select({
       userId: newsletterSubscriptions.userId,
       username: users.username,
       email: newsletterSubscriptions.email,
+      locale: users.locale,
     })
     .from(newsletterSubscriptions)
     .innerJoin(users, eq(users.id, newsletterSubscriptions.userId));
@@ -176,19 +185,31 @@ export async function sendNewsletter(): Promise<{ ok: boolean; sent: number; err
   const settings = await getSettings();
   const subscribers = await listSubscribers();
   const entries = await collectNewsletter();
-  const html = await renderNewsletter(entries);
+  const fallback = await getDefaultLocale();
 
-  await updateSettings({ newsletterLastHtml: html, newsletterLastSentAt: new Date() });
+  // Rendered once per language actually subscribed to, not once per subscriber: the issue
+  // is identical apart from three sentences, and a deployment realistically has one or two
+  // languages in play. Recipients stay in BCC per group, so nobody learns another's address.
+  const byLocale = new Map<Locale, string[]>();
+  for (const subscriber of subscribers) {
+    const locale = isLocale(subscriber.locale) ? subscriber.locale : fallback;
+    byLocale.set(locale, [...(byLocale.get(locale) ?? []), subscriber.email]);
+  }
+
+  // The static URL serves the deployment's own language: it is one stored issue, and the
+  // person opening it is not necessarily one of the recipients.
+  const stored = await renderNewsletter(entries, fallback);
+  await updateSettings({ newsletterLastHtml: stored, newsletterLastSentAt: new Date() });
   if (!subscribers.length) return { ok: true, sent: 0 };
 
-  const result = await sendMail(
-    subscribers.map((s) => s.email),
-    settings.newsletterSubject,
-    html,
-  );
-  return result.ok
-    ? { ok: true, sent: subscribers.length }
-    : { ok: false, sent: 0, error: result.error };
+  let error: string | undefined;
+  for (const [locale, recipients] of byLocale) {
+    const html = locale === fallback ? stored : await renderNewsletter(entries, locale);
+    const result = await sendMail(recipients, settings.newsletterSubject, html);
+    // One broken group must not hide that the others went out.
+    if (!result.ok) error ??= result.error;
+  }
+  return error ? { ok: false, sent: 0, error } : { ok: true, sent: subscribers.length };
 }
 
 /** Weekly-or-daily schedule check, run from the activity sync tick like every other timer. */

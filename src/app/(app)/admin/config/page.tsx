@@ -2,23 +2,24 @@ import { formatDate } from '@/components/format';
 import { getSettings } from '@/server/config';
 import { listAlerts } from '@/server/monitor';
 import { requireGlobalAdmin } from '@/server/session';
+import { getT } from '@/i18n/server';
 import ConfigForm from './ConfigForm';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminConfigPage() {
   await requireGlobalAdmin();
+  const t = await getT();
   const [settings, alerts] = await Promise.all([getSettings(), listAlerts(20)]);
 
   return (
     <>
-      <p className="eyebrow">Admin</p>
-      <h1>Settings</h1>
-      <p className="subtitle">
-        Applies to the whole deployment. Server connections live under Servers.
-      </p>
+      <p className="eyebrow">{t('nav.admin')}</p>
+      <h1>{t('config.title')}</h1>
+      <p className="subtitle">{t('config.subtitle')}</p>
       <ConfigForm
         hasTmdbKey={Boolean(settings.tmdbApiKey)}
+        defaultLocale={settings.defaultLocale}
         features={settings.features}
         watchedThreshold={settings.watchedThreshold}
         webhookUrl={settings.webhookUrl}
@@ -30,6 +31,7 @@ export default async function AdminConfigPage() {
         monitorTranscodeAlert={settings.monitorTranscodeAlert}
         monitorFailedLoginThreshold={settings.monitorFailedLoginThreshold}
         monitorFailedLoginWindowMin={settings.monitorFailedLoginWindowMin}
+        monitorNewAddressAlert={settings.monitorNewAddressAlert}
         digestEnabled={settings.digestEnabled}
         digestFrequency={settings.digestFrequency}
         backupAutoEnabled={settings.backupAutoEnabled}
@@ -37,14 +39,14 @@ export default async function AdminConfigPage() {
         backupRetention={settings.backupRetention}
       />
 
-      <h2 className="section">Recent alerts</h2>
+      <h2 className="section">{t('config.recentAlerts')}</h2>
       <div className="card table-wrap">
         <table>
           <thead>
             <tr>
-              <th>When</th>
-              <th>Rule</th>
-              <th>Message</th>
+              <th>{t('config.colWhen')}</th>
+              <th>{t('config.colRule')}</th>
+              <th>{t('config.colMessage')}</th>
             </tr>
           </thead>
           <tbody>
@@ -58,7 +60,7 @@ export default async function AdminConfigPage() {
             {alerts.length === 0 && (
               <tr>
                 <td colSpan={3} className="muted">
-                  No thresholds have fired yet.
+                  {t('config.noAlerts')}
                 </td>
               </tr>
             )}

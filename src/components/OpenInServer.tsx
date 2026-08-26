@@ -1,6 +1,7 @@
 import { getServer } from '@/server/config';
 import { itemDeepLink } from '@/server/deeplink';
 import { Icon } from './Icons';
+import { getT } from '@/i18n/server';
 
 const SERVER_LABEL: Record<string, string> = {
   jellyfin: 'Jellyfin',
@@ -20,6 +21,7 @@ export default async function OpenInServer({
   itemId: string | null;
   serverId: number;
 }) {
+  const t = await getT();
   if (!itemId) return null;
   const server = await getServer(serverId);
   if (!server) return null;
@@ -27,12 +29,12 @@ export default async function OpenInServer({
   const href = itemDeepLink(server.serverType, server.serverUrl, itemId);
   if (!href) return null;
 
-  const name = server.label || server.serverName || SERVER_LABEL[server.serverType] || 'the server';
+  const name = server.label || server.serverName || SERVER_LABEL[server.serverType] || t('server.fallbackName');
 
   return (
     <a className="link-out" href={href} target="_blank" rel="noreferrer noopener">
       <Icon name="external" />
-      Open in {name}
+      {t('server.openIn', { name })}
     </a>
   );
 }

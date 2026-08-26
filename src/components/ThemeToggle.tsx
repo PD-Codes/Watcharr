@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Icon } from './Icons';
+import { useT } from '@/i18n/client';
 
 export const THEME_KEY = 'watcharr-theme';
 
@@ -13,6 +14,7 @@ type Theme = 'dark' | 'light';
  * show a dark flash on a light system, which is exactly the thing people notice.
  */
 export default function ThemeToggle() {
+  const t = useT();
   const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
@@ -32,7 +34,7 @@ export default function ThemeToggle() {
   }
 
   // Rendered as a stable box before hydration so the app bar does not jump.
-  const label = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+  const label = theme === 'light' ? t('theme.toDark') : t('theme.toLight');
 
   return (
     <button type="button" className="icon-btn" onClick={toggle} aria-label={label} data-tip={label}>

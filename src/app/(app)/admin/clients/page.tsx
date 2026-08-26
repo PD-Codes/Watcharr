@@ -8,6 +8,8 @@ import {
   getPlaybackTotals,
 } from '@/server/playback';
 import { requireAdmin } from '@/server/session';
+import { getT } from '@/i18n/server';
+import type { Translate } from '@/i18n';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +19,7 @@ export default async function AdminClientsPage({
   searchParams: Promise<{ days?: string }>;
 }) {
   await requireAdmin();
+  const t = await getT();
   const raw = (await searchParams).days;
   const days = raw === 'all' ? undefined : Number(raw ?? 30);
 
@@ -30,47 +33,50 @@ export default async function AdminClientsPage({
 
   return (
     <>
-      <p className="eyebrow">Admin</p>
-      <h1>Client Statistics</h1>
-      <p className="subtitle">Which apps and devices people actually use.</p>
+      <p className="eyebrow">{t('nav.admin')}</p>
+      <h1>{t('clients.title')}</h1>
+      <p className="subtitle">{t('clients.subtitle')}</p>
 
       <form className="filters">
         <label>
-          Period
+          {t('serverstats.period')}
           <select name="days" defaultValue={raw ?? '30'}>
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-            <option value="90">Last 90 days</option>
-            <option value="all">All time</option>
+            <option value="7">{t('serverstats.last7')}</option>
+            <option value="30">{t('serverstats.last30')}</option>
+            <option value="90">{t('serverstats.last90')}</option>
+            <option value="all">{t('common.allTime')}</option>
           </select>
         </label>
-        <button>Apply</button>
+        <button>{t('action.apply')}</button>
       </form>
 
       <div className="grid cols-4">
-        <StatCard label="Total sessions" value={String(totals.sessions)} />
+        <StatCard label={t('clients.totalSessions')} value={String(totals.sessions)} />
         <StatCard
-          label="Unique clients"
+          label={t('clients.uniqueClients')}
           value={String(totals.uniqueClients)}
-          info="Different player applications, e.g. the web app or an Android TV client."
+          info={t('clients.uniqueClientsInfo')}
         />
-        <StatCard label="Unique users" value={String(totals.uniqueUsers)} />
+        <StatCard label={t('clients.uniqueUsers')} value={String(totals.uniqueUsers)} />
         <StatCard
-          label="Unique devices"
+          label={t('clients.uniqueDevices')}
           value={String(totals.uniqueDevices)}
-          info="Different browsers, phones or TVs reported by the media server."
+          info={t('clients.uniqueDevicesInfo')}
         />
       </div>
 
       <div className="grid cols-2 section">
         <section>
-          <h2>Sessions per client</h2>
+          <h2>{t('clients.sessionsPerClient')}</h2>
           <div className="card">
-            <DonutChart data={sessions.slice(0, 5)} format={(v) => `${v} sessions`} />
+            <DonutChart
+              data={sessions.slice(0, 5)}
+              format={(v) => t('common.sessions', { count: v })}
+            />
           </div>
         </section>
         <section>
-          <h2>Watch time per client</h2>
+          <h2>{t('clients.watchTimePerClient')}</h2>
           <div className="card">
             <BarChart data={watchtime} format={formatMinutes} />
           </div>
@@ -78,13 +84,13 @@ export default async function AdminClientsPage({
       </div>
 
       <section className="section">
-        <h2>Clients per user</h2>
-        <UsageTable rows={perUser} firstColumn="User" />
+        <h2>{t('clients.perUser')}</h2>
+        <UsageTable rows={perUser} firstColumn={t('common.user')} t={t} />
       </section>
 
       <section className="section">
-        <h2>Clients per device</h2>
-        <UsageTable rows={perDevice} firstColumn="Device" />
+        <h2>{t('clients.perDevice')}</h2>
+        <UsageTable rows={perDevice} firstColumn={t('common.device')} t={t} />
       </section>
     </>
   );
@@ -93,11 +99,13 @@ export default async function AdminClientsPage({
 function UsageTable({
   rows,
   firstColumn,
+  t,
 }: {
   rows: { primary: string; secondary: string; sessions: number; watchtimeMs: number; transcodes: number }[];
   firstColumn: string;
+  t: Translate;
 }) {
-  if (!rows.length) return <p className="muted">No sessions recorded yet.</p>;
+  if (!rows.length) return <p className="muted">{t('clients.empty')}</p>;
 
   return (
     <div className="table-wrap card">
@@ -105,10 +113,10 @@ function UsageTable({
         <thead>
           <tr>
             <th scope="col">{firstColumn}</th>
-            <th scope="col">Client</th>
-            <th scope="col">Sessions</th>
-            <th scope="col">Watch time</th>
-            <th scope="col">Transcoded</th>
+            <th scope="col">{t('activity.client')}</th>
+            <th scope="col">{t('clients.colSessions')}</th>
+            <th scope="col">{t('common.watchTime')}</th>
+            <th scope="col">{t('clients.colTranscoded')}</th>
           </tr>
         </thead>
         <tbody>

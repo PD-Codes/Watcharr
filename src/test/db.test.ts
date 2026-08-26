@@ -266,6 +266,8 @@ async function main() {
         title: 'A',
         mediaType: 'movie',
         state: 'ended',
+        playMethod: 'directplay',
+        isLocal: true,
         bitrateKbps: 3000,
         progressMs: 60 * 60_000,
         durationMs: 90 * 60_000,
@@ -280,6 +282,12 @@ async function main() {
         title: 'B',
         mediaType: 'movie',
         state: 'ended',
+        playMethod: 'transcode',
+        isLocal: false,
+        videoCodec: 'h264',
+        height: 720,
+        sourceVideoCodec: 'hevc',
+        sourceHeight: 2160,
         bitrateKbps: 5000,
         progressMs: 40 * 60_000,
         durationMs: 40 * 60_000,
@@ -309,6 +317,161 @@ async function main() {
     assert.equal(busiest.streams, 2, 'both overlapping sessions fall into one bucket');
     assert.equal(busiest.bandwidthKbps, 8000, 'bandwidth is summed per bucket');
     console.log('ok - getConcurrencyOverTime');
+
+    // Bandwidth is only actionable split by where it went: past-a is a LAN stream, past-b
+    // a remote one, and summing them would hide the half that costs uplink.
+    const { getBandwidthOverTime, getStreamTypesOverTime, listSessionHistory } = await import(
+      '../server/playback'
+    );
+    const bandwidth = await getBandwidthOverTime(1);
+    // Summed across buckets rather than asserted on one: the sessions are 90 minutes old,
+    // so which hourly bucket they land in depends on when the suite runs.
+    assert.equal(
+      Math.max(...bandwidth.map((p) => p.lanKbps)),
+      3000,
+      'the local session counts as LAN only',
+    );
+    assert.equal(
+      Math.max(...bandwidth.map((p) => p.wanKbps)),
+      5000,
+      'the remote session counts as WAN only',
+    );
+    console.log('ok - getBandwidthOverTime splits LAN from remote');
+
+    const types = await getStreamTypesOverTime(2);
+    const totalPer = (label: string) =>
+      types.series.find((serie) => serie.label === label)?.values.reduce((a, b) => a + b, 0) ?? 0;
+    assert.equal(types.labels.length, 2, 'one bucket per day in the range');
+    assert.equal(totalPer('Direct play'), 1);
+    assert.equal(totalPer('Transcode'), 1);
+    assert.equal(totalPer('Direct stream'), 0);
+    console.log('ok - getStreamTypesOverTime counts each delivery method');
+
+    const all = await listSessionHistory({ limit: 10 });
+    assert.equal(all.total, 2);
+    // past-b started ten minutes after past-a, so it heads the list.
+    assert.equal(all.rows[0].sessionKey, 'past-b', 'newest session first');
+    const transcodes = await listSessionHistory({ limit: 10, transcodesOnly: true });
+    assert.equal(transcodes.total, 1);
+    // Both halves survive the round trip, which is what the stream table renders as an arrow.
+    assert.deepEqual(
+      {
+        source: [transcodes.rows[0].sourceVideoCodec, transcodes.rows[0].sourceHeight],
+        delivered: [transcodes.rows[0].videoCodec, transcodes.rows[0].height],
+      },
+      { source: ['hevc', 2160], delivered: ['h264', 720] },
+    );
+    console.log('ok - listSessionHistory keeps both sides of a transcode');
+  }
+
+  // The play-count aggregates, which answer a different question from the watch-time ones:
+  // an evening of short episodes wins on count and loses on time. Own user and own rows:
+  // the checks above keep adding to alice's history, so an absolute count over her would
+  // change every time one of them grows.
+  {
+    const { getDailyPlays, getWeekdayPlays, getPlaysByMediaType, getPlaysByUser } = await import(
+      '../server/stats'
+    );
+    const [carol] = await db
+      .insert(users)
+      .values({ serverUserId: 'u3', username: 'carol' })
+      .returning();
+    const carolScope = { userId: carol.id };
+    await db.insert(watchHistory).values([
+      { userId: carol.id, itemId: 'c1', title: 'Dune', mediaType: 'movie', genres: [], watchedAt: today, durationMs: 9_000_000 },
+      { userId: carol.id, itemId: 'c2', title: 'Ep 1', grandparentTitle: 'Severance', mediaType: 'episode', genres: [], watchedAt: today, durationMs: 2_400_000 },
+      { userId: carol.id, itemId: 'c3', title: 'Ep 2', grandparentTitle: 'Severance', mediaType: 'episode', genres: [], watchedAt: yesterday, durationMs: 2_400_000 },
+    ]);
+
+    const daily = await getDailyPlays(carolScope, 2);
+    assert.equal(daily.length, 2, 'one bucket per day, empty days included');
+    assert.deepEqual(
+      daily.map((d) => d.value),
+      [1, 2],
+      'yesterday one play, today two',
+    );
+
+    const weekday = await getWeekdayPlays(carolScope);
+    assert.equal(weekday.length, 7);
+    assert.equal(weekday[0].label, 'Mon', 'the week starts on Monday, unlike strftime');
+    assert.equal(
+      weekday.reduce((sum, d) => sum + d.value, 0),
+      3,
+    );
+
+    const byType = await getPlaysByMediaType(carolScope);
+    assert.deepEqual(Object.fromEntries(byType.map((d) => [d.label, d.value])), {
+      episode: 2,
+      movie: 1,
+    });
+
+    // Server-wide by design, so it is read by name rather than by position.
+    const byUser = await getPlaysByUser();
+    assert.equal(byUser.find((d) => d.label === 'carol')?.value, 3);
+    console.log('ok - play-count aggregates');
+  }
+
+  // An item that is playing right now has a session row and no history row at all. Linking
+  // to it from Now Playing used to answer 404, because the detail view only ever looked at
+  // the history.
+  {
+    const { getItemDetail } = await import('../server/titles');
+    const { playbackSessions: live } = await import('../db/schema');
+    await db.insert(live).values({
+      sessionKey: 'live-1',
+      userId: alice.id,
+      itemId: 'never-played',
+      title: 'The Constant',
+      grandparentTitle: 'Lost',
+      mediaType: 'episode',
+      state: 'playing',
+      deviceName: 'Living Room',
+      progressMs: 5 * 60_000,
+      durationMs: 45 * 60_000,
+    });
+
+    const detail = await getItemDetail('never-played', { userId: alice.id });
+    assert.ok(detail, 'a running item resolves even without a history row');
+    assert.equal(detail.title, 'The Constant');
+    assert.equal(detail.showLabel, 'Lost');
+    assert.equal(detail.plays, 0, 'the media server has not counted it as played yet');
+    assert.deepEqual(detail.devices, [{ label: 'Living Room', value: 5 }]);
+
+    assert.equal(
+      await getItemDetail('no-such-item', { userId: alice.id }),
+      null,
+      'a genuinely unknown item is still a 404',
+    );
+    // Removed again: the liveness check further down asserts an exact list of live
+    // sessions, and a second playing row would join it.
+    await db.delete(live).where(eq(live.sessionKey, 'live-1'));
+    console.log('ok - a playing item resolves before it reaches the history');
+  }
+
+  // A successful login from an address the account has never used. The failed-login check
+  // cannot see this at all: someone who knows the password never fails.
+  {
+    const { loginHistory } = await import('../db/schema');
+    const { updateSettings } = await import('../server/config');
+    const { checkThresholds, listAlerts } = await import('../server/monitor');
+
+    const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+    await updateSettings({ monitorNewAddressAlert: true, monitorFailedLoginWindowMin: 10 });
+    await db.insert(loginHistory).values([
+      // A device alice has used before, seen again just now: familiar, must stay silent.
+      { userId: alice.id, username: 'alice', success: true, ip: '10.0.0.5', createdAt: minutesAgo(600) },
+      { userId: alice.id, username: 'alice', success: true, ip: '10.0.0.5', createdAt: minutesAgo(1) },
+      // Never seen before.
+      { userId: alice.id, username: 'alice', success: true, ip: '203.0.113.9', createdAt: minutesAgo(1) },
+    ]);
+
+    await checkThresholds();
+    const alerts = (await listAlerts(10)).filter((a) => a.rule === 'new_address');
+    assert.equal(alerts.length, 1, 'only the unknown address alerts');
+    assert.match(alerts[0].message, /203\.0\.113\.9/);
+    assert.ok(!alerts[0].message.includes('10.0.0.5'), 'a known address stays quiet');
+    await updateSettings({ monitorNewAddressAlert: false });
+    console.log('ok - a login from an unknown address alerts, a known one does not');
   }
 
   // Liveness: a session frozen for minutes must not count as playing.

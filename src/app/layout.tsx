@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import { Archivo, Inter_Tight, JetBrains_Mono } from 'next/font/google';
+import { dictionaryFor } from '@/i18n';
+import { LocaleProvider } from '@/i18n/client';
+import { getLocale } from '@/i18n/server';
 import './globals.css';
 
 // Fonts are downloaded at build time and served from the app itself, so a running
@@ -22,6 +25,10 @@ const mono = JetBrains_Mono({
   variable: '--font-mono',
   display: 'swap',
 });
+
+// The locale comes from the session and the database, so nothing above this layout can be
+// prerendered at build time.
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Watcharr',
@@ -48,13 +55,21 @@ export const viewport: Viewport = {
  */
 const THEME_BOOT = `try{var t=localStorage.getItem('watcharr-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}`;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Resolved here rather than in the app group so the login and setup screens, which sit
+  // outside it, are translated too.
+  const locale = await getLocale();
+
   return (
-    <html lang="en-US" className={`${display.variable} ${body.variable} ${mono.variable}`}>
+    <html lang={locale} className={`${display.variable} ${body.variable} ${mono.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <LocaleProvider locale={locale} dictionary={dictionaryFor(locale)}>
+          {children}
+        </LocaleProvider>
+      </body>
     </html>
   );
 }

@@ -92,6 +92,20 @@
       "when": 1787680228856,
       "tag": "0012_lyrical_sunfire",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1787737174015,
+      "tag": "0013_i18n_tmdb_stream_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1787745152449,
+      "tag": "0014_monitor_new_address",
+      "breakpoints": true
     }
   ]
 }

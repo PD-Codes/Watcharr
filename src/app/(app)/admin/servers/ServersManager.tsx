@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useT } from '@/i18n/client';
 
 export interface ServerCard {
   id: number;
@@ -24,6 +25,7 @@ export default function ServersManager({
   currentServerId: number;
 }) {
   const router = useRouter();
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -42,14 +44,14 @@ export default function ServersManager({
       setMessage(done);
       router.refresh();
     } else {
-      setError(((await res.json()) as { error?: string }).error ?? 'Something went wrong');
+      setError(((await res.json()) as { error?: string }).error ?? t('error.generic'));
     }
   }
 
   async function onAdd(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    await send('POST', Object.fromEntries(form), 'Server added.');
+    await send('POST', Object.fromEntries(form), t('servers.added'));
     event.currentTarget.reset();
   }
 
@@ -64,16 +66,14 @@ export default function ServersManager({
         serverUrl: String(form.get('serverUrl') ?? ''),
         serverToken: String(form.get('serverToken') ?? '') || undefined,
       },
-      'Saved.',
+      t('action.saved'),
     );
   }
 
   async function onDelete(server: ServerCard) {
-    const typed = window.prompt(
-      `Removing "${server.label}" deletes its accounts and their history in Watcharr. Type the name to confirm:`,
-    );
+    const typed = window.prompt(t('servers.confirmRemove', { label: server.label }));
     if (typed !== server.label) return;
-    await send('DELETE', { id: server.id }, 'Server removed.');
+    await send('DELETE', { id: server.id }, t('servers.removed'));
   }
 
   return (
@@ -81,39 +81,43 @@ export default function ServersManager({
       {servers.map((server) => (
         <form key={server.id} className="card section" onSubmit={(e) => onUpdate(e, server.id)}>
           <p className="stat-label">
-            {server.serverType} · /{server.slug} · added {server.addedAt}
+            {t('servers.cardMeta', {
+              type: server.serverType,
+              slug: server.slug,
+              date: server.addedAt,
+            })}
           </p>
           <label>
-            Name
+            {t('servers.name')}
             <input name="label" defaultValue={server.label} required />
           </label>
           <label>
-            Server URL
+            {t('servers.url')}
             <input name="serverUrl" defaultValue={server.serverUrl} required />
           </label>
           <label>
-            Admin API token
-            <input name="serverToken" type="password" placeholder="unchanged" />
+            {t('servers.token')}
+            <input name="serverToken" type="password" placeholder={t('servers.tokenUnchanged')} />
           </label>
           <div className="row" style={{ gap: 10, marginTop: 12 }}>
-            <button disabled={busy}>Save</button>
+            <button disabled={busy}>{t('action.save')}</button>
             {server.id !== currentServerId && (
               <button type="button" className="outlined" disabled={busy} onClick={() => onDelete(server)}>
-                Remove
+                {t('servers.remove')}
               </button>
             )}
           </div>
         </form>
       ))}
 
-      <h2 className="section">Add a server</h2>
+      <h2 className="section">{t('servers.add')}</h2>
       <form className="card" onSubmit={onAdd} style={{ maxWidth: 520 }}>
         <label>
-          Name
+          {t('servers.name')}
           <input name="label" placeholder="Plex Server Dome" required />
         </label>
         <label>
-          Type
+          {t('servers.type')}
           <select name="serverType" defaultValue="jellyfin">
             {SERVER_TYPES.map((type) => (
               <option key={type} value={type}>
@@ -123,15 +127,15 @@ export default function ServersManager({
           </select>
         </label>
         <label>
-          Server URL
+          {t('servers.url')}
           <input name="serverUrl" placeholder="http://192.168.1.10:8096" required />
         </label>
         <label>
-          Admin API token
+          {t('servers.token')}
           <input name="serverToken" type="password" required />
         </label>
         <button disabled={busy} style={{ marginTop: 12 }}>
-          Add server
+          {t('servers.addButton')}
         </button>
       </form>
 

@@ -3,12 +3,14 @@ import { db } from '@/db';
 import { watchlist } from '@/db/schema';
 import { reconcileWatchlistStatus, reportSyncError, syncWatchlist } from '@/server/sync';
 import { requireUser } from '@/server/session';
+import { getT } from '@/i18n/server';
 import WatchlistClient from './WatchlistClient';
 
 export const dynamic = 'force-dynamic';
 
 export default async function WatchlistPage() {
   const session = await requireUser();
+  const t = await getT();
   await syncWatchlist(session.user, session.serverToken).catch(reportSyncError('watchlist sync'));
   await reconcileWatchlistStatus(session.user.id);
 
@@ -20,9 +22,9 @@ export default async function WatchlistPage() {
 
   return (
     <>
-      <p className="eyebrow">Library</p>
-      <h1>Watchlist</h1>
-      <p className="subtitle">Titles you plan to watch. Plex watchlists are synced automatically.</p>
+      <p className="eyebrow">{t('history.eyebrow')}</p>
+      <h1>{t('nav.watchlist')}</h1>
+      <p className="subtitle">{t('watchlist.subtitle')}</p>
       <WatchlistClient
         items={items.map((i) => ({
           itemId: i.itemId,

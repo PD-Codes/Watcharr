@@ -4,6 +4,7 @@ import { db } from '@/db';
 import { appConfig, users, watchHistory } from '@/db/schema';
 import { formatDate, formatDuration } from '@/components/format';
 import { requireAdmin } from '@/server/session';
+import { getT } from '@/i18n/server';
 import SyncUsersButton from './SyncUsersButton';
 import RoleToggle from './RoleToggle';
 
@@ -11,6 +12,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function AdminUsersPage() {
   const session = await requireAdmin();
+  const t = await getT();
   const global = session.user.globalAdmin;
 
   const rows = await db
@@ -35,12 +37,10 @@ export default async function AdminUsersPage() {
 
   return (
     <>
-      <p className="eyebrow">Admin</p>
-      <h1>Users</h1>
+      <p className="eyebrow">{t('nav.admin')}</p>
+      <h1>{t('nav.adminUsers')}</h1>
       <p className="subtitle">
-        {global
-          ? 'Everyone known to this deployment. Import pulls in server accounts that never signed in.'
-          : 'Everyone on your server. Import pulls in accounts that never signed in.'}
+        {global ? t('users.subtitleGlobal') : t('users.subtitleServer')}
       </p>
       <SyncUsersButton />
 
@@ -48,13 +48,13 @@ export default async function AdminUsersPage() {
         <table>
           <thead>
             <tr>
-              <th scope="col">User</th>
-              {global && <th scope="col">Server</th>}
-              <th scope="col">Role</th>
-              <th scope="col">Plays</th>
-              <th scope="col">Watch time</th>
-              <th scope="col">Last seen</th>
-              {global && <th scope="col">Global admin</th>}
+              <th scope="col">{t('common.user')}</th>
+              {global && <th scope="col">{t('users.colServer')}</th>}
+              <th scope="col">{t('users.colRole')}</th>
+              <th scope="col">{t('users.colPlays')}</th>
+              <th scope="col">{t('common.watchTime')}</th>
+              <th scope="col">{t('users.colLastSeen')}</th>
+              {global && <th scope="col">{t('users.colGlobalAdmin')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -65,11 +65,15 @@ export default async function AdminUsersPage() {
                 </td>
                 {global && <td>{row.serverLabel ?? '—'}</td>}
                 <td>
-                  {row.globalAdmin ? 'Global admin' : row.isAdmin ? 'Server admin' : 'User'}
+                  {row.globalAdmin
+                    ? t('users.roleGlobalAdmin')
+                    : row.isAdmin
+                      ? t('users.roleServerAdmin')
+                      : t('users.roleUser')}
                 </td>
                 <td>{row.plays}</td>
                 <td>{formatDuration(Number(row.watchtime))}</td>
-                <td>{row.lastSeenAt ? formatDate(row.lastSeenAt) : 'never'}</td>
+                <td>{row.lastSeenAt ? formatDate(row.lastSeenAt) : t('common.never')}</td>
                 {global && (
                   <td>
                     <RoleToggle

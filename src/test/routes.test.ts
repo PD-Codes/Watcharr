@@ -330,7 +330,10 @@ async function main() {
       // be able to open one by guessing the id.
       const userList = await fetch(`${base}/admin/users`, { headers: { Cookie: secondCookie } });
       const userListHtml = await userList.text();
-      const listScoped = !userListHtml.includes('Global admin');
+      // Checked by the link to the foreign account rather than by a column heading: the
+      // client dictionary ships every UI string in the page payload, so searching the HTML
+      // for a piece of interface text now finds it whether or not it was rendered.
+      const listScoped = !userListHtml.includes('/admin/users/1"');
       console.log(`${listScoped ? 'ok  ' : 'FAIL'} - user list hides the other server's accounts`);
       if (!listScoped) failures += 1;
 
@@ -382,24 +385,40 @@ async function main() {
       '/history?genre=Sci-Fi',
       '/history?weekday=0&hour=12',
       '/history?date=2024-01-01',
+      '/sessions',
+      '/?days=7&by=time',
       '/activity',
       '/stats',
       '/stats?days=7',
       '/stats?days=30&by=time',
       '/libraries',
+      '/libraries?sort=duration&dir=asc',
+      '/libraries?q=movies',
       '/suggestions',
       '/admin/activity',
       '/admin/users',
       `/admin/users/${userId}`,
+      // Each tab runs its own queries, so one URL per tab is one code path per tab.
+      `/admin/users/${userId}?tab=stats`,
+      `/admin/users/${userId}?tab=history`,
+      `/admin/users/${userId}?tab=streams`,
+      `/admin/users/${userId}?tab=devices`,
+      `/admin/users/${userId}?tab=sessions`,
       '/admin/stats',
       '/admin/stats?days=365',
       '/admin/stats?days=30&by=time',
+      '/admin/graphs',
+      '/admin/graphs?days=365',
+      '/admin/streams',
+      '/admin/streams?days=30&transcodes=1',
       '/admin/system',
       '/admin/config',
       '/admin/notifications',
       '/admin/newsletter',
       '/admin/security',
       '/profile',
+      '/profile?tab=newsletter',
+      '/profile?tab=sessions',
       '/admin/transcoding',
       '/admin/transcoding?days=all',
       '/admin/clients',
@@ -414,6 +433,8 @@ async function main() {
       '/api/library/search?q=arr',
       '/api/search?q=fire',
       '/api/history/export?type=episode',
+      '/api/admin/streams/export?days=30',
+      '/api/library/export',
       '/api/art/stub-jellyfin/lib-1',
     ];
 
@@ -500,11 +521,17 @@ async function main() {
       ['/admin/clients', ['Jellyfin Web', 'Jellyfin Android TV', 'Fire TV', 'Clients per user']],
       ['/admin/activity', ['Jellyfin Web', 'Transcode', 'Streams per hour', 'Bandwidth per hour']],
       ['/wrapped', ['Your Year in Review', 'Your year in days', 'Most plays of the year']],
-      ['/', ['Now playing', 'Blade Runner', 'scrub-fill', 'Recently watched']],
+      ['/sessions', ['Now playing', 'Blade Runner', 'scrub-fill', 'Recently watched']],
+      // The dashboard: server-wide tiles, library sizes and the newest arrivals.
+      ['/', ['Most watched movies', 'Most popular TV shows', 'Most active platforms']],
+      ['/', ['Library statistics', 'Recently added', 'added-strip']],
+      ['/', ['Blade Runner', 'Firefly']],
       ['/stats', ['When you watch', 'Binge record', 'Library explored', 'How your streams were delivered', 'area-line']],
       ['/history', ['Genres', 'Export CSV', 'genre=Sci-Fi']],
       ['/activity', ['Now playing']],
-      ['/libraries', ['Libraries', 'Recently added', 'Never started', 'Movies', 'Shows']],
+      // The library list is a table now: one row per library with its counts and usage.
+      ['/libraries', ['Last streamed', 'Watch time', 'Never started', 'sort=plays']],
+      ['/libraries', ['Movies', 'Shows']],
       // LAN/WAN needs no lookup and no key, so it has to show up unconditionally.
       ['/admin/activity', ['Remote streams', 'LAN']],
       // Drill-downs: every one of these is a link a reader is told to click.
@@ -516,6 +543,24 @@ async function main() {
       ['/suggestions', ['Open in', `127.0.0.1:${STUB_PORT}/web/index.html#/details?id=`]],
       // Mobile chrome and the palette have to be in the markup, not only in CSS.
       ['/', ['bottomnav', 'appbar', 'search-trigger']],
+      // Tautulli parity: the graphs and the stream history behind them.
+      ['/admin/graphs', ['Daily play count', 'Plays by hour of day', 'Plays by platform']],
+      ['/admin/graphs', ['How streams were delivered', 'Direct play', 'Transcode', 'LAN']],
+      ['/admin/streams', ['Player', 'Delivery', 'Transcodes only', 'Jellyfin Web']],
+      // Both halves of a transcode, which is the whole point of the source columns.
+      ['/admin/streams', ['HEVC 1080p', 'H264 720p']],
+      ['/api/admin/streams/export', ['Source video', 'Transcode reason']],
+      ['/api/library/export', ['File size (MB)', 'Last played']],
+      // Tabs are URLs, so each one has to render its own content.
+      [`/admin/users/${userId}?tab=streams`, ['How streams were delivered']],
+      [`/admin/users/${userId}?tab=devices`, ['Players', 'Addresses']],
+      ['/profile', ['Language']],
+      // The field name is what the settings API reads, so a rename here breaks the toggle
+      // silently — the dictionary in the payload makes label text useless as a check.
+      ['/admin/config', ['monitorNewAddressAlert']],
+      // An episode is reachable from the lists, not only from its show.
+      ['/history', ['/item/lib-3']],
+      ['/sessions', ['/item/lib-3']],
     ];
     for (const [path, needles] of contentChecks) {
       const html = await fetch(base + path, { headers: { Cookie: cookie } }).then((r) => r.text());
@@ -525,6 +570,35 @@ async function main() {
         failures += 1;
         console.log(`      missing: ${missing.join(', ')}`);
       }
+    }
+
+    // The language is a database column, so switching it has to change what the server
+    // renders — not merely what a cookie says. Switched back afterwards so the checks
+    // above stay valid whichever order anything runs in.
+    {
+      const setLocale = (locale: string | null) =>
+        fetch(`${base}/api/profile/locale`, {
+          method: 'POST',
+          headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locale }),
+        });
+
+      await setLocale('de-DE');
+      const german = await fetch(`${base}/history`, { headers: { Cookie: cookie } }).then((r) =>
+        r.text(),
+      );
+      const germanOk =
+        german.includes('lang="de-DE"') && german.includes('Verlauf') && !german.includes('>History<');
+      console.log(`${germanOk ? 'ok  ' : 'FAIL'} - /history renders in German after the switch`);
+      if (!germanOk) failures += 1;
+
+      await setLocale(null);
+      const english = await fetch(`${base}/history`, { headers: { Cookie: cookie } }).then((r) =>
+        r.text(),
+      );
+      const englishOk = english.includes('lang="en-US"') && english.includes('Export CSV');
+      console.log(`${englishOk ? 'ok  ' : 'FAIL'} - /history falls back to the default locale`);
+      if (!englishOk) failures += 1;
     }
 
     // Pages that must stay reachable without a session.

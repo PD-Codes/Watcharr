@@ -19,7 +19,15 @@ const PLEX_METADATA = 'https://metadata.provider.plex.tv';
 const PRODUCT = 'Watcharr';
 const CLIENT_ID = 'watcharr-server';
 
-type PlexStream = { streamType?: number; codec?: string; width?: number; height?: number };
+// Plex numbers stream types: 1 = video, 2 = audio, 3 = subtitle.
+type PlexStream = {
+  streamType?: number;
+  codec?: string;
+  width?: number;
+  height?: number;
+  channels?: number;
+  bitrate?: number;
+};
 
 type PlexMeta = {
   ratingKey: string;
@@ -30,6 +38,7 @@ type PlexMeta = {
   year?: number;
   duration?: number;
   viewedAt?: number;
+  lastViewedAt?: number; // seconds since the epoch, like every other Plex timestamp
   addedAt?: number; // seconds since the epoch, like every other Plex timestamp
   viewOffset?: number;
   thumb?: string;
@@ -42,10 +51,12 @@ type PlexMeta = {
     container?: string;
     videoCodec?: string;
     audioCodec?: string;
+    audioChannels?: number;
     width?: number;
     height?: number;
     bitrate?: number;
-    Part?: { decision?: string; Stream?: PlexStream[] }[];
+    duration?: number;
+    Part?: { decision?: string; size?: number; Stream?: PlexStream[] }[];
   }[];
   TranscodeSession?: {
     videoDecision?: string;
@@ -209,6 +220,15 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
         width: transcode?.width ?? media?.width,
         height: transcode?.height ?? media?.height,
         transcodeReason: transcode?.transcodeReason,
+        audioChannels: media?.audioChannels,
+        subtitleCodec: part?.Stream?.find((stream) => stream.streamType === 3)?.codec?.toLowerCase(),
+        // Media/Part describe the file, TranscodeSession the delivery. Reporting both is
+        // what lets a stream panel show "HEVC 4K → H264 1080p" instead of half of it.
+        sourceVideoCodec: media?.videoCodec?.toLowerCase(),
+        sourceAudioCodec: media?.audioCodec?.toLowerCase(),
+        sourceContainer: media?.container?.toLowerCase(),
+        sourceHeight: media?.height,
+        sourceBitrateKbps: media?.bitrate,
         terminateKey: m.Session?.id,
         remoteAddress: m.Player?.address,
       };
@@ -240,16 +260,27 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     // ponytail: Plex omits genres in section listings; scoring falls back to year/type.
     // Fetch /library/metadata/{key} per item if genre-accurate suggestions matter.
     return pages.flatMap((page, index) =>
-      (page.MediaContainer.Metadata ?? []).map((m) => ({
-        itemId: m.ratingKey,
-        title: m.title,
-        mediaType: m.type ?? 'unknown',
-        year: m.year,
-        genres: (m.Genre ?? []).map((g) => g.tag),
-        posterUrl: this.posterUrl(m.ratingKey),
-        // The pages come back in the order the sections were requested in.
-        sectionId: wanted[index].key,
-      })),
+      (page.MediaContainer.Metadata ?? []).map((m) => {
+        const media = m.Media?.[0];
+        return {
+          itemId: m.ratingKey,
+          title: m.title,
+          mediaType: m.type ?? 'unknown',
+          year: m.year,
+          genres: (m.Genre ?? []).map((g) => g.tag),
+          posterUrl: this.posterUrl(m.ratingKey),
+          // The pages come back in the order the sections were requested in.
+          sectionId: wanted[index].key,
+          // Shows have no Media block of their own — only their episodes do — so these
+          // stay undefined there rather than reporting a misleading zero.
+          fileSizeBytes: media?.Part?.[0]?.size,
+          videoCodec: media?.videoCodec?.toLowerCase(),
+          height: media?.height,
+          durationMs: media?.duration ?? m.duration,
+          addedAt: m.addedAt ? new Date(m.addedAt * 1000) : undefined,
+          lastPlayedAt: m.lastViewedAt ? new Date(m.lastViewedAt * 1000) : undefined,
+        };
+      }),
     );
   }
 
@@ -261,18 +292,26 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
       (d) => d.type === 'movie' || d.type === 'show',
     );
 
-    // Container-Size=0 returns no items, only the paging header with the total.
+    // Container-Size=0 returns no items, only the paging header with the total. Plex
+    // numbers its metadata types: 2 = show, 3 = season, 4 = episode — asking for a type
+    // is what makes seasons and episodes countable inside a show library.
+    const countOf = async (key: string, type?: number): Promise<number> => {
+      const query = `X-Plex-Container-Size=0${type ? `&type=${type}` : ''}`;
+      const page = await this.server<PlexContainer>(
+        `/library/sections/${key}/all?${query}`,
+      ).catch(() => ({ MediaContainer: {} }) as PlexContainer);
+      return page.MediaContainer.totalSize ?? page.MediaContainer.size ?? 0;
+    };
+
     return Promise.all(
       wanted.map(async (d) => {
-        const page = await this.server<PlexContainer>(
-          `/library/sections/${d.key}/all?X-Plex-Container-Size=0`,
-        ).catch(() => ({ MediaContainer: {} }) as PlexContainer);
-        return {
-          id: d.key,
-          name: d.title,
-          mediaType: d.type,
-          itemCount: page.MediaContainer.totalSize ?? page.MediaContainer.size ?? 0,
-        };
+        const isShow = d.type === 'show';
+        const [itemCount, seasonCount, episodeCount] = await Promise.all([
+          countOf(d.key),
+          isShow ? countOf(d.key, 3) : Promise.resolve(undefined),
+          isShow ? countOf(d.key, 4) : Promise.resolve(undefined),
+        ]);
+        return { id: d.key, name: d.title, mediaType: d.type, itemCount, seasonCount, episodeCount };
       }),
     );
   }

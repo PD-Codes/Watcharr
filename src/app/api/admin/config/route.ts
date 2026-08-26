@@ -13,6 +13,7 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as {
     tmdbApiKey?: string;
+    defaultLocale?: string;
     features?: Record<string, boolean>;
     watchedThreshold?: number;
     webhookUrl?: string;
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
     monitorTranscodeAlert?: boolean;
     monitorFailedLoginThreshold?: number | null;
     monitorFailedLoginWindowMin?: number;
+    monitorNewAddressAlert?: boolean;
     digestEnabled?: boolean;
     digestFrequency?: string;
     backupAutoEnabled?: boolean;
@@ -34,6 +36,7 @@ export async function POST(request: Request) {
   const threshold = Number(body.watchedThreshold);
   await updateSettings({
     tmdbApiKey: body.tmdbApiKey === undefined ? undefined : body.tmdbApiKey || null,
+    defaultLocale: body.defaultLocale,
     features: body.features,
     watchedThreshold: Number.isFinite(threshold) ? threshold : undefined,
     webhookUrl: body.webhookUrl === undefined ? undefined : body.webhookUrl || null,
@@ -52,6 +55,8 @@ export async function POST(request: Request) {
       body.monitorFailedLoginThreshold === undefined ? undefined : body.monitorFailedLoginThreshold,
     monitorFailedLoginWindowMin:
       body.monitorFailedLoginWindowMin === undefined ? undefined : body.monitorFailedLoginWindowMin,
+    monitorNewAddressAlert:
+      typeof body.monitorNewAddressAlert === 'boolean' ? body.monitorNewAddressAlert : undefined,
     digestEnabled: typeof body.digestEnabled === 'boolean' ? body.digestEnabled : undefined,
     digestFrequency: body.digestFrequency,
     backupAutoEnabled: typeof body.backupAutoEnabled === 'boolean' ? body.backupAutoEnabled : undefined,

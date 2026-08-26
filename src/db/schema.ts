@@ -38,6 +38,10 @@ export const appConfig = sqliteTable(
 export const appSettings = sqliteTable('app_settings', {
   id: integer('id').primaryKey().default(1),
   tmdbApiKey: text('tmdb_api_key'),
+  // UI language for anyone who has not picked one. Users override it on their profile,
+  // and that choice lives in the database rather than a cookie so it follows the account
+  // to every browser and device.
+  defaultLocale: text('default_locale').notNull().default('en-US'),
   features: text('features', { mode: 'json' })
     .$type<Record<string, boolean>>()
     .notNull()
@@ -67,6 +71,12 @@ export const appSettings = sqliteTable('app_settings', {
   // Failed logins from the same IP within this window. Null threshold means the check is off.
   monitorFailedLoginThreshold: integer('monitor_failed_login_threshold'),
   monitorFailedLoginWindowMin: integer('monitor_failed_login_window_min').notNull().default(10),
+  // A *successful* login from an address this account has never used before. On a shared
+  // account that is the signal that matters — a stranger who has the password never
+  // produces a failed attempt at all. Reuses the window above rather than adding a second.
+  monitorNewAddressAlert: integer('monitor_new_address_alert', { mode: 'boolean' })
+    .notNull()
+    .default(false),
   // Periodic summary sent through the same channels as everything else, see server/digest.ts.
   digestEnabled: integer('digest_enabled', { mode: 'boolean' }).notNull().default(false),
   digestFrequency: text('digest_frequency').notNull().default('weekly'), // 'daily' | 'weekly'
@@ -203,6 +213,9 @@ export const users = sqliteTable(
     isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
     // Deployment-wide admin: every server, plus server management.
     globalAdmin: integer('global_admin', { mode: 'boolean' }).notNull().default(false),
+    // Null means "follow the deployment default". Stored here rather than in a cookie so
+    // the same account sees the same language on every device.
+    locale: text('locale'),
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(now),
   },
@@ -299,6 +312,17 @@ export const playbackSessions = sqliteTable(
     height: integer('height'),
     bitrateKbps: integer('bitrate_kbps'),
     transcodeReason: text('transcode_reason'),
+    audioChannels: integer('audio_channels'),
+    subtitleCodec: text('subtitle_codec'),
+    // What the file itself holds, as opposed to the columns above, which describe what is
+    // being delivered. Tautulli's stream panel is only readable because it shows both
+    // sides of a transcode ("HEVC 4K → H264 1080p"); with one set of columns the original
+    // is lost the moment the server re-encodes it.
+    sourceVideoCodec: text('source_video_codec'),
+    sourceAudioCodec: text('source_audio_codec'),
+    sourceContainer: text('source_container'),
+    sourceHeight: integer('source_height'),
+    sourceBitrateKbps: integer('source_bitrate_kbps'),
     // Where the stream was delivered to. is_local is derived once on write so every query
     // can filter on it without re-parsing the address.
     remoteAddress: text('remote_address'),
@@ -336,6 +360,18 @@ export const geoipCache = sqliteTable('geoip_cache', {
   asn: text('asn'),
   // Reverse DNS, resolved locally rather than by the provider — no extra third party.
   host: text('host'),
+  fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' }).notNull().default(now),
+});
+
+/**
+ * One row per TMDB lookup, keyed by what was asked for rather than by the TMDB id — the
+ * app only ever knows a title, a year and a media type, so that triple is the real cache
+ * key. A miss is cached too (payload null): a title the media server has and TMDB does not
+ * would otherwise re-search on every page view, forever.
+ */
+export const tmdbCache = sqliteTable('tmdb_cache', {
+  key: text('key').primaryKey(),
+  payload: text('payload', { mode: 'json' }),
   fetchedAt: integer('fetched_at', { mode: 'timestamp_ms' }).notNull().default(now),
 });
 

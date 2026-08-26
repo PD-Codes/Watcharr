@@ -2,8 +2,19 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { TranslationKey } from '@/i18n';
+import { useT } from '@/i18n/client';
 
-const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+// Indexed by getDay(), so the order is the JavaScript one and not a display choice.
+const DAY_KEYS: TranslationKey[] = [
+  'weekday.sunday',
+  'weekday.monday',
+  'weekday.tuesday',
+  'weekday.wednesday',
+  'weekday.thursday',
+  'weekday.friday',
+  'weekday.saturday',
+];
 
 export interface LibraryOption {
   id: string;
@@ -37,9 +48,13 @@ export default function NewsletterForm({
   hasEmailChannel: boolean;
 }) {
   const router = useRouter();
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // The path is spliced into the translated sentence so the hint stays one key.
+  const [hintBefore, hintAfter = ''] = t('adminNewsletter.uniqueIdHint').split('{path}');
 
   async function submit(form: HTMLFormElement, sendNow: boolean) {
     setBusy(true);
@@ -66,10 +81,14 @@ export default function NewsletterForm({
 
     const body = (await res.json()) as { ok?: boolean; sent?: number; error?: string };
     if (!res.ok || body.error) {
-      setError(body.error ?? 'Could not save');
+      setError(body.error ?? t('adminNewsletter.saveFailed'));
       return;
     }
-    setMessage(sendNow ? `Sent to ${body.sent ?? 0} subscriber(s).` : 'Saved.');
+    setMessage(
+      sendNow
+        ? t('adminNewsletter.sent', { count: body.sent ?? 0 })
+        : t('action.saved'),
+    );
     router.refresh();
   }
 
@@ -77,24 +96,24 @@ export default function NewsletterForm({
     <form className="card" onSubmit={(e) => { e.preventDefault(); void submit(e.currentTarget, false); }} style={{ maxWidth: 620 }}>
       <label className="row">
         <input type="checkbox" name="enabled" defaultChecked={enabled} style={{ width: 'auto' }} />
-        Send the newsletter on a schedule
+        {t('adminNewsletter.scheduleEnabled')}
       </label>
 
       <p className="stat-label" style={{ marginTop: 20 }}>
-        Schedule
+        {t('adminNewsletter.schedule')}
       </p>
       <label>
-        Every week on
+        {t('adminNewsletter.everyWeekOn')}
         <select name="dayOfWeek" defaultValue={String(dayOfWeek)}>
-          {DAYS.map((day, index) => (
-            <option key={day} value={index}>
-              {day}
+          {DAY_KEYS.map((dayKey, index) => (
+            <option key={dayKey} value={index}>
+              {t(dayKey)}
             </option>
           ))}
         </select>
       </label>
       <label>
-        at (hour)
+        {t('adminNewsletter.atHour')}
         <select name="hour" defaultValue={String(hour)}>
           {Array.from({ length: 24 }, (_, h) => (
             <option key={h} value={h}>
@@ -104,19 +123,18 @@ export default function NewsletterForm({
         </select>
       </label>
       <label>
-        Time frame (days)
+        {t('adminNewsletter.timeFrame')}
         <input name="days" type="number" min={1} max={90} defaultValue={days} required />
       </label>
       <p className="muted" style={{ marginTop: -6 }}>
-        How far back the issue reaches. Checked on the normal activity poll, so the server
-        has to be running at that hour.
+        {t('adminNewsletter.timeFrameHint')}
       </p>
 
       <p className="stat-label" style={{ marginTop: 20 }}>
-        Included libraries
+        {t('adminNewsletter.libraries')}
       </p>
       {libraries.length === 0 ? (
-        <p className="muted">The media server did not report any libraries.</p>
+        <p className="muted">{t('adminNewsletter.noLibraries')}</p>
       ) : (
         libraries.map((library) => (
           <label className="row" key={library.id}>
@@ -132,41 +150,46 @@ export default function NewsletterForm({
       )}
 
       <p className="stat-label" style={{ marginTop: 20 }}>
-        Content
+        {t('adminNewsletter.content')}
       </p>
       <label>
-        Subject
+        {t('adminNewsletter.subject')}
         <input name="subject" defaultValue={subject} required />
       </label>
       <label>
-        Intro text
-        <textarea name="intro" rows={3} defaultValue={intro} placeholder="Optional, shown above the posters" />
+        {t('adminNewsletter.intro')}
+        <textarea
+          name="intro"
+          rows={3}
+          defaultValue={intro}
+          placeholder={t('adminNewsletter.introPlaceholder')}
+        />
       </label>
       <label>
-        Unique ID name
+        {t('adminNewsletter.uniqueId')}
         <input name="uniqueId" defaultValue={uniqueId} />
       </label>
       <p className="muted" style={{ marginTop: -6 }}>
-        The last sent issue stays available at <code>/newsletter/{uniqueId}</code> for anyone
-        signed in. Letters, numbers, underscores and hyphens only.
+        {hintBefore}
+        <code>/newsletter/{uniqueId}</code>
+        {hintAfter}
       </p>
 
       <div className="row" style={{ gap: 10, marginTop: 16 }}>
-        <button disabled={busy}>Save</button>
+        <button disabled={busy}>{t('action.save')}</button>
         <button
           type="button"
           className="outlined"
           disabled={busy}
           onClick={(e) => void submit(e.currentTarget.form!, true)}
         >
-          Save and send now
+          {t('adminNewsletter.saveAndSend')}
         </button>
       </div>
 
       <p className="muted" style={{ marginTop: 12 }}>
-        {subscriberCount} subscriber{subscriberCount === 1 ? '' : 's'}. People subscribe
-        themselves on their profile page — an admin cannot sign anyone up.
-        {!hasEmailChannel && ' Sending needs an email channel under Notifications.'}
+        {t('adminNewsletter.subscriberCount', { count: subscriberCount })}
+        {!hasEmailChannel && ` ${t('adminNewsletter.needsEmailChannel')}`}
       </p>
       {message && <p className="muted">{message}</p>}
       {error && <p className="error">{error}</p>}

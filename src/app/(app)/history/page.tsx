@@ -3,10 +3,13 @@ import { desc, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { watchHistory } from '@/db/schema';
 import { Icon } from '@/components/Icons';
+import TitleLink from '@/components/TitleLink';
 import { formatDate, formatDuration, isoDay } from '@/components/format';
 import { historyFilters } from '@/server/history';
 import { reportSyncError, syncHistory } from '@/server/sync';
 import { requireUser } from '@/server/session';
+import { getT } from '@/i18n/server';
+import type { TranslationKey } from '@/i18n';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +26,16 @@ interface Params {
   page?: string;
 }
 
-const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+// Monday first, matching the weekday index the charts link with.
+const WEEKDAY_KEYS: TranslationKey[] = [
+  'weekday.monday',
+  'weekday.tuesday',
+  'weekday.wednesday',
+  'weekday.thursday',
+  'weekday.friday',
+  'weekday.saturday',
+  'weekday.sunday',
+];
 
 /** Keeps every filter when only one of them changes. */
 function withParams(params: Params, patch: Record<string, string | undefined>): string {
@@ -42,6 +54,7 @@ export default async function HistoryPage({
   searchParams: Promise<Params>;
 }) {
   const session = await requireUser();
+  const t = await getT();
   await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
 
   const params = await searchParams;
@@ -61,17 +74,17 @@ export default async function HistoryPage({
 
   const pages = Math.max(1, Math.ceil((count?.total ?? 0) / PAGE_SIZE));
   const periods: [string, string][] = [
-    ['', 'All time'],
-    ['7', '7 days'],
-    ['30', '30 days'],
-    ['365', 'Last year'],
+    ['', t('common.allTime')],
+    ['7', t('common.days', { count: 7 })],
+    ['30', t('common.days', { count: 30 })],
+    ['365', t('common.lastYear')],
   ];
   // The narrowing filters arrive from a click somewhere else, so they need a way back out.
   const pinned = [
-    params.genre ? { key: 'genre', text: `Genre: ${params.genre}` } : null,
-    params.date ? { key: 'date', text: `Day: ${params.date}` } : null,
-    params.weekday && WEEKDAYS[Number(params.weekday)]
-      ? { key: 'weekday', text: WEEKDAYS[Number(params.weekday)] }
+    params.genre ? { key: 'genre', text: t('history.chipGenre', { genre: params.genre }) } : null,
+    params.date ? { key: 'date', text: t('history.chipDay', { day: params.date }) } : null,
+    params.weekday && WEEKDAY_KEYS[Number(params.weekday)]
+      ? { key: 'weekday', text: t(WEEKDAY_KEYS[Number(params.weekday)]) }
       : null,
     params.hour ? { key: 'hour', text: `${String(params.hour).padStart(2, '0')}:00` } : null,
   ].filter((chip): chip is { key: string; text: string } => chip !== null);
@@ -80,9 +93,9 @@ export default async function HistoryPage({
 
   return (
     <>
-      <p className="eyebrow">Library</p>
-      <h1>History</h1>
-      <p className="subtitle">{count?.total ?? 0} plays recorded.</p>
+      <p className="eyebrow">{t('history.eyebrow')}</p>
+      <h1>{t('nav.history')}</h1>
+      <p className="subtitle">{t('history.subtitle', { count: count?.total ?? 0 })}</p>
 
       <div className="section-head" style={{ marginTop: 0 }}>
         <div className="seg">
@@ -98,7 +111,7 @@ export default async function HistoryPage({
         </div>
         <a className="link-out" href={exportHref} download>
           <Icon name="download" />
-          Export CSV
+          {t('action.exportCsv')}
         </a>
       </div>
 
@@ -122,34 +135,34 @@ export default async function HistoryPage({
         {params.weekday && <input type="hidden" name="weekday" value={params.weekday} />}
         {params.hour && <input type="hidden" name="hour" value={params.hour} />}
         <label>
-          Search
-          <input name="q" defaultValue={params.q ?? ''} placeholder="Title…" />
+          {t('action.search')}
+          <input name="q" defaultValue={params.q ?? ''} placeholder={t('history.searchPlaceholder')} />
         </label>
         <label>
-          Type
+          {t('common.type')}
           <select name="type" defaultValue={params.type ?? ''}>
-            <option value="">All</option>
-            <option value="movie">Movies</option>
-            <option value="episode">Episodes</option>
+            <option value="">{t('common.all')}</option>
+            <option value="movie">{t('common.movies')}</option>
+            <option value="episode">{t('common.episodes')}</option>
           </select>
         </label>
-        <button>Apply</button>
+        <button>{t('action.apply')}</button>
       </form>
 
       {rows.length === 0 ? (
-        <p className="muted">No plays match these filters.</p>
+        <p className="muted">{t('history.noMatch')}</p>
       ) : (
         <div className="table-wrap card">
           <table>
             <thead>
               <tr>
-                <th scope="col">Watched</th>
-                <th scope="col">Title</th>
-                <th scope="col">Genres</th>
-                <th scope="col">Type</th>
-                <th scope="col">Year</th>
-                <th scope="col">Duration</th>
-                <th scope="col">Device</th>
+                <th scope="col">{t('common.watched')}</th>
+                <th scope="col">{t('common.title')}</th>
+                <th scope="col">{t('common.genres')}</th>
+                <th scope="col">{t('common.type')}</th>
+                <th scope="col">{t('common.year')}</th>
+                <th scope="col">{t('common.duration')}</th>
+                <th scope="col">{t('common.device')}</th>
               </tr>
             </thead>
             <tbody>
@@ -161,17 +174,11 @@ export default async function HistoryPage({
                     </Link>
                   </td>
                   <td>
-                    <Link href={`/title/${encodeURIComponent(row.grandparentTitle ?? row.title)}`}>
-                      {row.grandparentTitle ?? row.title}
-                    </Link>
-                    {row.grandparentTitle && (
-                      <div style={{ fontSize: 12 }}>
-                        {/* The episode itself has its own page now. */}
-                        <Link className="muted" href={`/item/${encodeURIComponent(row.itemId)}`}>
-                          {row.title}
-                        </Link>
-                      </div>
-                    )}
+                    <TitleLink
+                      itemId={row.itemId}
+                      title={row.title}
+                      grandparentTitle={row.grandparentTitle}
+                    />
                   </td>
                   <td className="muted">
                     {row.genres.slice(0, 2).map((genre, index) => (
@@ -197,15 +204,13 @@ export default async function HistoryPage({
         <p className="row section">
           {page > 1 && (
             <a className="badge" href={`?${new URLSearchParams({ ...params, page: String(page - 1) })}`}>
-              Previous
+              {t('action.previous')}
             </a>
           )}
-          <span className="muted">
-            Page {page} of {pages}
-          </span>
+          <span className="muted">{t('common.page', { page, pages })}</span>
           {page < pages && (
             <a className="badge" href={`?${new URLSearchParams({ ...params, page: String(page + 1) })}`}>
-              Next
+              {t('action.next')}
             </a>
           )}
         </p>

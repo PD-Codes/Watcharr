@@ -3,9 +3,14 @@ import { notFound } from 'next/navigation';
 import { BarChart, ColumnChart, StatCard } from '@/components/Charts';
 import { Icon } from '@/components/Icons';
 import OpenInServer from '@/components/OpenInServer';
+import Poster from '@/components/Poster';
+import { Backdrop, CastStrip, Overview, TmdbFacts } from '@/components/TitleMeta';
 import { artUrl, formatDate, formatDuration, formatMinutes } from '@/components/format';
+import { getSettings } from '@/server/config';
 import { getTitleDetail } from '@/server/titles';
+import { getTitleMeta } from '@/server/tmdb';
 import { adminScope, isAdmin, requireUser } from '@/server/session';
+import { getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +22,7 @@ export default async function TitlePage({
   searchParams: Promise<{ scope?: string }>;
 }) {
   const session = await requireUser();
+  const t = await getT();
   const label = decodeURIComponent((await params).label);
 
   // Admins can look at a title across the whole server; everyone else sees their own plays.
@@ -25,26 +31,40 @@ export default async function TitlePage({
   if (!detail) notFound();
 
   const isShow = detail.distinctItems > 1;
+  // Episodes are grouped under their show here, so the lookup is always for the show or the
+  // movie — never for a single episode, which TMDB indexes under a different endpoint.
+  const settings = await getSettings();
+  const meta = await getTitleMeta(
+    settings.tmdbApiKey,
+    detail.label,
+    detail.mediaType === 'episode' ? 'show' : detail.mediaType,
+    detail.year,
+  );
 
   return (
     <>
+      <Backdrop url={meta?.backdropUrl} />
       <Link className="back-link" href="/stats">
         <Icon name="back" />
-        Back to statistics
+        {t('title.backToStats')}
       </Link>
 
       <div className="title-head">
-        {detail.itemId && (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img className="poster" src={artUrl(session.server.slug, detail.itemId)} alt="" />
-        )}
+        <Poster
+          src={detail.itemId ? artUrl(session.server.slug, detail.itemId) : undefined}
+          fallback={meta?.posterUrl}
+        />
         <div>
           <h1>{detail.label}</h1>
           <p className="subtitle">
-            {[detail.year, isShow ? `${detail.distinctItems} episodes watched` : detail.mediaType]
+            {[
+              detail.year,
+              isShow ? t('title.episodesWatched', { count: detail.distinctItems }) : detail.mediaType,
+            ]
               .filter(Boolean)
               .join(' · ')}
           </p>
+          <TmdbFacts meta={meta} />
           {/* Genres are drill-downs, not decoration: each one filters the history. */}
           <ul className="chips">
             {detail.genres.map((genre) => (
@@ -62,36 +82,39 @@ export default async function TitlePage({
                 className="badge"
                 href={`/title/${encodeURIComponent(detail.label)}${serverWide ? '' : '?scope=server'}`}
               >
-                {serverWide ? 'Show only my plays' : 'Show server-wide'}
+                {serverWide ? t('title.showMine') : t('title.showServerWide')}
               </Link>
             )}
           </p>
+          <Overview meta={meta} />
         </div>
       </div>
 
       <div className="grid cols-4">
         <StatCard
-          label="Plays"
+          label={t('title.plays')}
           value={String(detail.plays)}
-          info="Every recorded playback, including repeats of the same episode."
+          info={t('title.playsInfo')}
         />
         <StatCard
-          label="Watch time"
+          label={t('common.watchTime')}
           value={formatDuration(detail.watchtimeMs)}
-          info="Sum of the runtime of all recorded playbacks."
+          info={t('title.watchTimeInfo')}
         />
         <StatCard
-          label="First watched"
+          label={t('title.firstWatched')}
           value={detail.firstWatched ? formatDate(detail.firstWatched) : '—'}
         />
         <StatCard
-          label="Last watched"
+          label={t('title.lastWatched')}
           value={detail.lastWatched ? formatDate(detail.lastWatched) : '—'}
         />
       </div>
 
+      <CastStrip cast={meta?.cast ?? []} heading={t('title.cast')} />
+
       <section className="section">
-        <h2>Last 30 days (minutes)</h2>
+        <h2>{t('title.last30Days')}</h2>
         <div className="card">
           <ColumnChart data={detail.daily} format={formatMinutes} labelEvery={3} />
         </div>
@@ -99,14 +122,14 @@ export default async function TitlePage({
 
       <div className="grid cols-2 section">
         <section>
-          <h2>Devices</h2>
+          <h2>{t('title.devices')}</h2>
           <div className="card">
             <BarChart data={detail.devices} format={formatMinutes} />
           </div>
         </section>
         {serverWide && (
           <section>
-            <h2>Viewers</h2>
+            <h2>{t('title.viewers')}</h2>
             <div className="card">
               <BarChart data={detail.viewers} format={formatMinutes} />
             </div>
@@ -118,7 +141,7 @@ export default async function TitlePage({
           only worth its own section once there is more than one item. */}
       {detail.episodes.length > 1 && (
         <section className="section">
-          <h2>{isShow ? 'Episodes you watched' : 'Versions you watched'}</h2>
+          <h2>{isShow ? t('title.episodesSection') : t('title.versionsSection')}</h2>
           <div className="card">
             {detail.episodes.map((episode) => (
               <Link
@@ -138,22 +161,30 @@ export default async function TitlePage({
       )}
 
       <section className="section">
-        <h2>Recent plays</h2>
+        <h2>{t('title.recentPlays')}</h2>
         <div className="table-wrap card">
           <table>
             <thead>
               <tr>
-                <th scope="col">Watched</th>
-                <th scope="col">Item</th>
-                <th scope="col">Duration</th>
-                <th scope="col">Device</th>
+                <th scope="col">{t('common.watched')}</th>
+                <th scope="col">{t('title.item')}</th>
+                <th scope="col">{t('common.duration')}</th>
+                <th scope="col">{t('common.device')}</th>
               </tr>
             </thead>
             <tbody>
               {detail.recent.map((row, index) => (
                 <tr key={`${row.title}-${index}`}>
                   <td>{formatDate(row.watchedAt)}</td>
-                  <td>{row.title}</td>
+                  <td>
+                    {/* The single play is a page of its own, so the row leads there
+                        instead of repeating the title as plain text. */}
+                    <Link
+                      href={`/item/${encodeURIComponent(row.itemId)}${serverWide ? '?scope=server' : ''}`}
+                    >
+                      {row.title}
+                    </Link>
+                  </td>
                   <td>{formatDuration(row.durationMs)}</td>
                   <td>{row.deviceName ?? '—'}</td>
                 </tr>

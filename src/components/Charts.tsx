@@ -1,6 +1,8 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
 import type { LabelledValue } from '@/server/stats';
+import { getT } from '@/i18n/server';
+import type { Translate } from '@/i18n';
 
 // Charts are server-rendered SVG. Interaction is CSS plus the shared Tooltip component,
 // so there is no charting dependency and no client-side data fetching.
@@ -69,8 +71,9 @@ export function StatCard({
   );
 }
 
-export function EmptyChart({ label = 'No data yet.' }: { label?: string }) {
-  return <p className="muted">{label}</p>;
+export async function EmptyChart({ label }: { label?: string }) {
+  const t = await getT();
+  return <p className="muted">{label ?? t('common.noData')}</p>;
 }
 
 /** Bare trend line for stat cards — no axes, no labels, just the shape. */
@@ -92,14 +95,23 @@ export function Sparkline({ values }: { values: number[] }) {
  * image, which in a statistics app hides the actual content from screen readers.
  * Deriving it from the data means no caller can forget to pass one.
  */
-function describe(data: LabelledValue[], format: (value: number) => string): string {
-  if (!data.length) return 'Chart with no data.';
+function describe(
+  t: Translate,
+  data: LabelledValue[],
+  format: (value: number) => string,
+): string {
+  if (!data.length) return t('chart.empty');
   const peak = data.reduce((best, d) => (d.value > best.value ? d : best), data[0]);
   const total = data.reduce((sum, d) => sum + d.value, 0);
-  return `Chart of ${data.length} values, total ${format(total)}, highest ${peak.label} at ${format(peak.value)}.`;
+  return t('chart.describe', {
+    count: data.length,
+    total: format(total),
+    peak: peak.label,
+    value: format(peak.value),
+  });
 }
 
-export function BarChart({
+export async function BarChart({
   data,
   format = identity,
   hrefFor,
@@ -111,6 +123,7 @@ export function BarChart({
   unit?: string;
 }) {
   if (!data.length) return <EmptyChart />;
+  const t = await getT();
   const max = niceMax(data.map((d) => d.value));
   const total = data.reduce((sum, d) => sum + d.value, 0);
 
@@ -118,7 +131,11 @@ export function BarChart({
     <ul className="bars">
       {data.map((d, index) => {
         const share = total > 0 ? Math.round((d.value / total) * 100) : 0;
-        const tip = `${d.label} — ${format(d.value)}${unit ? ` ${unit}` : ''} · ${share}% of shown`;
+        const tip = t('chart.barTip', {
+          label: d.label,
+          value: `${format(d.value)}${unit ? ` ${unit}` : ''}`,
+          share,
+        });
 
         return (
           <li key={d.label} className="bar-row" data-tip={tip}>
@@ -145,7 +162,7 @@ export function BarChart({
 }
 
 /** Smooth area chart for continuous series — the shape of a month reads better than 30 bars. */
-export function AreaChart({
+export async function AreaChart({
   data,
   format = identity,
   labelEvery,
@@ -157,6 +174,7 @@ export function AreaChart({
   label?: string;
 }) {
   if (data.length < 2) return <EmptyChart />;
+  const t = await getT();
 
   const width = 760;
   const height = 200;
@@ -183,7 +201,7 @@ export function AreaChart({
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="chart" role="img">
-      <title>{label ?? describe(data, format)}</title>
+      <title>{label ?? describe(t, data, format)}</title>
       <defs>
         <linearGradient id="area-fill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="var(--beam)" stopOpacity="0.28" />
@@ -236,7 +254,7 @@ export function AreaChart({
 }
 
 /** Vertical columns for categorical series — weekdays, hours of the day. */
-export function ColumnChart({
+export async function ColumnChart({
   data,
   format = identity,
   labelEvery = 1,
@@ -248,6 +266,7 @@ export function ColumnChart({
   label?: string;
 }) {
   if (!data.length) return <EmptyChart />;
+  const t = await getT();
 
   // The viewBox grows with the number of categories so that twelve months do not end up
   // as twelve towers, and seven weekdays do not shrink their labels to nothing.
@@ -261,7 +280,7 @@ export function ColumnChart({
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="chart columns" role="img">
-      <title>{label ?? describe(data, format)}</title>
+      <title>{label ?? describe(t, data, format)}</title>
       {[0.5, 1].map((fraction) => (
         <line
           key={fraction}
@@ -309,8 +328,123 @@ export function ColumnChart({
   );
 }
 
+/**
+ * Several series over the same buckets, stacked. The total per bucket is the height, which
+ * is what makes "are transcodes growing, or is everything growing?" answerable at a glance —
+ * two separate charts side by side never answer that.
+ *
+ * Series are separated by intensity down the amber ramp, never by hue: the colour rule
+ * holds here too.
+ */
+export async function StackedColumnChart({
+  labels,
+  series,
+  format = identity,
+  labelEvery,
+}: {
+  labels: string[];
+  series: { label: string; values: number[] }[];
+  format?: (value: number) => string;
+  labelEvery?: number;
+}) {
+  const totals = labels.map((_, index) =>
+    series.reduce((sum, s) => sum + (s.values[index] ?? 0), 0),
+  );
+  if (!labels.length || !totals.some((value) => value > 0)) return <EmptyChart />;
+  const t = await getT();
+
+  const width = 760;
+  const height = 200;
+  const padBottom = 26;
+  const plot = height - padBottom - 10;
+  const max = niceMax(totals);
+  const slot = width / labels.length;
+  const barWidth = Math.min(30, Math.max(2, slot * 0.66));
+  const every = labelEvery ?? Math.ceil(labels.length / 12);
+
+  return (
+    <>
+      <svg viewBox={`0 0 ${width} ${height}`} className="chart columns" role="img">
+        <title>
+          {t('chart.describeStacked', {
+            series: series.map((s) => s.label).join(', '),
+            count: labels.length,
+            peak: format(Math.max(...totals)),
+          })}
+        </title>
+        {[0.5, 1].map((fraction) => (
+          <line
+            key={fraction}
+            x1="0"
+            x2={width}
+            y1={height - padBottom - plot * fraction}
+            y2={height - padBottom - plot * fraction}
+            stroke="var(--line)"
+            strokeDasharray="2 6"
+          />
+        ))}
+        <line x1="0" y1={height - padBottom} x2={width} y2={height - padBottom} stroke="var(--line-strong)" />
+
+        {labels.map((label, index) => {
+          // Segments are laid out bottom-up, so each one needs the height of everything
+          // already stacked underneath it.
+          let stacked = 0;
+          const tip = `${label} · ${series
+            .map((s) => `${s.label} ${format(s.values[index] ?? 0)}`)
+            .join(' · ')}`;
+
+          return (
+            <g key={label} className="column" data-tip={tip}>
+              <rect x={index * slot} y={0} width={slot} height={height - padBottom} fill="transparent" />
+              {series.map((s, seriesIndex) => {
+                const value = s.values[index] ?? 0;
+                const segment = (plot * value) / max;
+                const y = height - padBottom - stacked - segment;
+                stacked += segment;
+                if (value <= 0) return null;
+                return (
+                  <rect
+                    key={s.label}
+                    x={index * slot + (slot - barWidth) / 2}
+                    y={y}
+                    width={barWidth}
+                    height={segment}
+                    fill={RAMP[seriesIndex % RAMP.length]}
+                    pointerEvents="none"
+                  />
+                );
+              })}
+              {index % every === 0 && (
+                <text
+                  x={index * slot + slot / 2}
+                  y={height - 8}
+                  fill="var(--text-faint)"
+                  fontSize="10"
+                  textAnchor="middle"
+                  pointerEvents="none"
+                >
+                  {label.length > 5 ? label.slice(5) : label}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      <ul className="legend">
+        {series.map((s, index) => (
+          <li key={s.label}>
+            <span className="dot" style={{ background: RAMP[index % RAMP.length] }} />
+            {s.label}
+            <span className="muted"> {format(s.values.reduce((sum, v) => sum + v, 0))}</span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 /** Donut for a handful of shares. */
-export function DonutChart({
+export async function DonutChart({
   data,
   format = identity,
   label,
@@ -321,6 +455,7 @@ export function DonutChart({
 }) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
   if (!total) return <EmptyChart />;
+  const t = await getT();
 
   const radius = 60;
   const circumference = 2 * Math.PI * radius;
@@ -329,7 +464,7 @@ export function DonutChart({
   return (
     <div className="donut-wrap">
       <svg viewBox="0 0 160 160" className="donut" role="img">
-        <title>{label ?? describe(data, format)}</title>
+        <title>{label ?? describe(t, data, format)}</title>
         <circle cx="80" cy="80" r={radius} fill="none" stroke="rgba(255,255,255,.04)" strokeWidth="18" />
         <g transform="rotate(-90 80 80)">
           {data.map((d, index) => {
@@ -430,7 +565,7 @@ export function Heatmap({
 }
 
 /** Weekday × hour grid — shows when in the week someone actually watches. */
-export function WeekHourGrid({
+export async function WeekHourGrid({
   data,
   format = identity,
   hrefFor,
@@ -444,7 +579,16 @@ export function WeekHourGrid({
   const flat = data.flat();
   if (!flat.some((value) => value > 0)) return <EmptyChart />;
   const max = niceMax(flat);
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const t = await getT();
+  const days = [
+    t('weekday.mon'),
+    t('weekday.tue'),
+    t('weekday.wed'),
+    t('weekday.thu'),
+    t('weekday.fri'),
+    t('weekday.sat'),
+    t('weekday.sun'),
+  ];
 
   return (
     <div className="weekgrid-wrap">

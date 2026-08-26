@@ -30,6 +30,7 @@ import { getSettings } from '@/server/config';
 import { isEnabled } from '@/server/features';
 import { getLibrary } from '@/server/library';
 import { adminScope, requireAdmin } from '@/server/session';
+import { getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,12 +40,14 @@ export default async function AdminStatsPage({
   searchParams: Promise<{ days?: string; by?: string }>;
 }) {
   const session = await requireAdmin();
+  const t = await getT();
   const settings = await getSettings();
   if (!isEnabled(settings.features, 'serverWideStats')) notFound();
   const params = await searchParams;
   const days = Number(params.days ?? 30);
   const by: RankBy = params.by === 'time' ? 'time' : 'count';
-  const rank = by === 'time' ? formatMinutes : (value: number) => `${value} plays`;
+  const rank =
+    by === 'time' ? formatMinutes : (value: number) => t('common.plays', { count: value });
   const scope = adminScope(session.user);
   // A server admin sees their own server only; a global admin sees everything.
   const onlyServer = session.user.globalAdmin ? undefined : session.user.serverId;
@@ -90,106 +93,115 @@ export default async function AdminStatsPage({
 
   return (
     <>
-      <p className="eyebrow">Admin</p>
-      <h1>Server Statistics</h1>
-      <p className="subtitle">Usage across all users.</p>
+      <p className="eyebrow">{t('nav.admin')}</p>
+      <h1>{t('serverstats.title')}</h1>
+      <p className="subtitle">{t('serverstats.subtitle')}</p>
 
       <form className="filters">
         {/* Keeps the ranking metric when only the period is submitted. */}
         <input type="hidden" name="by" value={by} />
         <label>
-          Period
+          {t('serverstats.period')}
           <select name="days" defaultValue={String(days)}>
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-            <option value="90">Last 90 days</option>
-            <option value="365">Last year</option>
+            <option value="7">{t('serverstats.last7')}</option>
+            <option value="30">{t('serverstats.last30')}</option>
+            <option value="90">{t('serverstats.last90')}</option>
+            <option value="365">{t('common.lastYear')}</option>
           </select>
         </label>
-        <button>Apply</button>
+        <button>{t('action.apply')}</button>
       </form>
 
       <div className="grid cols-4">
         <StatCard
-          label="Watch time"
+          label={t('common.watchTime')}
           value={formatDuration(totals.watchtimeMs)}
-          hint={`in the last ${days} days`}
+          hint={t('serverstats.watchTimeHint', { days })}
           trend={trend}
           spark={daily.map((day) => day.value)}
-          info="Sum of the runtime of every play by every user in the period. The arrow compares it with the period before."
+          info={t('serverstats.watchTimeInfo')}
         />
         <StatCard
-          label="Plays"
+          label={t('serverstats.plays')}
           value={String(totals.plays)}
-          hint={`${totals.movies} movies · ${totals.episodes} episodes`}
+          hint={t('serverstats.playsHint', { movies: totals.movies, episodes: totals.episodes })}
         />
         <StatCard
-          label="Library items"
+          label={t('serverstats.libraryItems')}
           value={String(library.length)}
-          info="Movies and series reported by the media server, cached for five minutes."
+          info={t('serverstats.libraryItemsInfo')}
         />
         <StatCard
-          label="Peak hour"
+          label={t('serverstats.peakHour')}
           value={busiestHour ? `${busiestHour.label}:00` : '—'}
-          info="Hour of the day with the most playback starts."
+          info={t('serverstats.peakHourInfo')}
         />
         <StatCard
-          label="Users with plays"
+          label={t('serverstats.usersWithPlays')}
           value={String(leaderboard.filter((entry) => entry.value > 0).length)}
           href="/admin/users"
-          info="Users that have at least one recorded playback. Opens the user list."
+          info={t('serverstats.usersWithPlaysInfo')}
         />
         <StatCard
-          label="Distinct titles"
+          label={t('serverstats.distinctTitles')}
           value={String(highlights.distinctTitles)}
-          info="Different movies and shows watched server-wide."
+          info={t('serverstats.distinctTitlesInfo')}
         />
-        <StatCard label="Average play" value={formatDuration(highlights.averagePlayMs)} />
         <StatCard
-          label="Binge record"
+          label={t('serverstats.averagePlay')}
+          value={formatDuration(highlights.averagePlayMs)}
+        />
+        <StatCard
+          label={t('stats.bingeRecord')}
           value={records.bingeCount ? `${records.bingeCount}×` : '—'}
           hint={records.bingeTitle ?? undefined}
-          info="Most plays of one title by anyone within a single day."
+          info={t('serverstats.bingeInfo')}
         />
         <StatCard
-          label="Busiest day"
+          label={t('stats.busiestDay')}
           value={highlights.busiestDay ? formatMinutes(highlights.busiestDay.minutes) : '—'}
           hint={highlights.busiestDay?.day}
         />
         <StatCard
-          label="Peak concurrent"
+          label={t('serverstats.peakConcurrent')}
           value={String(peak.streams)}
           hint={
             peak.streams
-              ? `${peak.transcodes} transcode · ${peak.directPlays} direct play`
+              ? t('serverstats.peakConcurrentHint', {
+                  transcodes: peak.transcodes,
+                  direct: peak.directPlays,
+                })
               : undefined
           }
-          info="The most streams that ever overlapped in this period, and how they were being delivered at that moment."
+          info={t('serverstats.peakConcurrentInfo')}
         />
         <StatCard
-          label="Completion rate"
+          label={t('serverstats.completionRate')}
           value={completion.rate === null ? '—' : `${completion.rate}%`}
-          hint={`${completion.finished} of ${completion.finished + completion.abandoned} sessions`}
-          info={`Streams that reached ${settings.watchedThreshold}% of the runtime. Recorded sessions only, so it starts from the day Watcharr was installed.`}
+          hint={t('serverstats.completionHint', {
+            finished: completion.finished,
+            total: completion.finished + completion.abandoned,
+          })}
+          info={t('serverstats.completionInfo', { percent: settings.watchedThreshold })}
         />
       </div>
 
       <section className="section">
-        <h2>Daily activity (minutes)</h2>
+        <h2>{t('stats.dailyActivity')}</h2>
         <div className="card">
           <AreaChart data={daily} format={formatMinutes} />
         </div>
       </section>
 
       <section className="section">
-        <h2>When the server is busy</h2>
+        <h2>{t('serverstats.serverBusy')}</h2>
         <div className="card">
           <WeekHourGrid data={weekGrid} format={formatMinutes} />
         </div>
       </section>
 
       <section className="section">
-        <h2>Watch time per user</h2>
+        <h2>{t('serverstats.watchTimePerUser')}</h2>
         <div className="card">
           <BarChart
             data={leaderboard}
@@ -200,19 +212,19 @@ export default async function AdminStatsPage({
       </section>
 
       <div className="section toolbar">
-        <h2 style={{ margin: 0 }}>Top lists</h2>
+        <h2 style={{ margin: 0 }}>{t('stats.topLists')}</h2>
         <RankToggle base="/admin/stats" by={by} days={days} />
       </div>
 
       <div className="grid cols-2">
         <section>
-          <h2>Titles</h2>
+          <h2>{t('stats.titles')}</h2>
           <div className="card">
             <BarChart data={titles} format={rank} hrefFor={titleHref} />
           </div>
         </section>
         <section>
-          <h2>Genres</h2>
+          <h2>{t('common.genres')}</h2>
           <div className="card">
             <BarChart data={genres} format={rank} />
           </div>
@@ -221,17 +233,19 @@ export default async function AdminStatsPage({
 
       <div className="grid cols-2 section">
         <section>
-          <h2>Devices</h2>
+          <h2>{t('stats.devices')}</h2>
           <div className="card">
             <BarChart data={devices} format={rank} />
           </div>
         </section>
         <section>
-          <h2>Clients</h2>
+          <h2>{t('serverstats.clients')}</h2>
           <div className="card">
             <BarChart
               data={clients}
-              format={by === 'time' ? formatMinutes : (v) => `${v} sessions`}
+              format={
+                by === 'time' ? formatMinutes : (v) => t('common.sessions', { count: v })
+              }
             />
           </div>
         </section>
@@ -239,13 +253,17 @@ export default async function AdminStatsPage({
 
       <div className="grid cols-2 section">
         <section>
-          <h2>Peak hours</h2>
+          <h2>{t('serverstats.peakHours')}</h2>
           <div className="card">
-            <ColumnChart data={hours} format={(v) => `${v} plays`} labelEvery={2} />
+            <ColumnChart
+              data={hours}
+              format={(v) => t('common.plays', { count: v })}
+              labelEvery={2}
+            />
           </div>
         </section>
         <section>
-          <h2>Genre share</h2>
+          <h2>{t('serverstats.genreShare')}</h2>
           <div className="card">
             <DonutChart data={genres.slice(0, 5)} format={rank} />
           </div>
@@ -253,7 +271,7 @@ export default async function AdminStatsPage({
       </div>
 
       <section className="section">
-        <h2>By weekday (minutes)</h2>
+        <h2>{t('stats.byWeekday')}</h2>
         <div className="card">
           <ColumnChart data={weekdays} format={formatMinutes} />
         </div>

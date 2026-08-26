@@ -1,3 +1,5 @@
+import type { Translate } from '@/i18n';
+
 export function formatDuration(ms: number): string {
   const minutes = Math.round(ms / 60000);
   if (minutes < 60) return `${minutes}m`;
@@ -40,6 +42,21 @@ export function percent(part: number, total: number): number {
  */
 export const artUrl = (serverSlug: string, itemId: string) =>
   `/api/art/${serverSlug}/${encodeURIComponent(itemId)}`;
+
+/**
+ * Rough, human relative time — exact seconds do not matter anywhere this is used. Takes
+ * the translator rather than importing one, so it stays usable on both sides of the
+ * client boundary like the rest of this file.
+ */
+export function formatTimeAgo(t: Translate, date: Date | string): string {
+  const minutes = Math.round((Date.now() - new Date(date).getTime()) / 60000);
+  if (minutes < 1) return t('beam.justNow');
+  if (minutes < 60) return t('beam.minutesAgo', { count: minutes });
+  const hours = Math.round(minutes / 60);
+  return hours < 24
+    ? t('beam.hoursAgo', { count: hours })
+    : t('beam.daysAgo', { count: Math.round(hours / 24) });
+}
 
 /** Film style timecode: HH:MM:SS. Used wherever a playback position is shown. */
 export function formatTimecode(ms: number): string {

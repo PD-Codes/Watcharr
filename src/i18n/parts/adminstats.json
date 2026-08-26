@@ -1,0 +1,173 @@
+{
+  "adminActivity.subtitle": { "en": "Every active stream on the server.", "de": "Jeder aktive Stream auf dem Server." },
+  "adminActivity.activeStreams": { "en": "Active streams", "de": "Aktive Streams" },
+  "adminActivity.transcoding": { "en": "Transcoding", "de": "Transkodierung" },
+  "adminActivity.remoteStreams": { "en": "Remote streams", "de": "Externe Streams" },
+  "adminActivity.remoteStreamsInfo": {
+    "en": "Streams delivered to an address outside the local network.",
+    "de": "Streams, die an eine Adresse außerhalb des lokalen Netzwerks ausgeliefert werden."
+  },
+  "adminActivity.totalBandwidth": { "en": "Total bandwidth", "de": "Gesamte Bandbreite" },
+  "adminActivity.totalBandwidthInfo": {
+    "en": "Sum of the delivered bitrate of all active streams.",
+    "de": "Summe der ausgelieferten Bitrate aller aktiven Streams."
+  },
+  "adminActivity.directPlayInfo": {
+    "en": "Streams the server sends without re-encoding. Opens the transcoding statistics.",
+    "de": "Streams, die der Server ohne Neukodierung ausliefert. Öffnet die Transkodierungsstatistik."
+  },
+  "adminActivity.daysShort": { "en": "{count}d", "de": "{count} T" },
+  "adminActivity.streamsPerHour": { "en": "Streams per hour", "de": "Streams pro Stunde" },
+  "adminActivity.streamsPerDay": { "en": "Streams per day", "de": "Streams pro Tag" },
+  "adminActivity.bandwidthPerHour": { "en": "Bandwidth per hour", "de": "Bandbreite pro Stunde" },
+  "adminActivity.bandwidthPerDay": { "en": "Bandwidth per day", "de": "Bandbreite pro Tag" },
+  "adminActivity.streamsChart": {
+    "en": "Streams over the last {days} days",
+    "de": "Streams der letzten {days} Tage"
+  },
+  "adminActivity.bandwidthChart": {
+    "en": "Delivered bandwidth over the last {days} days",
+    "de": "Ausgelieferte Bandbreite der letzten {days} Tage"
+  },
+
+  "serverstats.title": { "en": "Server Statistics", "de": "Serverstatistik" },
+  "serverstats.subtitle": { "en": "Usage across all users.", "de": "Nutzung über alle Benutzer hinweg." },
+  "serverstats.period": { "en": "Period", "de": "Zeitraum" },
+  "serverstats.last7": { "en": "Last 7 days", "de": "Letzte 7 Tage" },
+  "serverstats.last30": { "en": "Last 30 days", "de": "Letzte 30 Tage" },
+  "serverstats.last90": { "en": "Last 90 days", "de": "Letzte 90 Tage" },
+  "serverstats.watchTimeHint": { "en": "in the last {days} days", "de": "in den letzten {days} Tagen" },
+  "serverstats.watchTimeInfo": {
+    "en": "Sum of the runtime of every play by every user in the period. The arrow compares it with the period before.",
+    "de": "Summe der Laufzeit aller Wiedergaben aller Benutzer im Zeitraum. Der Pfeil vergleicht mit dem Zeitraum davor."
+  },
+  "serverstats.plays": { "en": "Plays", "de": "Wiedergaben" },
+  "serverstats.playsHint": { "en": "{movies} movies · {episodes} episodes", "de": "{movies} Filme · {episodes} Episoden" },
+  "serverstats.libraryItems": { "en": "Library items", "de": "Bibliothekseinträge" },
+  "serverstats.libraryItemsInfo": {
+    "en": "Movies and series reported by the media server, cached for five minutes.",
+    "de": "Filme und Serien, die der Media-Server meldet, für fünf Minuten zwischengespeichert."
+  },
+  "serverstats.peakHour": { "en": "Peak hour", "de": "Spitzenstunde" },
+  "serverstats.peakHourInfo": {
+    "en": "Hour of the day with the most playback starts.",
+    "de": "Die Tagesstunde mit den meisten gestarteten Wiedergaben."
+  },
+  "serverstats.usersWithPlays": { "en": "Users with plays", "de": "Benutzer mit Wiedergaben" },
+  "serverstats.usersWithPlaysInfo": {
+    "en": "Users that have at least one recorded playback. Opens the user list.",
+    "de": "Benutzer mit mindestens einer aufgezeichneten Wiedergabe. Öffnet die Benutzerliste."
+  },
+  "serverstats.distinctTitles": { "en": "Distinct titles", "de": "Verschiedene Titel" },
+  "serverstats.distinctTitlesInfo": {
+    "en": "Different movies and shows watched server-wide.",
+    "de": "Verschiedene Filme und Serien, die serverweit gesehen wurden."
+  },
+  "serverstats.averagePlay": { "en": "Average play", "de": "Durchschnittliche Wiedergabe" },
+  "serverstats.bingeInfo": {
+    "en": "Most plays of one title by anyone within a single day.",
+    "de": "Die meisten Wiedergaben eines Titels durch eine Person an einem einzigen Tag."
+  },
+  "serverstats.peakConcurrent": { "en": "Peak concurrent", "de": "Gleichzeitige Streams (Spitze)" },
+  "serverstats.peakConcurrentHint": {
+    "en": "{transcodes} transcode · {direct} direct play",
+    "de": "{transcodes} Transkodierung · {direct} Direktwiedergabe"
+  },
+  "serverstats.peakConcurrentInfo": {
+    "en": "The most streams that ever overlapped in this period, and how they were being delivered at that moment.",
+    "de": "Die höchste Zahl gleichzeitiger Streams in diesem Zeitraum und wie sie in diesem Moment ausgeliefert wurden."
+  },
+  "serverstats.completionRate": { "en": "Completion rate", "de": "Abschlussquote" },
+  "serverstats.completionHint": {
+    "en": "{finished} of {total} sessions",
+    "de": "{finished} von {total} Sitzungen"
+  },
+  "serverstats.completionInfo": {
+    "en": "Streams that reached {percent}% of the runtime. Recorded sessions only, so it starts from the day Watcharr was installed.",
+    "de": "Streams, die {percent} % der Laufzeit erreicht haben. Nur aufgezeichnete Sitzungen, es beginnt also am Tag der Installation von Watcharr."
+  },
+  "serverstats.serverBusy": { "en": "When the server is busy", "de": "Wann der Server ausgelastet ist" },
+  "serverstats.watchTimePerUser": { "en": "Watch time per user", "de": "Sehdauer pro Benutzer" },
+  "serverstats.clients": { "en": "Clients", "de": "Clients" },
+  "serverstats.peakHours": { "en": "Peak hours", "de": "Spitzenstunden" },
+  "serverstats.genreShare": { "en": "Genre share", "de": "Genre-Anteil" },
+
+  "clients.title": { "en": "Client Statistics", "de": "Client-Statistik" },
+  "clients.subtitle": {
+    "en": "Which apps and devices people actually use.",
+    "de": "Welche Apps und Geräte tatsächlich genutzt werden."
+  },
+  "clients.totalSessions": { "en": "Total sessions", "de": "Sitzungen insgesamt" },
+  "clients.uniqueClients": { "en": "Unique clients", "de": "Verschiedene Clients" },
+  "clients.uniqueClientsInfo": {
+    "en": "Different player applications, e.g. the web app or an Android TV client.",
+    "de": "Verschiedene Player-Anwendungen, etwa die Web-App oder ein Android-TV-Client."
+  },
+  "clients.uniqueUsers": { "en": "Unique users", "de": "Verschiedene Benutzer" },
+  "clients.uniqueDevices": { "en": "Unique devices", "de": "Verschiedene Geräte" },
+  "clients.uniqueDevicesInfo": {
+    "en": "Different browsers, phones or TVs reported by the media server.",
+    "de": "Verschiedene Browser, Telefone oder Fernseher, die der Media-Server meldet."
+  },
+  "clients.sessionsPerClient": { "en": "Sessions per client", "de": "Sitzungen pro Client" },
+  "clients.watchTimePerClient": { "en": "Watch time per client", "de": "Sehdauer pro Client" },
+  "clients.perUser": { "en": "Clients per user", "de": "Clients pro Benutzer" },
+  "clients.perDevice": { "en": "Clients per device", "de": "Clients pro Gerät" },
+  "clients.colSessions": { "en": "Sessions", "de": "Sitzungen" },
+  "clients.colTranscoded": { "en": "Transcoded", "de": "Transkodiert" },
+  "clients.empty": { "en": "No sessions recorded yet.", "de": "Noch keine Sitzungen aufgezeichnet." },
+
+  "transcoding.title": { "en": "Transcoding Statistics", "de": "Transkodierungsstatistik" },
+  "transcoding.subtitle": {
+    "en": "How the server delivered content. Recorded from live sessions, so numbers start at zero on a fresh install and grow as people watch.",
+    "de": "Wie der Server Inhalte ausgeliefert hat. Aus laufenden Sitzungen erfasst — bei einer frischen Installation beginnen die Zahlen daher bei null und wachsen mit der Nutzung."
+  },
+  "transcoding.sessions": { "en": "Sessions", "de": "Sitzungen" },
+  "transcoding.sessionsInfo": {
+    "en": "Playback sessions observed by the activity poller.",
+    "de": "Wiedergabesitzungen, die der Aktivitäts-Poller erfasst hat."
+  },
+  "transcoding.directPlayHint": { "en": "{direct} of {total}", "de": "{direct} von {total}" },
+  "transcoding.directPlayInfo": {
+    "en": "Share of sessions the server delivered without re-encoding.",
+    "de": "Anteil der Sitzungen, die der Server ohne Neukodierung ausgeliefert hat."
+  },
+  "transcoding.averageBitrate": { "en": "Average bitrate", "de": "Durchschnittliche Bitrate" },
+  "transcoding.bitrateHint": { "en": "min {min} · max {max}", "de": "min. {min} · max. {max}" },
+  "transcoding.streamed": { "en": "Streamed", "de": "Gestreamt" },
+  "transcoding.audioCodecs": { "en": "Audio codecs", "de": "Audio-Codecs" },
+  "transcoding.containers": { "en": "Containers", "de": "Container" },
+
+  "graphs.subtitle": {
+    "en": "Plays come from the media server's history and reach back before Watcharr was installed. Stream and bandwidth figures come from playback sessions, which start on the day it was.",
+    "de": "Wiedergaben stammen aus dem Verlauf des Media-Servers und reichen bis vor die Installation von Watcharr zurück. Stream- und Bandbreitenzahlen stammen aus Wiedergabesitzungen und beginnen erst am Tag der Installation."
+  },
+  "graphs.dailyPlayCount": { "en": "Daily play count", "de": "Wiedergaben pro Tag" },
+  "graphs.dailyWatchTime": { "en": "Daily watch time", "de": "Sehdauer pro Tag" },
+  "graphs.streamDelivery": { "en": "How streams were delivered", "de": "Wie Streams ausgeliefert wurden" },
+  "graphs.playsByWeekday": { "en": "Plays by day of week", "de": "Wiedergaben nach Wochentag" },
+  "graphs.playsByHour": { "en": "Plays by hour of day", "de": "Wiedergaben nach Tagesstunde" },
+  "graphs.playsByUser": { "en": "Plays by user", "de": "Wiedergaben nach Benutzer" },
+  "graphs.watchTimeByUser": { "en": "Watch time by user", "de": "Sehdauer nach Benutzer" },
+  "graphs.playsByPlatform": { "en": "Plays by platform", "de": "Wiedergaben nach Plattform" },
+  "graphs.playsByMediaType": { "en": "Plays by media type", "de": "Wiedergaben nach Medientyp" },
+  "graphs.streamsByResolution": { "en": "Streams by resolution", "de": "Streams nach Auflösung" },
+  "graphs.concurrentStreams": { "en": "Concurrent streams", "de": "Gleichzeitige Streams" },
+  "graphs.bandwidthSplit": { "en": "Bandwidth, local versus remote", "de": "Bandbreite, lokal gegenüber extern" },
+  "graphs.bandwidthNote": {
+    "en": "Only the remote half costs uplink. The same stream to a TV in the next room and to a phone on mobile data is the same number and a different problem.",
+    "de": "Nur der externe Anteil kostet Uplink. Derselbe Stream an einen Fernseher im Nebenzimmer und an ein Handy im Mobilfunknetz ist dieselbe Zahl und ein anderes Problem."
+  },
+
+  "streams.subtitle": {
+    "en": "{count} recorded streams. Sessions are kept after playback ends, which is what makes this history possible at all.",
+    "de": "{count} aufgezeichnete Streams. Sitzungen bleiben nach dem Ende der Wiedergabe erhalten — erst dadurch ist dieser Verlauf überhaupt möglich."
+  },
+  "streams.transcodesOnly": { "en": "Transcodes only", "de": "Nur Transkodierungen" },
+  "streams.transcodes": { "en": "Transcodes", "de": "Transkodierungen" },
+  "streams.peakHint": { "en": "peak {value} Mbps", "de": "Spitze {value} Mbps" },
+  "streams.empty": {
+    "en": "No streams recorded for this period.",
+    "de": "Für diesen Zeitraum sind keine Streams aufgezeichnet."
+  }
+}

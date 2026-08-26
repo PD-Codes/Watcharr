@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { t } from '@/i18n';
+import { useT } from '@/i18n/client';
 
 type Pin = { pinId: string; code: string; authUrl: string };
 
 /** Plex PIN OAuth: open plex.tv, approve the code, poll until a token comes back. */
 export default function PlexLogin({ serverId }: { serverId: number }) {
+  const t = useT();
   const router = useRouter();
   const [pin, setPin] = useState<Pin | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +23,7 @@ export default function PlexLogin({ serverId }: { serverId: number }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ serverId }),
     });
-    if (!res.ok) return setError('Could not start the Plex sign-in flow');
+    if (!res.ok) return setError(t('login.plexFailed'));
     const next = (await res.json()) as Pin;
     setPin(next);
     window.open(next.authUrl, '_blank', 'noopener');
@@ -44,7 +45,7 @@ export default function PlexLogin({ serverId }: { serverId: number }) {
   return (
     <div>
       {!pin ? (
-        <button onClick={start}>{t('action.signIn')} with Plex</button>
+        <button onClick={start}>{t('login.plexButton')}</button>
       ) : (
         <p className="muted">
           {t('login.plexHint')}

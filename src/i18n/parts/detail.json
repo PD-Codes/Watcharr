@@ -1,0 +1,115 @@
+{
+  "title.backToStats": { "en": "Back to statistics", "de": "Zurück zur Statistik" },
+  "title.episodesWatched": { "en": "{count} episodes watched", "de": "{count} Episoden angesehen" },
+  "title.showMine": { "en": "Show only my plays", "de": "Nur meine Wiedergaben zeigen" },
+  "title.showServerWide": { "en": "Show server-wide", "de": "Serverweit zeigen" },
+  "title.plays": { "en": "Plays", "de": "Wiedergaben" },
+  "title.playsInfo": {
+    "en": "Every recorded playback, including repeats of the same episode.",
+    "de": "Jede aufgezeichnete Wiedergabe, auch Wiederholungen derselben Episode."
+  },
+  "title.watchTimeInfo": {
+    "en": "Sum of the runtime of all recorded playbacks.",
+    "de": "Summe der Laufzeit aller aufgezeichneten Wiedergaben."
+  },
+  "title.firstWatched": { "en": "First watched", "de": "Zuerst angesehen" },
+  "title.lastWatched": { "en": "Last watched", "de": "Zuletzt angesehen" },
+  "title.cast": { "en": "Cast", "de": "Besetzung" },
+  "title.last30Days": { "en": "Last 30 days (minutes)", "de": "Letzte 30 Tage (Minuten)" },
+  "title.devices": { "en": "Devices", "de": "Geräte" },
+  "title.viewers": { "en": "Viewers", "de": "Zuschauer" },
+  "title.episodesSection": { "en": "Episodes you watched", "de": "Angesehene Episoden" },
+  "title.versionsSection": { "en": "Versions you watched", "de": "Angesehene Fassungen" },
+  "title.recentPlays": { "en": "Recent plays", "de": "Letzte Wiedergaben" },
+  "title.item": { "en": "Item", "de": "Eintrag" },
+
+  "item.backToShow": { "en": "Back to {label}", "de": "Zurück zu {label}" },
+  "item.backToHistory": { "en": "Back to history", "de": "Zurück zum Verlauf" },
+  "item.playsInfo": {
+    "en": "Every recorded playback of this exact item.",
+    "de": "Jede aufgezeichnete Wiedergabe genau dieses Eintrags."
+  },
+  "item.everyPlay": { "en": "Every play", "de": "Alle Wiedergaben" },
+
+  "person.tmdbProfile": { "en": "TMDB profile", "de": "TMDB-Profil" },
+  "person.titlesWatched": { "en": "Titles watched", "de": "Angesehene Titel" },
+  "person.ofCredits": { "en": "of {count} known credits", "de": "von {count} bekannten Mitwirkungen" },
+  "person.titlesInfo": {
+    "en": "Credits matched against the watch history by title, since no media server reports TMDB ids.",
+    "de": "Mitwirkungen werden über den Titel mit dem Verlauf abgeglichen, da kein Media-Server TMDB-IDs meldet."
+  },
+  "person.scope": { "en": "Scope", "de": "Bereich" },
+  "person.scopeServer": { "en": "Server", "de": "Server" },
+  "person.scopeYou": { "en": "You", "de": "Du" },
+  "person.switchBelow": { "en": "switch below", "de": "unten umschalten" },
+  "person.credits": { "en": "Credits", "de": "Mitwirkungen" },
+
+  "newsletter.issueSent": { "en": "Issue sent {date}.", "de": "Ausgabe verschickt am {date}." },
+  "newsletter.latestIssue": { "en": "Latest issue.", "de": "Aktuelle Ausgabe." },
+
+  "security.subtitle": {
+    "en": "Recent sign-in attempts, successful and failed.",
+    "de": "Letzte Anmeldeversuche, erfolgreich und fehlgeschlagen."
+  },
+  "security.when": { "en": "When", "de": "Zeitpunkt" },
+  "security.result": { "en": "Result", "de": "Ergebnis" },
+  "security.ip": { "en": "IP", "de": "IP" },
+  "security.country": { "en": "Country", "de": "Land" },
+  "security.client": { "en": "Client", "de": "Client" },
+  "security.success": { "en": "Success", "de": "Erfolgreich" },
+  "security.failed": { "en": "Failed", "de": "Fehlgeschlagen" },
+  "security.empty": {
+    "en": "No login attempts recorded yet.",
+    "de": "Noch keine Anmeldeversuche aufgezeichnet."
+  },
+
+  "system.subtitle": {
+    "en": "Connection and sync health for this deployment.",
+    "de": "Verbindungs- und Synchronisationsstatus dieser Installation."
+  },
+  "system.mediaServers": { "en": "Media servers", "de": "Media-Server" },
+  "system.online": { "en": "{ok} / {total} online", "de": "{ok} / {total} online" },
+  "system.mediaServersInfo": {
+    "en": "Every connected media server that answered a status request.",
+    "de": "Alle verbundenen Media-Server, die auf eine Statusabfrage geantwortet haben."
+  },
+  "system.database": { "en": "Database", "de": "Datenbank" },
+  "system.statusOnline": { "en": "Online", "de": "Online" },
+  "system.statusUnreachable": { "en": "Unreachable", "de": "Nicht erreichbar" },
+  "system.historyEntries": { "en": "History entries", "de": "Verlaufseinträge" },
+  "system.liveSessions": { "en": "Live sessions", "de": "Laufende Sitzungen" },
+  "system.recordedTotal": { "en": "{count} recorded in total", "de": "{count} insgesamt aufgezeichnet" },
+  "system.liveSessionsInfo": {
+    "en": "Sessions currently reported by the media server. Recorded sessions feed the transcoding and client statistics.",
+    "de": "Sitzungen, die der Media-Server derzeit meldet. Aufgezeichnete Sitzungen speisen die Transkodierungs- und Client-Statistiken."
+  },
+  "system.version": { "en": "Watcharr version", "de": "Watcharr-Version" },
+  "system.updateDisabled": { "en": "update check disabled", "de": "Update-Prüfung deaktiviert" },
+  "system.updateAvailable": { "en": "{version} available", "de": "{version} verfügbar" },
+  "system.upToDate": { "en": "up to date", "de": "aktuell" },
+  "system.latestUnknown": { "en": "latest release unknown", "de": "neueste Version unbekannt" },
+  "system.tmdb": { "en": "TMDB enrichment", "de": "TMDB-Anreicherung" },
+  "system.configured": { "en": "Configured", "de": "Konfiguriert" },
+  "system.notConfigured": { "en": "Not configured", "de": "Nicht konfiguriert" },
+  "system.lastPlay": { "en": "Last recorded play", "de": "Letzte aufgezeichnete Wiedergabe" },
+  "system.noneYet": { "en": "none yet", "de": "noch keine" },
+  "system.configuredSince": { "en": "Configured since", "de": "Eingerichtet seit" },
+  "system.backup": { "en": "Backup", "de": "Sicherung" },
+  "system.downloadSnapshot": { "en": "Download a snapshot", "de": "Snapshot herunterladen" },
+  "system.restoreNote": {
+    "en": "Restore by stopping the container and replacing data/watcharr.db — swapping it while the app is running would corrupt the WAL.",
+    "de": "Zum Wiederherstellen den Container stoppen und data/watcharr.db ersetzen — ein Austausch im laufenden Betrieb würde das WAL beschädigen."
+  },
+  "system.autoSnapshotsOn": {
+    "en": "Automatic snapshots every {hours}h, last {count} kept.",
+    "de": "Automatische Snapshots alle {hours} h, die letzten {count} werden behalten."
+  },
+  "system.autoSnapshotsOff": {
+    "en": "Automatic snapshots are off — enable them on Settings.",
+    "de": "Automatische Snapshots sind aus — in den Einstellungen aktivieren."
+  },
+  "system.storedSnapshots": { "en": "Stored snapshots", "de": "Gespeicherte Snapshots" },
+  "system.file": { "en": "File", "de": "Datei" },
+  "system.size": { "en": "Size", "de": "Größe" },
+  "system.created": { "en": "Created", "de": "Erstellt" }
+}

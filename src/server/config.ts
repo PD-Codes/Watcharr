@@ -2,6 +2,7 @@ import 'server-only';
 import { asc, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { appConfig, appSettings, users } from '@/db/schema';
+import { DEFAULT_LOCALE, isLocale } from '@/i18n';
 import { createAdapter, type MediaServerAdapter, type ServerType } from './adapters';
 import { decryptSecret, encryptSecret } from './crypto';
 
@@ -124,6 +125,8 @@ export async function deleteServer(id: number): Promise<void> {
 
 export interface AppSettings {
   tmdbApiKey: string | null;
+  /** UI language for anyone who has not chosen one on their profile. */
+  defaultLocale: string;
   features: Record<string, boolean>;
   /** Percentage of an item that counts as finished. Tautulli's default is 85. */
   watchedThreshold: number;
@@ -136,6 +139,7 @@ export interface AppSettings {
   monitorTranscodeAlert: boolean;
   monitorFailedLoginThreshold: number | null;
   monitorFailedLoginWindowMin: number;
+  monitorNewAddressAlert: boolean;
   digestEnabled: boolean;
   digestFrequency: string;
   digestLastSentAt: Date | null;
@@ -159,6 +163,7 @@ export interface AppSettings {
 
 const DEFAULT_SETTINGS: AppSettings = {
   tmdbApiKey: null,
+  defaultLocale: DEFAULT_LOCALE,
   features: {},
   watchedThreshold: 85,
   webhookUrl: null,
@@ -170,6 +175,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   monitorTranscodeAlert: false,
   monitorFailedLoginThreshold: null,
   monitorFailedLoginWindowMin: 10,
+  monitorNewAddressAlert: false,
   digestEnabled: false,
   digestFrequency: 'weekly',
   digestLastSentAt: null,
@@ -197,6 +203,7 @@ export async function getSettings(): Promise<AppSettings> {
   if (!row) return DEFAULT_SETTINGS;
   return {
     tmdbApiKey: row.tmdbApiKey ? decryptSecret(row.tmdbApiKey) : null,
+    defaultLocale: row.defaultLocale,
     features: row.features,
     watchedThreshold: row.watchedThreshold,
     webhookUrl: row.webhookUrl,
@@ -208,6 +215,7 @@ export async function getSettings(): Promise<AppSettings> {
     monitorTranscodeAlert: row.monitorTranscodeAlert,
     monitorFailedLoginThreshold: row.monitorFailedLoginThreshold,
     monitorFailedLoginWindowMin: row.monitorFailedLoginWindowMin,
+    monitorNewAddressAlert: row.monitorNewAddressAlert,
     digestEnabled: row.digestEnabled,
     digestFrequency: row.digestFrequency,
     digestLastSentAt: row.digestLastSentAt,
@@ -232,6 +240,7 @@ export async function getSettings(): Promise<AppSettings> {
 
 export async function updateSettings(input: {
   tmdbApiKey?: string | null;
+  defaultLocale?: string;
   features?: Record<string, boolean>;
   watchedThreshold?: number;
   webhookUrl?: string | null;
@@ -243,6 +252,7 @@ export async function updateSettings(input: {
   monitorTranscodeAlert?: boolean;
   monitorFailedLoginThreshold?: number | null;
   monitorFailedLoginWindowMin?: number;
+  monitorNewAddressAlert?: boolean;
   digestEnabled?: boolean;
   digestFrequency?: string;
   digestLastSentAt?: Date;
@@ -266,6 +276,11 @@ export async function updateSettings(input: {
   const patch: Partial<typeof appSettings.$inferInsert> = {};
   if (input.tmdbApiKey !== undefined) {
     patch.tmdbApiKey = input.tmdbApiKey ? encryptSecret(input.tmdbApiKey) : null;
+  }
+  // Rejected rather than stored: an unknown tag would leave every visitor without a
+  // dictionary until an admin noticed.
+  if (input.defaultLocale !== undefined && isLocale(input.defaultLocale)) {
+    patch.defaultLocale = input.defaultLocale;
   }
   if (input.features) patch.features = input.features;
   if (input.watchedThreshold !== undefined) {
@@ -308,6 +323,9 @@ export async function updateSettings(input: {
   }
   if (input.monitorFailedLoginWindowMin !== undefined) {
     patch.monitorFailedLoginWindowMin = Math.max(1, Math.round(input.monitorFailedLoginWindowMin));
+  }
+  if (input.monitorNewAddressAlert !== undefined) {
+    patch.monitorNewAddressAlert = input.monitorNewAddressAlert;
   }
   if (input.digestEnabled !== undefined) patch.digestEnabled = input.digestEnabled;
   if (input.digestFrequency !== undefined) {

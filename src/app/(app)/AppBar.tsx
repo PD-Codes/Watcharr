@@ -8,7 +8,7 @@ import { SearchTrigger } from '@/components/CommandPalette';
 import NavLink from './NavLink';
 import SignOutButton from './SignOutButton';
 import type { NavItem } from './nav';
-import { t } from '@/i18n';
+import { useT } from '@/i18n/client';
 
 /**
  * Mobile chrome: a top app bar plus a modal navigation drawer. Below 880px the permanent
@@ -26,6 +26,7 @@ export default function AppBar({
   nav: NavItem[];
   adminItems: NavItem[];
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const panel = useRef<HTMLDivElement>(null);
@@ -58,7 +59,7 @@ export default function AppBar({
           type="button"
           className="icon-btn"
           onClick={() => setOpen(true)}
-          aria-label="Open navigation"
+          aria-label={t('shell.openNav')}
           aria-expanded={open}
         >
           <Icon name="menu" />
@@ -80,7 +81,7 @@ export default function AppBar({
           <button
             type="button"
             className="scrim"
-            aria-label="Close navigation"
+            aria-label={t('shell.closeNav')}
             onClick={() => setOpen(false)}
           />
           <div
@@ -89,7 +90,7 @@ export default function AppBar({
             tabIndex={-1}
             role="dialog"
             aria-modal="true"
-            aria-label="Navigation"
+            aria-label={t('shell.navigation')}
           >
             <div className="drawer-head">
               <span className="wordmark" style={{ margin: 0, padding: 0 }}>
@@ -100,7 +101,7 @@ export default function AppBar({
                 type="button"
                 className="icon-btn"
                 onClick={() => setOpen(false)}
-                aria-label="Close navigation"
+                aria-label={t('shell.closeNav')}
               >
                 <Icon name="close" />
               </button>

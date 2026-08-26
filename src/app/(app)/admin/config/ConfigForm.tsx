@@ -2,10 +2,29 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { LOCALES, LOCALE_NAMES } from '@/i18n';
+import { useT } from '@/i18n/client';
 import { FEATURE_FLAGS, isEnabled, NOTIFICATION_EVENTS } from '@/server/features';
+
+/**
+ * Puts a React node where a translated string has a placeholder. Keeps a sentence that
+ * contains a link or a piece of code as one translatable unit instead of splitting it into
+ * fragments a translator cannot reorder.
+ */
+function splice(text: string, token: string, node: React.ReactNode) {
+  const [before, after = ''] = text.split(token);
+  return (
+    <>
+      {before}
+      {node}
+      {after}
+    </>
+  );
+}
 
 export default function ConfigForm({
   hasTmdbKey,
+  defaultLocale,
   features,
   watchedThreshold,
   webhookUrl,
@@ -17,6 +36,7 @@ export default function ConfigForm({
   monitorTranscodeAlert,
   monitorFailedLoginThreshold,
   monitorFailedLoginWindowMin,
+  monitorNewAddressAlert,
   digestEnabled,
   digestFrequency,
   backupAutoEnabled,
@@ -24,6 +44,7 @@ export default function ConfigForm({
   backupRetention,
 }: {
   hasTmdbKey: boolean;
+  defaultLocale: string;
   features: Record<string, boolean>;
   watchedThreshold: number;
   webhookUrl: string | null;
@@ -35,6 +56,7 @@ export default function ConfigForm({
   monitorTranscodeAlert: boolean;
   monitorFailedLoginThreshold: number | null;
   monitorFailedLoginWindowMin: number;
+  monitorNewAddressAlert: boolean;
   digestEnabled: boolean;
   digestFrequency: string;
   backupAutoEnabled: boolean;
@@ -42,6 +64,7 @@ export default function ConfigForm({
   backupRetention: number;
 }) {
   const router = useRouter();
+  const t = useT();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,8 +80,8 @@ export default function ConfigForm({
     });
     setBusy(false);
     const body = (await res.json()) as { ok?: boolean; error?: string };
-    if (res.ok && body.ok) setMessage('Test notification sent.');
-    else setError(body.error ?? 'Test failed.');
+    if (res.ok && body.ok) setMessage(t('config.testSent'));
+    else setError(body.error ?? t('config.testFailed'));
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -77,6 +100,7 @@ export default function ConfigForm({
       geoipEnabled: form.get('geoipEnabled') === 'on',
       geoipUrl: String(form.get('geoipUrl') ?? ''),
       tmdbApiKey: form.get('clearTmdb') ? '' : String(form.get('tmdbApiKey') ?? '') || undefined,
+      defaultLocale: String(form.get('defaultLocale') ?? ''),
       features: Object.fromEntries(
         FEATURE_FLAGS.map((flag) => [flag.key, form.get(`feature.${flag.key}`) === 'on']),
       ),
@@ -91,6 +115,7 @@ export default function ConfigForm({
         ? Number(form.get('monitorFailedLoginThreshold'))
         : null,
       monitorFailedLoginWindowMin: Number(form.get('monitorFailedLoginWindowMin') ?? 10),
+      monitorNewAddressAlert: form.get('monitorNewAddressAlert') === 'on',
       digestEnabled: form.get('digestEnabled') === 'on',
       digestFrequency: String(form.get('digestFrequency') ?? 'weekly'),
       backupAutoEnabled: form.get('backupAutoEnabled') === 'on',
@@ -105,28 +130,46 @@ export default function ConfigForm({
     });
     setBusy(false);
     if (res.ok) {
-      setMessage('Saved.');
+      setMessage(t('action.saved'));
       router.refresh();
     } else {
-      setError(((await res.json()) as { error?: string }).error ?? 'Could not save');
+      setError(((await res.json()) as { error?: string }).error ?? t('config.saveFailed'));
     }
   }
 
   return (
     <form className="card" onSubmit={onSubmit} style={{ maxWidth: 520 }}>
       <label>
-        TMDB API key
-        <input name="tmdbApiKey" type="password" placeholder={hasTmdbKey ? 'configured' : 'not set'} />
+        {t('config.defaultLanguage')}
+        <select name="defaultLocale" defaultValue={defaultLocale}>
+          {LOCALES.map((locale) => (
+            <option key={locale} value={locale}>
+              {LOCALE_NAMES[locale]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="muted" style={{ marginTop: -8 }}>
+        {t('config.defaultLanguageHint')}
+      </p>
+
+      <label>
+        {t('config.tmdbKey')}
+        <input
+          name="tmdbApiKey"
+          type="password"
+          placeholder={hasTmdbKey ? t('config.configured') : t('config.notSet')}
+        />
       </label>
       {hasTmdbKey && (
         <label className="row">
-          <input type="checkbox" name="clearTmdb" style={{ width: 'auto' }} /> Remove the stored TMDB
-          key
+          <input type="checkbox" name="clearTmdb" style={{ width: 'auto' }} />{' '}
+          {t('config.clearTmdb')}
         </label>
       )}
 
       <label>
-        Counts as finished from
+        {t('config.watchedThreshold')}
         <input
           name="watchedThreshold"
           type="number"
@@ -137,12 +180,11 @@ export default function ConfigForm({
         />
       </label>
       <p className="muted" style={{ marginTop: -6 }}>
-        Percent of the runtime a stream has to reach. Changing it re-labels past sessions
-        too, because the split is computed on read.
+        {t('config.watchedThresholdHint')}
       </p>
 
       <p className="stat-label" style={{ marginTop: 20 }}>
-        Features
+        {t('config.features')}
       </p>
       {FEATURE_FLAGS.map((flag) => (
         <label className="row" key={flag.key}>
@@ -152,28 +194,28 @@ export default function ConfigForm({
             defaultChecked={isEnabled(features, flag.key)}
             style={{ width: 'auto' }}
           />
-          {flag.label}
+          {t(flag.labelKey)}
         </label>
       ))}
 
       <p className="stat-label" style={{ marginTop: 20 }}>
-        Generic webhook
+        {t('config.genericWebhook')}
       </p>
       <label>
-        Endpoint URL
+        {t('config.endpointUrl')}
         <input name="webhookUrl" type="url" defaultValue={webhookUrl ?? ''} placeholder="https://" />
       </label>
       {webhookUrl && (
         <button type="button" className="outlined" disabled={busy} onClick={onTestWebhook}>
-          Send test
+          {t('config.sendTest')}
         </button>
       )}
       <p className="muted" style={{ marginTop: -6 }}>
-        Receives a raw JSON POST per event. For ntfy, n8n or anything else that accepts
-        arbitrary JSON. Discord, Slack, Telegram, Pushover, Pushbullet and email have their
-        own channel types under{' '}
-        <a href="/admin/notifications">Notifications</a>, formatted for what each expects.
-        Leave empty to send nothing here.
+        {splice(
+          t('config.webhookHint'),
+          '{link}',
+          <a href="/admin/notifications">{t('config.notificationsLink')}</a>,
+        )}
       </p>
       {NOTIFICATION_EVENTS.map((event) => (
         <label className="row" key={event.key}>
@@ -183,31 +225,31 @@ export default function ConfigForm({
             defaultChecked={webhookEvents.includes(event.key)}
             style={{ width: 'auto' }}
           />
-          {event.label}
+          {t(event.labelKey)}
         </label>
       ))}
 
       <p className="stat-label" style={{ marginTop: 20 }}>
-        Monitoring thresholds
+        {t('config.monitoring')}
       </p>
       <label>
-        Max concurrent streams per user
+        {t('config.maxStreamsPerUser')}
         <input
           name="monitorMaxStreamsPerUser"
           type="number"
           min={1}
           defaultValue={monitorMaxStreamsPerUser ?? ''}
-          placeholder="off"
+          placeholder={t('config.off')}
         />
       </label>
       <label>
-        Bandwidth alert (Mbps, total)
+        {t('config.bandwidthAlert')}
         <input
           name="monitorBandwidthMbps"
           type="number"
           min={1}
           defaultValue={monitorBandwidthMbps ?? ''}
-          placeholder="off"
+          placeholder={t('config.off')}
         />
       </label>
       <label className="row">
@@ -217,20 +259,20 @@ export default function ConfigForm({
           defaultChecked={monitorTranscodeAlert}
           style={{ width: 'auto' }}
         />
-        Alert while any stream is transcoding
+        {t('config.transcodeAlert')}
       </label>
       <label>
-        Failed logins per IP
+        {t('config.failedLogins')}
         <input
           name="monitorFailedLoginThreshold"
           type="number"
           min={1}
           defaultValue={monitorFailedLoginThreshold ?? ''}
-          placeholder="off"
+          placeholder={t('config.off')}
         />
       </label>
       <label>
-        within (minutes)
+        {t('config.failedLoginWindow')}
         <input
           name="monitorFailedLoginWindowMin"
           type="number"
@@ -238,14 +280,20 @@ export default function ConfigForm({
           defaultValue={monitorFailedLoginWindowMin}
         />
       </label>
+      <label className="row">
+        <input
+          type="checkbox"
+          name="monitorNewAddressAlert"
+          defaultChecked={monitorNewAddressAlert}
+        />
+        {t('config.newAddressAlert')}
+      </label>
       <p className="muted" style={{ marginTop: -6 }}>
-        Checked on every activity poll. Firing sends the "monitoring threshold exceeded"
-        event above to every subscribed channel, at most once per 15 minutes per rule.
-        Leave a field empty to turn that check off. Recent alerts are listed below.
+        {t('config.monitoringHint')}
       </p>
 
       <p className="stat-label" style={{ marginTop: 20 }}>
-        Digest
+        {t('config.digest')}
       </p>
       <label className="row">
         <input
@@ -254,22 +302,21 @@ export default function ConfigForm({
           defaultChecked={digestEnabled}
           style={{ width: 'auto' }}
         />
-        Send a periodic summary
+        {t('config.digestEnabled')}
       </label>
       <label>
-        Frequency
+        {t('config.frequency')}
         <select name="digestFrequency" defaultValue={digestFrequency}>
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
+          <option value="daily">{t('config.daily')}</option>
+          <option value="weekly">{t('config.weekly')}</option>
         </select>
       </label>
       <p className="muted" style={{ marginTop: -6 }}>
-        Watch time, top titles and active streams over the period, sent as a{' '}
-        <code>digest</code> event to every channel subscribed to it — most useful on email.
+        {splice(t('config.digestHint'), '{code}', <code>digest</code>)}
       </p>
 
       <p className="stat-label" style={{ marginTop: 20 }}>
-        Automatic backups
+        {t('config.backups')}
       </p>
       <label className="row">
         <input
@@ -278,24 +325,26 @@ export default function ConfigForm({
           defaultChecked={backupAutoEnabled}
           style={{ width: 'auto' }}
         />
-        Keep periodic snapshots on disk
+        {t('config.backupEnabled')}
       </label>
       <label>
-        Every (hours)
+        {t('config.backupInterval')}
         <input name="backupIntervalHours" type="number" min={1} defaultValue={backupIntervalHours} />
       </label>
       <label>
-        Keep last
+        {t('config.backupRetention')}
         <input name="backupRetention" type="number" min={1} defaultValue={backupRetention} />
       </label>
       <p className="muted" style={{ marginTop: -6 }}>
-        Written to data/backups next to the database, oldest deleted once the count above is
-        exceeded. Same one-time download as before is still on the{' '}
-        <a href="/admin/system">System</a> page.
+        {splice(
+          t('config.backupHint'),
+          '{link}',
+          <a href="/admin/system">{t('config.system')}</a>,
+        )}
       </p>
 
       <p className="stat-label" style={{ marginTop: 20 }}>
-        Country lookup
+        {t('config.geoip')}
       </p>
       <label className="row">
         <input
@@ -304,10 +353,10 @@ export default function ConfigForm({
           defaultChecked={geoipEnabled}
           style={{ width: 'auto' }}
         />
-        Look up the country of remote streams
+        {t('config.geoipEnabled')}
       </label>
       <label>
-        Lookup URL
+        {t('config.geoipUrl')}
         <input
           name="geoipUrl"
           type="url"
@@ -316,12 +365,11 @@ export default function ConfigForm({
         />
       </label>
       <p className="muted" style={{ marginTop: -6 }}>
-        Off by default, because it sends viewer addresses to a third party. Use {'{ip}'} as
-        the placeholder. Local streams are never looked up, and results are cached.
+        {t('config.geoipHint')}
       </p>
 
       <button disabled={busy} style={{ marginTop: 16 }}>
-        Save
+        {t('action.save')}
       </button>
       {message && <p className="muted">{message}</p>}
       {error && <p className="error">{error}</p>}

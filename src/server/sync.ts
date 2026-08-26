@@ -10,6 +10,8 @@ import { checkAutoBackup } from './autobackup';
 import { checkDigest } from './digest';
 import { checkThresholds } from './monitor';
 import { checkNewsletter } from './newsletter';
+import { getLibrary } from './library';
+import { prefetchTitleMeta } from './tmdb';
 import type { SessionUser } from './session';
 import { notify } from './notifications';
 
@@ -26,7 +28,13 @@ export function reportSyncError(what: string) {
     const key = `${what}:${message}`;
     if (Date.now() - (reported.get(key) ?? 0) < 5 * 60_000) return;
     reported.set(key, Date.now());
-    console.warn(`[watcharr] ${what} failed: ${message}`);
+    // A 401 is the one failure with an obvious fix, and the raw line does not say so: the
+    // stored media server token was revoked or expired, and only a fresh sign-in replaces
+    // it. Without the hint this reads like a bug in the app rather than a dead token.
+    const hint = / failed: 40[13]\b/.test(message)
+      ? ' — the media server rejected the stored token; sign out and back in to replace it'
+      : '';
+    console.warn(`[watcharr] ${what} failed: ${message}${hint}`);
   };
 }
 
@@ -124,10 +132,31 @@ export async function syncActivity() {
       }
     });
   }
+  // Artwork for the poster grids is filled here rather than while a page renders: a grid
+  // of two dozen tiles would otherwise fire two dozen TMDB searches on its first view.
+  if (!throttled('tmdb', 10 * 60_000)) {
+    await prefetchArtwork().catch(reportSyncError('TMDB prefetch'));
+  }
   await checkThresholds().catch(reportSyncError('threshold check'));
   await checkDigest().catch(reportSyncError('digest'));
   await checkNewsletter().catch(reportSyncError('newsletter'));
   await checkAutoBackup().catch(reportSyncError('automatic backup'));
+}
+
+/**
+ * Looks up a batch of library titles TMDB has not been asked about yet. Only the library
+ * is used as the source: history titles already get looked up when their detail page is
+ * opened, while a never-started film has no other occasion to be fetched — and that is
+ * exactly the grid that looks emptiest without a poster.
+ */
+async function prefetchArtwork() {
+  const { tmdbApiKey } = await getSettings();
+  if (!tmdbApiKey) return;
+
+  for (const server of await listServers()) {
+    const items = await getLibrary(server.id).catch(() => []);
+    if (items.length) await prefetchTitleMeta(tmdbApiKey, items);
+  }
 }
 
 /** Last known reachability per server, so server.down fires on the edge, not every poll. */
@@ -251,6 +280,13 @@ async function syncServerActivity(server: ServerRow) {
       height: session.height,
       bitrateKbps: session.bandwidthKbps,
       transcodeReason: session.transcodeReason,
+      audioChannels: session.audioChannels,
+      subtitleCodec: session.subtitleCodec,
+      sourceVideoCodec: session.sourceVideoCodec,
+      sourceAudioCodec: session.sourceAudioCodec,
+      sourceContainer: session.sourceContainer,
+      sourceHeight: session.sourceHeight,
+      sourceBitrateKbps: session.sourceBitrateKbps,
       remoteAddress: session.remoteAddress ?? null,
       isLocal: session.remoteAddress ? isPrivateAddress(session.remoteAddress) : null,
       startedAt: now,
@@ -283,6 +319,13 @@ async function syncServerActivity(server: ServerRow) {
           height: row.height,
           bitrateKbps: row.bitrateKbps,
           transcodeReason: row.transcodeReason,
+          audioChannels: row.audioChannels,
+          subtitleCodec: row.subtitleCodec,
+          sourceVideoCodec: row.sourceVideoCodec,
+          sourceAudioCodec: row.sourceAudioCodec,
+          sourceContainer: row.sourceContainer,
+          sourceHeight: row.sourceHeight,
+          sourceBitrateKbps: row.sourceBitrateKbps,
           remoteAddress: row.remoteAddress,
           isLocal: row.isLocal,
           lastSeenAt: now,

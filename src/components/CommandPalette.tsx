@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Icon } from './Icons';
+import { useT } from '@/i18n/client';
 
 /** Anything can ask for the palette by firing this on window — no context provider needed. */
 export const OPEN_SEARCH_EVENT = 'watcharr:search';
@@ -14,13 +15,8 @@ interface SearchResult {
   href: string;
 }
 
-const KIND_LABEL: Record<SearchResult['kind'], string> = {
-  title: 'Watched',
-  library: 'Library',
-  user: 'User',
-};
-
 export default function CommandPalette() {
+  const t = useT();
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -114,6 +110,11 @@ export default function CommandPalette() {
   }
 
   const term = query.trim();
+  const kindLabel: Record<SearchResult['kind'], string> = {
+    title: t('common.watched'),
+    library: t('palette.library'),
+    user: t('common.user'),
+  };
 
   return (
     <div
@@ -122,15 +123,15 @@ export default function CommandPalette() {
         if (event.target === event.currentTarget) close();
       }}
     >
-      <div className="palette" role="dialog" aria-modal="true" aria-label="Search">
+      <div className="palette" role="dialog" aria-modal="true" aria-label={t('action.search')}>
         <input
           ref={inputRef}
           className="palette-input"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Search titles, library, users…"
-          aria-label="Search"
+          placeholder={t('palette.placeholder')}
+          aria-label={t('action.search')}
         />
 
         {results.length > 0 ? (
@@ -146,7 +147,7 @@ export default function CommandPalette() {
                   close();
                 }}
               >
-                <span className="palette-kind">{KIND_LABEL[result.kind]}</span>
+                <span className="palette-kind">{kindLabel[result.kind]}</span>
                 <span className="label">{result.label}</span>
                 {result.sub && <span className="sub">{result.sub}</span>}
               </li>
@@ -154,19 +155,19 @@ export default function CommandPalette() {
           </ul>
         ) : (
           <p className="palette-empty">
-            {term.length < 2 ? 'Type at least two characters.' : 'Nothing matches.'}
+            {term.length < 2 ? t('palette.typeMore') : t('palette.noMatches')}
           </p>
         )}
 
         <p className="palette-hint">
           <span>
-            <kbd>↑</kbd> <kbd>↓</kbd> move
+            <kbd>↑</kbd> <kbd>↓</kbd> {t('palette.move')}
           </span>
           <span>
-            <kbd>↵</kbd> open
+            <kbd>↵</kbd> {t('palette.open')}
           </span>
           <span>
-            <kbd>esc</kbd> close
+            <kbd>esc</kbd> {t('palette.close')}
           </span>
         </p>
       </div>
@@ -176,11 +177,12 @@ export default function CommandPalette() {
 
 /** The affordance that tells people the palette exists at all. */
 export function SearchTrigger({ compact = false }: { compact?: boolean }) {
+  const t = useT();
   const fire = () => window.dispatchEvent(new Event(OPEN_SEARCH_EVENT));
 
   if (compact) {
     return (
-      <button type="button" className="icon-btn" onClick={fire} aria-label="Search">
+      <button type="button" className="icon-btn" onClick={fire} aria-label={t('action.search')}>
         <Icon name="search" />
       </button>
     );
@@ -189,7 +191,7 @@ export function SearchTrigger({ compact = false }: { compact?: boolean }) {
   return (
     <button type="button" className="search-trigger" onClick={fire}>
       <Icon name="search" />
-      Search
+      {t('action.search')}
       <kbd>⌘K</kbd>
     </button>
   );

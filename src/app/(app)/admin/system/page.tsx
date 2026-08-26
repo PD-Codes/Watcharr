@@ -8,11 +8,13 @@ import { listAutoBackups } from '@/server/autobackup';
 import { getSettings, listServers } from '@/server/config';
 import { requireAdmin } from '@/server/session';
 import { getUpdateStatus, RELEASES_PAGE } from '@/server/update';
+import { getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminSystemPage() {
   const session = await requireAdmin();
+  const t = await getT();
   const all = await listServers();
   // A server admin only gets to see the server they belong to.
   const servers = session.user.globalAdmin
@@ -54,24 +56,30 @@ export default async function AdminSystemPage() {
   return (
     <>
       <AutoRefresh seconds={30} />
-      <p className="eyebrow">Admin</p>
-      <h1>System Status</h1>
-      <p className="subtitle">Connection and sync health for this deployment.</p>
+      <p className="eyebrow">{t('nav.admin')}</p>
+      <h1>{t('nav.adminSystem')}</h1>
+      <p className="subtitle">{t('system.subtitle')}</p>
 
       <div className="grid cols-4">
         <StatCard
-          label="Media servers"
-          value={`${health.filter((h) => h.ok).length} / ${health.length} online`}
+          label={t('system.mediaServers')}
+          value={t('system.online', {
+            ok: health.filter((h) => h.ok).length,
+            total: health.length,
+          })}
           href="/admin/servers"
-          info="Every connected media server that answered a status request."
+          info={t('system.mediaServersInfo')}
         />
-        <StatCard label="Database" value={database ? 'Online' : 'Unreachable'} />
-        <StatCard label="History entries" value={String(counts?.history ?? 0)} />
         <StatCard
-          label="Live sessions"
+          label={t('system.database')}
+          value={database ? t('system.statusOnline') : t('system.statusUnreachable')}
+        />
+        <StatCard label={t('system.historyEntries')} value={String(counts?.history ?? 0)} />
+        <StatCard
+          label={t('system.liveSessions')}
           value={String(counts?.activity ?? 0)}
-          hint={`${counts?.sessions ?? 0} recorded in total`}
-          info="Sessions currently reported by the media server. Recorded sessions feed the transcoding and client statistics."
+          hint={t('system.recordedTotal', { count: counts?.sessions ?? 0 })}
+          info={t('system.liveSessionsInfo')}
         />
       </div>
 
@@ -79,20 +87,20 @@ export default async function AdminSystemPage() {
         <table>
           <tbody>
             <tr>
-              <th scope="row">Watcharr version</th>
+              <th scope="row">{t('system.version')}</th>
               <td>
                 <span className="num">{update.current}</span>
                 {' · '}
                 {!update.enabled ? (
-                  'update check disabled'
+                  t('system.updateDisabled')
                 ) : update.outdated ? (
                   <a href={RELEASES_PAGE} target="_blank" rel="noreferrer noopener">
-                    {update.latest} available
+                    {t('system.updateAvailable', { version: update.latest ?? '' })}
                   </a>
                 ) : update.latest ? (
-                  'up to date'
+                  t('system.upToDate')
                 ) : (
-                  'latest release unknown'
+                  t('system.latestUnknown')
                 )}
               </td>
             </tr>
@@ -100,35 +108,40 @@ export default async function AdminSystemPage() {
               <tr key={entry.server.id}>
                 <th scope="row">{entry.server.label}</th>
                 <td>
-                  {entry.ok ? 'Online' : 'Unreachable'} · {entry.server.serverType}
+                  {entry.ok ? t('system.statusOnline') : t('system.statusUnreachable')} ·{' '}
+                  {entry.server.serverType}
                   {'version' in entry && entry.version ? ` ${entry.version}` : ''}
                   <div className="muted" style={{ fontSize: 12 }}>{entry.server.serverUrl}</div>
                 </td>
               </tr>
             ))}
             <tr>
-              <th scope="row">TMDB enrichment</th>
-              <td>{tmdbConfigured ? 'Configured' : 'Not configured'}</td>
+              <th scope="row">{t('system.tmdb')}</th>
+              <td>{tmdbConfigured ? t('system.configured') : t('system.notConfigured')}</td>
             </tr>
             <tr>
-              <th scope="row">Last recorded play</th>
-              <td>{counts?.last_play ? formatDate(new Date(counts.last_play)) : 'none yet'}</td>
+              <th scope="row">{t('system.lastPlay')}</th>
+              <td>
+                {counts?.last_play ? formatDate(new Date(counts.last_play)) : t('system.noneYet')}
+              </td>
             </tr>
             <tr>
-              <th scope="row">Configured since</th>
+              <th scope="row">{t('system.configuredSince')}</th>
               <td>{servers[0] ? formatDate(servers[0].createdAt) : '—'}</td>
             </tr>
             {session.user.globalAdmin && (
               <tr>
-                <th scope="row">Backup</th>
+                <th scope="row">{t('system.backup')}</th>
                 <td>
-                  <a href="/api/admin/backup">Download a snapshot</a>
+                  <a href="/api/admin/backup">{t('system.downloadSnapshot')}</a>
                   <div className="muted" style={{ fontSize: 12 }}>
-                    Restore by stopping the container and replacing data/watcharr.db —
-                    swapping it while the app is running would corrupt the WAL.
+                    {t('system.restoreNote')}{' '}
                     {settings.backupAutoEnabled
-                      ? ` Automatic snapshots every ${settings.backupIntervalHours}h, last ${settings.backupRetention} kept.`
-                      : ' Automatic snapshots are off — enable them on Settings.'}
+                      ? t('system.autoSnapshotsOn', {
+                          hours: settings.backupIntervalHours,
+                          count: settings.backupRetention,
+                        })
+                      : t('system.autoSnapshotsOff')}
                   </div>
                 </td>
               </tr>
@@ -139,14 +152,14 @@ export default async function AdminSystemPage() {
 
       {session.user.globalAdmin && autoBackups.length > 0 && (
         <section className="section">
-          <h2>Stored snapshots</h2>
+          <h2>{t('system.storedSnapshots')}</h2>
           <div className="card table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>File</th>
-                  <th>Size</th>
-                  <th>Created</th>
+                  <th>{t('system.file')}</th>
+                  <th>{t('system.size')}</th>
+                  <th>{t('system.created')}</th>
                 </tr>
               </thead>
               <tbody>

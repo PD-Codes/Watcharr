@@ -1,0 +1,1 @@
+ALTER TABLE `app_settings` ADD `monitor_new_address_alert` integer DEFAULT false NOT NULL;

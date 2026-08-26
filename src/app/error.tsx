@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useT } from '@/i18n/client';
 
 /**
  * Route level error boundary. Without this any thrown render error — a media server
@@ -14,6 +15,8 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const t = useT();
+
   useEffect(() => {
     // The server log is where the stack actually lives; this keeps the client copy
     // discoverable when someone is debugging from the browser.
@@ -22,20 +25,17 @@ export default function Error({
 
   return (
     <div className="notice">
-      <p className="eyebrow">Signal lost</p>
-      <h1>Something stopped this page</h1>
-      <p>
-        The page could not be rendered. This is usually the media server being
-        unreachable or slow to answer — the rest of Watcharr keeps working.
-      </p>
+      <p className="eyebrow">{t('error.signalLost')}</p>
+      <h1>{t('error.page.title')}</h1>
+      <p>{t('error.page.body')}</p>
       <div className="actions">
-        <button onClick={reset}>Try again</button>
-        <a href="/">Back to dashboard</a>
+        <button onClick={reset}>{t('error.tryAgain')}</button>
+        <a href="/">{t('error.backToDashboard')}</a>
       </div>
       {error.digest && (
         <details>
-          <summary>Technical detail</summary>
-          <pre>Error reference: {error.digest}</pre>
+          <summary>{t('error.technicalDetail')}</summary>
+          <pre>{t('error.reference', { digest: error.digest })}</pre>
         </details>
       )}
     </div>

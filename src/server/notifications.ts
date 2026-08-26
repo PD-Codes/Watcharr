@@ -6,6 +6,8 @@ import { publicArtUrl } from './artlink';
 import { getSettings } from './config';
 import { decryptSecret, encryptSecret } from './crypto';
 import type { ChannelType, NotificationEvent } from './features';
+import type { Translate } from '@/i18n';
+import { getDefaultT } from '@/i18n/server';
 
 export type { NotificationEvent };
 
@@ -19,23 +21,47 @@ const TIMEOUT_MS = 5_000;
 type Channel = { type: string; config: Record<string, string> };
 type Result = { ok: boolean; error?: string };
 
-/** One human-readable line, reused by every chat-style channel and the email subject. */
-export function describe(event: NotificationEvent, payload: Record<string, unknown>): string {
+/**
+ * One human-readable line, reused by every chat-style channel and the email subject.
+ * Takes a translator instead of reaching for one itself so it stays a pure function — the
+ * caller has already resolved the deployment language, and the test can pass any locale.
+ *
+ * The server name and the year are appended rather than interpolated: they are the same
+ * parenthesised suffix in every language, and keeping them out of the template means one
+ * key per sentence instead of one per combination.
+ */
+export function describe(
+  t: Translate,
+  event: NotificationEvent,
+  payload: Record<string, unknown>,
+): string {
   const p = payload as Record<string, any>;
   const server = p.server?.label ? ` (${p.server.label})` : '';
+  const user = p.user ?? t('notify.someone');
   switch (event) {
     case 'playback.start':
-      return `▶ ${p.user ?? 'Someone'} started "${p.title}"${server}`;
+      return t('notify.playbackStart', { user, title: p.title }) + server;
     case 'playback.stop':
-      return `⏹ ${p.user ?? 'Someone'} stopped "${p.title}"${p.percent != null ? ` at ${p.percent}%` : ''}${server}`;
+      return (
+        (p.percent != null
+          ? t('notify.playbackStopAt', { user, title: p.title, percent: p.percent })
+          : t('notify.playbackStop', { user, title: p.title })) + server
+      );
     case 'server.down':
-      return `⚠ ${p.server?.label ?? 'A media server'} is unreachable`;
+      return t('notify.serverDown', { server: p.server?.label ?? t('notify.aMediaServer') });
     case 'media.added':
-      return `＋ New: "${p.title}"${p.year ? ` (${p.year})` : ''}${server}`;
+      return t('notify.mediaAdded', { title: p.title }) + (p.year ? ` (${p.year})` : '') + server;
     case 'monitor.alert':
-      return `⚠ ${p.message}`;
+      return t('notify.monitorAlert', { message: p.message });
     case 'digest':
-      return `📊 ${p.periodLabel}: ${p.watchtime}, ${p.plays} plays${p.topTitle ? ` · top: ${p.topTitle}` : ''}`;
+      return p.topTitle
+        ? t('notify.digestTop', {
+            period: p.periodLabel,
+            watchtime: p.watchtime,
+            plays: p.plays,
+            topTitle: p.topTitle,
+          })
+        : t('notify.digest', { period: p.periodLabel, watchtime: p.watchtime, plays: p.plays });
     default:
       return `${event}`;
   }
@@ -133,8 +159,9 @@ async function send(
   channel: Channel,
   event: NotificationEvent,
   payload: Record<string, unknown>,
+  t: Translate,
 ): Promise<Result> {
-  const text = describe(event, payload);
+  const text = describe(t, event, payload);
   const image = posterFor(payload);
   const { config } = channel;
   switch (channel.type as ChannelType | 'webhook') {
@@ -241,11 +268,14 @@ async function logDelivery(
  */
 export async function dispatch(event: NotificationEvent, payload: Record<string, unknown>) {
   const channels = await channelsFor(event);
+  // Resolved once for the whole fan-out: there is no session out here, so every channel
+  // gets the deployment language rather than anybody's personal one.
+  const t = await getDefaultT();
 
   await Promise.all(
     channels.map(async (channel) => {
-      let result = await send(channel, event, payload);
-      if (!result.ok) result = await send(channel, event, payload);
+      let result = await send(channel, event, payload, t);
+      if (!result.ok) result = await send(channel, event, payload, t);
       await logDelivery(channel, event, result);
     }),
   );
@@ -253,9 +283,10 @@ export async function dispatch(event: NotificationEvent, payload: Record<string,
 
 /** Fires a synthetic event straight at one channel, bypassing its event filter. */
 export async function sendTest(channelId: number | 'webhook'): Promise<Result> {
+  const t = await getDefaultT();
   const payload = {
     user: 'Test',
-    title: 'Watcharr test notification',
+    title: t('notify.testTitle'),
     server: { label: 'Watcharr' },
   };
   let channel: (Channel & { id: number | null; name: string }) | undefined;
@@ -269,7 +300,7 @@ export async function sendTest(channelId: number | 'webhook'): Promise<Result> {
     channel = { type: row.type, config: decryptConfig(row.config), id: row.id, name: row.name };
   }
 
-  const result = await send(channel, 'playback.start', payload);
+  const result = await send(channel, 'playback.start', payload, t);
   await logDelivery(channel, 'playback.start', result);
   return result;
 }

@@ -1,11 +1,17 @@
+import type { TranslationKey } from '@/i18n';
+
+// Labels are translation keys, not text: this module is imported by client components and
+// cannot await getT(). Named *Key so a caller that still renders the raw field fails to
+// compile instead of printing "feature.suggestions" at the user.
+
 // Feature toggles are stored in app_config.features and default to on when unset.
 export const FEATURE_FLAGS = [
-  { key: 'suggestions', label: 'Suggestions' },
-  { key: 'watchlistSync', label: 'Sync the Plex watchlist' },
-  { key: 'serverWideStats', label: 'Server-wide statistics for admins' },
+  { key: 'suggestions', labelKey: 'feature.suggestions' },
+  { key: 'watchlistSync', labelKey: 'feature.watchlistSync' },
+  { key: 'serverWideStats', labelKey: 'feature.serverWideStats' },
   // Self-hosted deployments must be able to stop the app from calling out to GitHub.
-  { key: 'updateCheck', label: 'Check GitHub for Watcharr updates' },
-] as const;
+  { key: 'updateCheck', labelKey: 'feature.updateCheck' },
+] as const satisfies readonly { key: string; labelKey: TranslationKey }[];
 
 export type FeatureKey = (typeof FEATURE_FLAGS)[number]['key'];
 
@@ -15,13 +21,13 @@ export type FeatureKey = (typeof FEATURE_FLAGS)[number]['key'];
  * import a server-only module.
  */
 export const NOTIFICATION_EVENTS = [
-  { key: 'playback.start', label: 'A stream starts' },
-  { key: 'playback.stop', label: 'A stream stops' },
-  { key: 'server.down', label: 'A media server becomes unreachable' },
-  { key: 'media.added', label: 'New media appears in a library' },
-  { key: 'monitor.alert', label: 'A monitoring threshold is exceeded' },
-  { key: 'digest', label: 'Periodic summary (see Settings for the schedule)' },
-] as const;
+  { key: 'playback.start', labelKey: 'event.playbackStart' },
+  { key: 'playback.stop', labelKey: 'event.playbackStop' },
+  { key: 'server.down', labelKey: 'event.serverDown' },
+  { key: 'media.added', labelKey: 'event.mediaAdded' },
+  { key: 'monitor.alert', labelKey: 'event.monitorAlert' },
+  { key: 'digest', labelKey: 'event.digest' },
+] as const satisfies readonly { key: string; labelKey: TranslationKey }[];
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number]['key'];
 
@@ -30,52 +36,59 @@ export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number]['key'];
  * Settings page). Each entry names the config fields its admin form needs to collect —
  * the form in NotificationsForm.tsx is generated from this list rather than hand-built
  * per type, so a new channel is one entry here plus one sender in server/notifications.ts.
+ *
+ * `label` stays plain text because it is a product name; only the field labels are
+ * translated, and those carry a key like everything else in this module.
  */
 export const CHANNEL_TYPES = [
   {
     type: 'discord',
     label: 'Discord',
-    fields: [{ key: 'url', label: 'Webhook URL', type: 'url' }],
+    fields: [{ key: 'url', labelKey: 'notifications.field.webhookUrl', type: 'url' }],
   },
   {
     type: 'slack',
     label: 'Slack',
-    fields: [{ key: 'url', label: 'Incoming webhook URL', type: 'url' }],
+    fields: [{ key: 'url', labelKey: 'notifications.field.incomingWebhookUrl', type: 'url' }],
   },
   {
     type: 'telegram',
     label: 'Telegram',
     fields: [
-      { key: 'botToken', label: 'Bot token', type: 'password' },
-      { key: 'chatId', label: 'Chat id', type: 'text' },
+      { key: 'botToken', labelKey: 'notifications.field.botToken', type: 'password' },
+      { key: 'chatId', labelKey: 'notifications.field.chatId', type: 'text' },
     ],
   },
   {
     type: 'pushover',
     label: 'Pushover',
     fields: [
-      { key: 'appToken', label: 'Application token', type: 'password' },
-      { key: 'userKey', label: 'User key', type: 'password' },
+      { key: 'appToken', labelKey: 'notifications.field.appToken', type: 'password' },
+      { key: 'userKey', labelKey: 'notifications.field.userKey', type: 'password' },
     ],
   },
   {
     type: 'pushbullet',
     label: 'Pushbullet',
-    fields: [{ key: 'accessToken', label: 'Access token', type: 'password' }],
+    fields: [{ key: 'accessToken', labelKey: 'notifications.field.accessToken', type: 'password' }],
   },
   {
     type: 'email',
     label: 'Email (SMTP)',
     fields: [
-      { key: 'smtpHost', label: 'SMTP host', type: 'text' },
-      { key: 'smtpPort', label: 'SMTP port', type: 'text' },
-      { key: 'smtpUser', label: 'SMTP username', type: 'text' },
-      { key: 'smtpPass', label: 'SMTP password', type: 'password' },
-      { key: 'from', label: 'From address', type: 'text' },
-      { key: 'to', label: 'To address', type: 'text' },
+      { key: 'smtpHost', labelKey: 'notifications.field.smtpHost', type: 'text' },
+      { key: 'smtpPort', labelKey: 'notifications.field.smtpPort', type: 'text' },
+      { key: 'smtpUser', labelKey: 'notifications.field.smtpUser', type: 'text' },
+      { key: 'smtpPass', labelKey: 'notifications.field.smtpPass', type: 'password' },
+      { key: 'from', labelKey: 'notifications.field.from', type: 'text' },
+      { key: 'to', labelKey: 'notifications.field.to', type: 'text' },
     ],
   },
-] as const;
+] as const satisfies readonly {
+  type: string;
+  label: string;
+  fields: readonly { key: string; labelKey: TranslationKey; type: string }[];
+}[];
 
 export type ChannelType = (typeof CHANNEL_TYPES)[number]['type'];
 

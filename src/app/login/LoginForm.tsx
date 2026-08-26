@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { t } from '@/i18n';
+import { useT } from '@/i18n/client';
 
 /** Credential login for Jellyfin and Emby. */
 export default function LoginForm({ serverId }: { serverId: number }) {
+  const t = useT();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -22,7 +23,7 @@ export default function LoginForm({ serverId }: { serverId: number }) {
     });
     setBusy(false);
     if (res.ok) router.push('/watchlist');
-    else setError(((await res.json()) as { error?: string }).error ?? 'Login failed');
+    else setError(((await res.json()) as { error?: string }).error ?? t('login.failed'));
   }
 
   return (

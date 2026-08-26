@@ -45,6 +45,7 @@ type JfItem = {
   RunTimeTicks?: number;
   DateCreated?: string;
   UserData?: { LastPlayedDate?: string };
+  MediaSources?: JfMediaSource[];
 };
 
 type JfMediaStream = {
@@ -53,6 +54,14 @@ type JfMediaStream = {
   Width?: number;
   Height?: number;
   BitRate?: number;
+  Channels?: number;
+};
+
+type JfMediaSource = {
+  Size?: number;
+  Container?: string;
+  Bitrate?: number;
+  MediaStreams?: JfMediaStream[];
 };
 
 type JfSession = {
@@ -174,6 +183,7 @@ export class JellyfinAdapter implements MediaServerAdapter {
         const streams = item.MediaStreams ?? [];
         const video = streams.find((stream) => stream.Type === 'Video');
         const audio = streams.find((stream) => stream.Type === 'Audio');
+        const subtitle = streams.find((stream) => stream.Type === 'Subtitle');
         const transcode = s.TranscodingInfo;
         const playMethod = toPlayMethod(s.PlayState?.PlayMethod) ?? (transcode ? 'transcode' : undefined);
 
@@ -204,6 +214,15 @@ export class JellyfinAdapter implements MediaServerAdapter {
           width: transcode?.Width ?? video?.Width,
           height: transcode?.Height ?? video?.Height,
           transcodeReason: transcode?.TranscodeReasons?.[0],
+          audioChannels: audio?.Channels,
+          subtitleCodec: subtitle?.Codec?.toLowerCase(),
+          // MediaStreams describe the file; TranscodingInfo describes the delivery. Both
+          // are reported so a transcode shows what it came from as well as what it became.
+          sourceVideoCodec: video?.Codec?.toLowerCase(),
+          sourceAudioCodec: audio?.Codec?.toLowerCase(),
+          sourceContainer: item.Container?.toLowerCase(),
+          sourceHeight: video?.Height,
+          sourceBitrateKbps: video?.BitRate ? Math.round(video.BitRate / 1000) : undefined,
           terminateKey: s.Id,
           remoteAddress: s.RemoteEndPoint,
           lastCheckInAt: s.LastPlaybackCheckIn
@@ -246,7 +265,9 @@ export class JellyfinAdapter implements MediaServerAdapter {
         const params = new URLSearchParams({
           Recursive: 'true',
           IncludeItemTypes: 'Movie,Series',
-          Fields: 'Genres,ProductionYear',
+          // MediaSources carries file size and the video stream; UserData carries the
+          // server's own last-played date, which reaches further back than watch_history.
+          Fields: 'Genres,ProductionYear,MediaSources,UserData,DateCreated',
           SortBy: 'SortName',
           Limit: '5000',
         });
@@ -254,15 +275,27 @@ export class JellyfinAdapter implements MediaServerAdapter {
         const res = await apiFetch<{ Items: JfItem[] }>(this.url(`/Items?${params}`), {
           headers: this.headers(),
         }).catch(() => ({ Items: [] as JfItem[] }));
-        return res.Items.map((i) => ({
-          itemId: i.Id,
-          title: i.Name,
-          mediaType: (i.Type ?? 'unknown').toLowerCase(),
-          year: i.ProductionYear,
-          genres: i.Genres ?? [],
-          posterUrl: this.posterUrl(i.Id),
-          sectionId,
-        }));
+        return res.Items.map((i) => {
+          const source = i.MediaSources?.[0];
+          const video = source?.MediaStreams?.find((stream) => stream.Type === 'Video');
+          return {
+            itemId: i.Id,
+            title: i.Name,
+            mediaType: (i.Type ?? 'unknown').toLowerCase(),
+            year: i.ProductionYear,
+            genres: i.Genres ?? [],
+            posterUrl: this.posterUrl(i.Id),
+            sectionId,
+            fileSizeBytes: source?.Size,
+            videoCodec: video?.Codec?.toLowerCase(),
+            height: video?.Height,
+            durationMs: i.RunTimeTicks ? ticksToMs(i.RunTimeTicks) : undefined,
+            addedAt: i.DateCreated ? new Date(i.DateCreated) : undefined,
+            lastPlayedAt: i.UserData?.LastPlayedDate
+              ? new Date(i.UserData.LastPlayedDate)
+              : undefined,
+          };
+        });
       }),
     );
     return pages.flat();
@@ -277,25 +310,38 @@ export class JellyfinAdapter implements MediaServerAdapter {
       (f) => f.CollectionType === 'movies' || f.CollectionType === 'tvshows',
     );
 
-    // The count comes from a separate request per library: Jellyfin reports it in the
-    // paging metadata, so Limit=0 returns the total without any items.
+    // Counts come from separate requests per library: Jellyfin reports the total in the
+    // paging metadata, so Limit=0 returns it without any items. A show library needs three
+    // of them, because seasons and episodes are not implied by the series count.
+    const countOf = async (parentId: string, type: string): Promise<number> => {
+      const params = new URLSearchParams({
+        Recursive: 'true',
+        ParentId: parentId,
+        IncludeItemTypes: type,
+        Limit: '0',
+        EnableTotalRecordCount: 'true',
+      });
+      const res = await apiFetch<{ TotalRecordCount?: number }>(this.url(`/Items?${params}`), {
+        headers: this.headers(),
+      }).catch(() => ({ TotalRecordCount: 0 }));
+      return res.TotalRecordCount ?? 0;
+    };
+
     return Promise.all(
       wanted.map(async (folder) => {
-        const params = new URLSearchParams({
-          Recursive: 'true',
-          ParentId: folder.ItemId,
-          IncludeItemTypes: folder.CollectionType === 'movies' ? 'Movie' : 'Series',
-          Limit: '0',
-          EnableTotalRecordCount: 'true',
-        });
-        const res = await apiFetch<{ TotalRecordCount?: number }>(this.url(`/Items?${params}`), {
-          headers: this.headers(),
-        }).catch(() => ({ TotalRecordCount: 0 }));
+        const isMovies = folder.CollectionType === 'movies';
+        const [itemCount, seasonCount, episodeCount] = await Promise.all([
+          countOf(folder.ItemId, isMovies ? 'Movie' : 'Series'),
+          isMovies ? Promise.resolve(undefined) : countOf(folder.ItemId, 'Season'),
+          isMovies ? Promise.resolve(undefined) : countOf(folder.ItemId, 'Episode'),
+        ]);
         return {
           id: folder.ItemId,
           name: folder.Name,
-          mediaType: folder.CollectionType === 'movies' ? 'movie' : 'show',
-          itemCount: res.TotalRecordCount ?? 0,
+          mediaType: isMovies ? 'movie' : 'show',
+          itemCount,
+          seasonCount,
+          episodeCount,
         };
       }),
     );

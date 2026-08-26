@@ -1,5 +1,6 @@
 import 'server-only';
 import { formatDuration } from '@/components/format';
+import { getDefaultT } from '@/i18n/server';
 import { getSettings, updateSettings } from './config';
 import { notify } from './notifications';
 import { getTopTitles, getTotals } from './stats';
@@ -28,8 +29,12 @@ export async function checkDigest() {
   const scope = { userId: null } as const;
   const [totals, titles] = await Promise.all([getTotals(scope, days), getTopTitles(scope, 1, 'time')]);
 
+  const t = await getDefaultT();
   notify('digest', {
-    periodLabel: settings.digestFrequency === 'daily' ? 'Yesterday' : 'This week',
+    periodLabel:
+      settings.digestFrequency === 'daily'
+        ? t('notify.digestYesterday')
+        : t('notify.digestThisWeek'),
     watchtime: formatDuration(totals.watchtimeMs),
     plays: totals.plays,
     topTitle: titles[0]?.label ?? null,

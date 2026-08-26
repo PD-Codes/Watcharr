@@ -1,10 +1,11 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { t } from '@/i18n';
+import { useT } from '@/i18n/client';
 
 export default function SignOutButton() {
   const router = useRouter();
+  const t = useT();
   return (
     <a
       href="/login"

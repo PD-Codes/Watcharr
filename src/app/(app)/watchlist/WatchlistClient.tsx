@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useT } from '@/i18n/client';
 
 export interface WatchlistItem {
   itemId: string;
@@ -21,6 +22,7 @@ interface SearchHit {
 
 export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
   const router = useRouter();
+  const t = useT();
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [query, setQuery] = useState('');
 
@@ -59,14 +61,14 @@ export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
     <>
       <form className="filters" onSubmit={search}>
         <label>
-          Add from library
+          {t('watchlist.addFromLibrary')}
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search titles…"
+            placeholder={t('watchlist.searchPlaceholder')}
           />
         </label>
-        <button>Search</button>
+        <button>{t('action.search')}</button>
       </form>
 
       {hits.length > 0 && (
@@ -76,24 +78,24 @@ export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
               <span>
                 {hit.title} <span className="muted">{hit.year ?? ''}</span>
               </span>
-              <button onClick={() => add(hit)}>Add</button>
+              <button onClick={() => add(hit)}>{t('watchlist.add')}</button>
             </div>
           ))}
         </div>
       )}
 
       {items.length === 0 ? (
-        <p className="muted">Your watchlist is empty.</p>
+        <p className="muted">{t('watchlist.empty')}</p>
       ) : (
         <div className="table-wrap card">
           <table>
             <thead>
               <tr>
-                <th scope="col">Title</th>
-                <th scope="col">Type</th>
-                <th scope="col">Year</th>
-                <th scope="col">Status</th>
-                <th scope="col">Source</th>
+                <th scope="col">{t('common.title')}</th>
+                <th scope="col">{t('common.type')}</th>
+                <th scope="col">{t('common.year')}</th>
+                <th scope="col">{t('watchlist.status')}</th>
+                <th scope="col">{t('watchlist.source')}</th>
                 <th scope="col" />
               </tr>
             </thead>
@@ -108,9 +110,9 @@ export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
                       value={item.status}
                       onChange={(event) => setStatus(item.itemId, event.target.value)}
                     >
-                      <option value="planned">Planned</option>
-                      <option value="watching">Watching</option>
-                      <option value="done">Done</option>
+                      <option value="planned">{t('watchlist.planned')}</option>
+                      <option value="watching">{t('watchlist.watching')}</option>
+                      <option value="done">{t('watchlist.done')}</option>
                     </select>
                   </td>
                   <td>
@@ -118,7 +120,7 @@ export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
                   </td>
                   <td>
                     <button className="link" onClick={() => remove(item.itemId)}>
-                      Remove
+                      {t('watchlist.remove')}
                     </button>
                   </td>
                 </tr>

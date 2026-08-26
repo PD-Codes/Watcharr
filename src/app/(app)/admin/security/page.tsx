@@ -1,29 +1,31 @@
 import { formatDate } from '@/components/format';
 import IpLink from '@/components/IpLink';
 import { listLoginHistory, requireAdmin } from '@/server/session';
+import { getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminSecurityPage() {
   const { user } = await requireAdmin();
+  const t = await getT();
   const rows = await listLoginHistory(user.globalAdmin ? undefined : user.serverId);
 
   return (
     <>
-      <p className="eyebrow">Admin</p>
-      <h1>Security</h1>
-      <p className="subtitle">Recent sign-in attempts, successful and failed.</p>
+      <p className="eyebrow">{t('nav.admin')}</p>
+      <h1>{t('nav.adminSecurity')}</h1>
+      <p className="subtitle">{t('security.subtitle')}</p>
 
       <div className="card" style={{ overflowX: 'auto' }}>
         <table>
           <thead>
             <tr>
-              <th>When</th>
-              <th>User</th>
-              <th>Result</th>
-              <th>IP</th>
-              <th>Country</th>
-              <th>Client</th>
+              <th>{t('security.when')}</th>
+              <th>{t('common.user')}</th>
+              <th>{t('security.result')}</th>
+              <th>{t('security.ip')}</th>
+              <th>{t('security.country')}</th>
+              <th>{t('security.client')}</th>
             </tr>
           </thead>
           <tbody>
@@ -32,7 +34,7 @@ export default async function AdminSecurityPage() {
                 <td>{formatDate(row.createdAt)}</td>
                 <td>{row.username}</td>
                 <td className={row.success ? undefined : 'error'}>
-                  {row.success ? 'Success' : 'Failed'}
+                  {row.success ? t('security.success') : t('security.failed')}
                 </td>
                 <td>
                   <IpLink ip={row.ip} />
@@ -44,7 +46,7 @@ export default async function AdminSecurityPage() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={6} className="muted">
-                  No login attempts recorded yet.
+                  {t('security.empty')}
                 </td>
               </tr>
             )}

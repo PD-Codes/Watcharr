@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useT } from '@/i18n/client';
 
 export default function SyncUsersButton() {
   const router = useRouter();
+  const t = useT();
   const [busy, setBusy] = useState(false);
 
   return (
@@ -17,7 +19,7 @@ export default function SyncUsersButton() {
         router.refresh();
       }}
     >
-      {busy ? 'Importing…' : 'Import users from media server'}
+      {busy ? t('users.importing') : t('users.import')}
     </button>
   );
 }

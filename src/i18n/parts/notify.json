@@ -1,0 +1,238 @@
+{
+  "notify.someone": {
+    "en": "Someone",
+    "de": "Jemand"
+  },
+  "notify.playbackStart": {
+    "en": "▶ {user} started \"{title}\"",
+    "de": "▶ {user} hat „{title}“ gestartet"
+  },
+  "notify.playbackStop": {
+    "en": "⏹ {user} stopped \"{title}\"",
+    "de": "⏹ {user} hat „{title}“ beendet"
+  },
+  "notify.playbackStopAt": {
+    "en": "⏹ {user} stopped \"{title}\" at {percent}%",
+    "de": "⏹ {user} hat „{title}“ bei {percent}% beendet"
+  },
+  "notify.serverDown": {
+    "en": "⚠ {server} is unreachable",
+    "de": "⚠ {server} ist nicht erreichbar"
+  },
+  "notify.aMediaServer": {
+    "en": "A media server",
+    "de": "Ein Media-Server"
+  },
+  "notify.mediaAdded": {
+    "en": "＋ New: \"{title}\"",
+    "de": "＋ Neu: „{title}“"
+  },
+  "notify.monitorAlert": {
+    "en": "⚠ {message}",
+    "de": "⚠ {message}"
+  },
+  "notify.digest": {
+    "en": "📊 {period}: {watchtime}, {plays} plays",
+    "de": "📊 {period}: {watchtime}, {plays} Wiedergaben"
+  },
+  "notify.digestTop": {
+    "en": "📊 {period}: {watchtime}, {plays} plays · top: {topTitle}",
+    "de": "📊 {period}: {watchtime}, {plays} Wiedergaben · Spitzenreiter: {topTitle}"
+  },
+  "notify.digestYesterday": {
+    "en": "Yesterday",
+    "de": "Gestern"
+  },
+  "notify.digestThisWeek": {
+    "en": "This week",
+    "de": "Diese Woche"
+  },
+  "notify.testTitle": {
+    "en": "Watcharr test notification",
+    "de": "Watcharr-Testbenachrichtigung"
+  },
+  "monitor.maxStreams": {
+    "en": "{username} has {count} concurrent streams (limit {limit})",
+    "de": "{username} hat {count} gleichzeitige Streams (Grenze {limit})"
+  },
+  "monitor.bandwidth": {
+    "en": "Total delivered bandwidth is {value} Mbps (limit {limit})",
+    "de": "Ausgelieferte Gesamtbandbreite liegt bei {value} Mbps (Grenze {limit})"
+  },
+  "monitor.transcode": {
+    "en": "{count} stream(s) currently transcoding",
+    "de": "{count} Stream(s) werden gerade transkodiert"
+  },
+  "monitor.failedLogins": {
+    "en": "{count} failed logins from {ip} in the last {minutes} minutes",
+    "de": "{count} fehlgeschlagene Anmeldungen von {ip} in den letzten {minutes} Minuten"
+  },
+  "monitor.newAddress": {
+    "en": "{username} signed in from a new address: {ip}",
+    "de": "{username} hat sich von einer neuen Adresse angemeldet: {ip}"
+  },
+  "newsletterMail.period": {
+    "en": "The last {days} days on the server.",
+    "de": "Die letzten {days} Tage auf dem Server."
+  },
+  "newsletterMail.nothing": {
+    "en": "Nothing was added in this period.",
+    "de": "In diesem Zeitraum kam nichts dazu."
+  },
+  "newsletterMail.footer": {
+    "en": "You receive this because you subscribed in Watcharr. Unsubscribe on your profile page.",
+    "de": "Du bekommst diese Mail, weil du sie in Watcharr abonniert hast. Abbestellen kannst du sie auf deiner Profilseite."
+  },
+  "config.newAddressAlert": {
+    "en": "Alert on a successful login from an address the account has never used",
+    "de": "Alarm bei erfolgreicher Anmeldung von einer Adresse, die das Konto noch nie benutzt hat"
+  },
+  "cast.topHeading": {
+    "en": "Faces you keep watching",
+    "de": "Gesichter, die du immer wieder siehst"
+  },
+  "cast.inTitles": {
+    "en": "{titles} titles · {plays} plays",
+    "de": "{titles} Titel · {plays} Wiedergaben"
+  },
+  "nav.sessions": {
+    "en": "Sessions",
+    "de": "Sitzungen"
+  },
+  "dashboard.title": {
+    "en": "Server dashboard",
+    "de": "Server-Dashboard"
+  },
+  "dashboard.playingNow": {
+    "en": "{count} streams playing right now",
+    "de": "{count} Streams laufen gerade"
+  },
+  "dashboard.nothingPlaying": {
+    "en": "Nothing is currently being played.",
+    "de": "Gerade wird nichts wiedergegeben."
+  },
+  "dashboard.watchStatistics": {
+    "en": "Watch statistics",
+    "de": "Wiedergabe-Statistik"
+  },
+  "dashboard.mostWatchedMovies": {
+    "en": "Most watched movies",
+    "de": "Meistgesehene Filme"
+  },
+  "dashboard.mostPopularMovies": {
+    "en": "Most popular movies",
+    "de": "Beliebteste Filme"
+  },
+  "dashboard.mostWatchedShows": {
+    "en": "Most watched TV shows",
+    "de": "Meistgesehene Serien"
+  },
+  "dashboard.mostPopularShows": {
+    "en": "Most popular TV shows",
+    "de": "Beliebteste Serien"
+  },
+  "dashboard.recentlyWatched": {
+    "en": "Recently watched",
+    "de": "Zuletzt gesehen"
+  },
+  "dashboard.activeLibraries": {
+    "en": "Most active libraries",
+    "de": "Aktivste Bibliotheken"
+  },
+  "dashboard.activeUsers": {
+    "en": "Most active users",
+    "de": "Aktivste Benutzer"
+  },
+  "dashboard.activePlatforms": {
+    "en": "Most active platforms",
+    "de": "Aktivste Plattformen"
+  },
+  "dashboard.concurrentStreams": {
+    "en": "Most concurrent streams",
+    "de": "Meiste gleichzeitige Streams"
+  },
+  "dashboard.peakStreams": {
+    "en": "Concurrent streams",
+    "de": "Gleichzeitige Streams"
+  },
+  "dashboard.peakInfo": {
+    "en": "The busiest moment on record in this period, and what those streams were doing.",
+    "de": "Der geschäftigste aufgezeichnete Moment in diesem Zeitraum — und was diese Streams gerade taten."
+  },
+  "dashboard.libraryStatistics": {
+    "en": "Library statistics",
+    "de": "Bibliotheks-Statistik"
+  },
+  "dashboard.recentlyAdded": {
+    "en": "Recently added",
+    "de": "Zuletzt hinzugefügt"
+  },
+  "dashboard.viewers": {
+    "en": "{count} viewers",
+    "de": "{count} Zuschauer"
+  },
+  "libraries.tableSubtitle": {
+    "en": "Every library on the server, what is in it and how much of it gets watched.",
+    "de": "Jede Bibliothek auf dem Server, was drin ist und wie viel davon gesehen wird."
+  },
+  "libraries.searchPlaceholder": {
+    "en": "Library name…",
+    "de": "Name der Bibliothek…"
+  },
+  "libraries.noMatch": {
+    "en": "No library matches this search.",
+    "de": "Keine Bibliothek passt zu dieser Suche."
+  },
+  "libraries.colName": {
+    "en": "Library",
+    "de": "Bibliothek"
+  },
+  "libraries.colType": {
+    "en": "Type",
+    "de": "Typ"
+  },
+  "libraries.colItems": {
+    "en": "Movies / Shows",
+    "de": "Filme / Serien"
+  },
+  "libraries.colSeasons": {
+    "en": "Seasons",
+    "de": "Staffeln"
+  },
+  "libraries.colEpisodes": {
+    "en": "Episodes",
+    "de": "Episoden"
+  },
+  "libraries.colLastStreamed": {
+    "en": "Last streamed",
+    "de": "Zuletzt gestreamt"
+  },
+  "libraries.colLastPlayed": {
+    "en": "Last played",
+    "de": "Zuletzt gespielt"
+  },
+  "libraries.colPlays": {
+    "en": "Plays",
+    "de": "Wiedergaben"
+  },
+  "libraries.colDuration": {
+    "en": "Watch time",
+    "de": "Sehdauer"
+  },
+  "libraries.typeMovie": {
+    "en": "Movie",
+    "de": "Film"
+  },
+  "libraries.typeShow": {
+    "en": "Show",
+    "de": "Serie"
+  },
+  "libraries.totalRow": {
+    "en": "{count} libraries",
+    "de": "{count} Bibliotheken"
+  },
+  "libraries.sortBy": {
+    "en": "Sort by {column}",
+    "de": "Nach {column} sortieren"
+  }
+}

@@ -103,6 +103,198 @@ export async function getConcurrencyOverTime(
   }));
 }
 
+export interface BandwidthPoint {
+  label: string;
+  lanKbps: number;
+  wanKbps: number;
+}
+
+/**
+ * Delivered bandwidth split by where it went. The two are worth separating because only
+ * one of them costs an uplink: a 40 Mbps direct play to the living room TV and the same
+ * stream to someone's phone on mobile data are the same number and a completely different
+ * problem. is_local is derived on write, so this is a filter rather than a re-parse.
+ */
+export async function getBandwidthOverTime(days = 7, scope?: Scope): Promise<BandwidthPoint[]> {
+  const hourly = days <= 7;
+  const stepMs = hourly ? 3_600_000 : 86_400_000;
+  const truncFormat = hourly ? '%Y-%m-%d %H:00:00' : '%Y-%m-%d 00:00:00';
+  const labelFormat = hourly ? '%m-%d %H:00' : '%m-%d';
+
+  const rows = await db.all<{ slot: string; lan: number; wan: number }>(sql`
+    WITH RECURSIVE bucket(ts) AS (
+      SELECT unixepoch(strftime(${truncFormat}, 'now', ${`-${days} days`})) * 1000
+      UNION ALL
+      SELECT ts + ${stepMs} FROM bucket
+      WHERE ts + ${stepMs} <= unixepoch(strftime(${truncFormat}, 'now')) * 1000
+    )
+    SELECT strftime(${labelFormat}, ts / 1000, 'unixepoch') AS slot,
+           coalesce(sum(s.bitrate_kbps) FILTER (WHERE s.is_local = 1), 0) AS lan,
+           coalesce(sum(s.bitrate_kbps) FILTER (WHERE s.is_local IS NOT 1), 0) AS wan
+    FROM bucket
+    LEFT JOIN playback_sessions s
+      ON s.started_at < ts + ${stepMs}
+     AND max(s.last_seen_at, s.started_at) >= ts
+     AND ${scoped(scope, 's.')}
+    GROUP BY ts
+    ORDER BY ts
+  `);
+
+  return rows.map((r) => ({
+    label: r.slot,
+    lanKbps: Number(r.lan ?? 0),
+    wanKbps: Number(r.wan ?? 0),
+  }));
+}
+
+export interface StreamTypeSeries {
+  labels: string[];
+  series: { label: string; values: number[] }[];
+}
+
+/**
+ * How streams were delivered, day by day. A single "transcodes" number says nothing about
+ * whether the situation is getting worse; the same figure next to direct plays over a
+ * month does. Bucketed per day, always — the point is the trend, not the evening peak.
+ */
+export async function getStreamTypesOverTime(days = 30, scope?: Scope): Promise<StreamTypeSeries> {
+  const rows = await db.all<{
+    day: string;
+    direct_play: number;
+    direct_stream: number;
+    transcode: number;
+  }>(sql`
+    WITH RECURSIVE calendar(day) AS (
+      SELECT date('now', 'localtime', ${`-${days - 1} days`})
+      UNION ALL
+      SELECT date(day, '+1 day') FROM calendar WHERE day < date('now', 'localtime')
+    )
+    SELECT calendar.day AS day,
+           count(s.session_key) FILTER (WHERE s.play_method = 'directplay') AS direct_play,
+           count(s.session_key) FILTER (WHERE s.play_method = 'directstream') AS direct_stream,
+           count(s.session_key) FILTER (WHERE s.play_method = 'transcode') AS transcode
+    FROM calendar
+    LEFT JOIN playback_sessions s
+      ON date(s.started_at / 1000, 'unixepoch', 'localtime') = calendar.day
+     AND ${scoped(scope, 's.')}
+    GROUP BY calendar.day
+    ORDER BY calendar.day
+  `);
+
+  return {
+    labels: rows.map((r) => r.day),
+    series: [
+      { label: 'Direct play', values: rows.map((r) => Number(r.direct_play)) },
+      { label: 'Direct stream', values: rows.map((r) => Number(r.direct_stream)) },
+      { label: 'Transcode', values: rows.map((r) => Number(r.transcode)) },
+    ],
+  };
+}
+
+export interface SessionHistoryRow {
+  sessionKey: string;
+  userId: number | null;
+  username: string | null;
+  itemId: string;
+  title: string;
+  grandparentTitle: string | null;
+  mediaType: string;
+  state: string;
+  progressMs: number;
+  durationMs: number;
+  clientName: string | null;
+  deviceName: string | null;
+  playMethod: string | null;
+  videoCodec: string | null;
+  audioCodec: string | null;
+  audioChannels: number | null;
+  subtitleCodec: string | null;
+  container: string | null;
+  height: number | null;
+  bitrateKbps: number | null;
+  sourceVideoCodec: string | null;
+  sourceAudioCodec: string | null;
+  sourceContainer: string | null;
+  sourceHeight: number | null;
+  sourceBitrateKbps: number | null;
+  transcodeReason: string | null;
+  remoteAddress: string | null;
+  isLocal: boolean | null;
+  startedAt: Date;
+  lastSeenAt: Date;
+}
+
+/**
+ * Past streams with every detail the media server reported. playback_sessions keeps its
+ * rows after playback ended, which is the only reason this history exists at all — the
+ * media server's own history API reports what was watched, never how it was delivered.
+ */
+export async function listSessionHistory(options: {
+  scope?: Scope;
+  days?: number;
+  limit?: number;
+  offset?: number;
+  /** Only transcoded streams — the list an admin actually goes looking for. */
+  transcodesOnly?: boolean;
+}): Promise<{ rows: SessionHistoryRow[]; total: number }> {
+  const { scope, days, limit = 50, offset = 0, transcodesOnly = false } = options;
+  const filter = sql`${since(days, 'p.')} AND ${scoped(scope, 'p.')} AND ${
+    transcodesOnly ? sql`p.play_method = 'transcode'` : sql`1 = 1`
+  }`;
+
+  const [count] = await db.all<{ total: number }>(sql`
+    SELECT count(*) AS total FROM playback_sessions p WHERE ${filter}
+  `);
+
+  const rows = await db.all<Record<string, unknown>>(sql`
+    SELECT p.*, u.username AS username
+    FROM playback_sessions p
+    LEFT JOIN users u ON u.id = p.user_id
+    WHERE ${filter}
+    ORDER BY p.started_at DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `);
+
+  const num = (value: unknown) => (value === null || value === undefined ? null : Number(value));
+  const str = (value: unknown) => (value === null || value === undefined ? null : String(value));
+
+  return {
+    total: Number(count?.total ?? 0),
+    rows: rows.map((r) => ({
+      sessionKey: String(r.session_key),
+      userId: num(r.user_id),
+      username: str(r.username),
+      itemId: String(r.item_id),
+      title: String(r.title),
+      grandparentTitle: str(r.grandparent_title),
+      mediaType: String(r.media_type),
+      state: String(r.state),
+      progressMs: Number(r.progress_ms ?? 0),
+      durationMs: Number(r.duration_ms ?? 0),
+      clientName: str(r.client_name),
+      deviceName: str(r.device_name),
+      playMethod: str(r.play_method),
+      videoCodec: str(r.video_codec),
+      audioCodec: str(r.audio_codec),
+      audioChannels: num(r.audio_channels),
+      subtitleCodec: str(r.subtitle_codec),
+      container: str(r.container),
+      height: num(r.height),
+      bitrateKbps: num(r.bitrate_kbps),
+      sourceVideoCodec: str(r.source_video_codec),
+      sourceAudioCodec: str(r.source_audio_codec),
+      sourceContainer: str(r.source_container),
+      sourceHeight: num(r.source_height),
+      sourceBitrateKbps: num(r.source_bitrate_kbps),
+      transcodeReason: str(r.transcode_reason),
+      remoteAddress: str(r.remote_address),
+      isLocal: r.is_local === null || r.is_local === undefined ? null : Boolean(r.is_local),
+      startedAt: new Date(Number(r.started_at)),
+      lastSeenAt: new Date(Number(r.last_seen_at)),
+    })),
+  };
+}
+
 export interface PlaybackTotals {
   sessions: number;
   uniqueClients: number;

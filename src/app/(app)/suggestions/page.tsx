@@ -1,32 +1,35 @@
 import Link from 'next/link';
+import Poster from '@/components/Poster';
 import { artUrl } from '@/components/format';
 import { notFound } from 'next/navigation';
 import OpenInServer from '@/components/OpenInServer';
 import { getSettings } from '@/server/config';
 import { isEnabled } from '@/server/features';
 import { getSuggestions } from '@/server/suggestions';
+import { cachedPosters } from '@/server/tmdb';
 import { reportSyncError, syncHistory } from '@/server/sync';
 import { requireUser } from '@/server/session';
+import { getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
 export default async function SuggestionsPage() {
   const session = await requireUser();
+  const t = await getT();
   const settings = await getSettings();
   if (!isEnabled(settings.features, 'suggestions')) notFound();
   await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
   const { fromLibrary, fromTmdb } = await getSuggestions(session.user.id, session.user.serverId);
+  const posters = await cachedPosters(fromLibrary);
 
   return (
     <>
-      <p className="eyebrow">You</p>
-      <h1>Suggestions</h1>
-      <p className="subtitle">
-        Based on the genres, decades and formats you already watch. Refreshed daily.
-      </p>
+      <p className="eyebrow">{t('stats.eyebrow')}</p>
+      <h1>{t('nav.suggestions')}</h1>
+      <p className="subtitle">{t('suggestions.subtitle')}</p>
 
       {fromLibrary.length === 0 ? (
-        <p className="muted">Watch a few titles first — suggestions need some history to work with.</p>
+        <p className="muted">{t('suggestions.empty')}</p>
       ) : (
         <div className="poster-grid">
           {fromLibrary.map((item) => (
@@ -34,8 +37,11 @@ export default async function SuggestionsPage() {
               {/* The card opens the app's own detail view; the button next to it hands the
                   title over to the media server, which is where you can actually play it. */}
               <Link href={`/title/${encodeURIComponent(item.title)}`}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className="poster" src={artUrl(session.server.slug, item.itemId)} alt="" loading="lazy" />
+                <Poster
+                  src={artUrl(session.server.slug, item.itemId)}
+                  fallback={posters.get(item.itemId)}
+                  loading="lazy"
+                />
                 <p className="poster-title">{item.title}</p>
               </Link>
               <p className="poster-meta">
@@ -51,14 +57,11 @@ export default async function SuggestionsPage() {
 
       {fromTmdb.length > 0 && (
         <section className="section">
-          <h2>Similar titles from TMDB</h2>
+          <h2>{t('suggestions.tmdb')}</h2>
           <div className="poster-grid">
             {fromTmdb.map((item) => (
               <div key={`${item.title}-${item.year ?? ''}`}>
-                {item.posterUrl && (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img className="poster" src={item.posterUrl} alt="" loading="lazy" />
-                )}
+                <Poster src={item.posterUrl} loading="lazy" />
                 <p className="poster-title">{item.title}</p>
                 <p className="poster-meta">{item.year ?? ''}</p>
               </div>

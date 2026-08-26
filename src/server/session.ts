@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { and, desc, eq, gt, lt, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { authSessions, loginHistory, users } from '@/db/schema';
+import { isLocale } from '@/i18n';
 import { decryptSecret, encryptSecret } from './crypto';
 import type { MediaServerUser } from './adapters';
 import { getServer } from './config';
@@ -75,6 +76,17 @@ export async function listUserSessions(userId: number) {
     .from(authSessions)
     .where(and(eq(authSessions.userId, userId), gt(authSessions.expiresAt, new Date())))
     .orderBy(desc(authSessions.createdAt));
+}
+
+/**
+ * The user's own language. Null means "follow the deployment default", which is also what
+ * an unknown tag falls back to — the value reaches the dictionary lookup directly.
+ */
+export async function setUserLocale(userId: number, locale: string | null): Promise<void> {
+  await db
+    .update(users)
+    .set({ locale: isLocale(locale) ? locale : null })
+    .where(eq(users.id, userId));
 }
 
 /** Signs one session out remotely — the "someone has my login" button. */

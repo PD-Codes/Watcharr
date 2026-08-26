@@ -22,9 +22,23 @@ export type IconName =
   | 'moon'
   | 'external'
   | 'download'
-  | 'back';
+  | 'back'
+  | 'film'
+  | 'tv';
 
 const PATHS: Record<IconName, React.ReactNode> = {
+  film: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M7 4v16M17 4v16M3 12h18" />
+    </>
+  ),
+  tv: (
+    <>
+      <rect x="3" y="5" width="18" height="12" rx="2" />
+      <path d="M8 21h8" />
+    </>
+  ),
   overview: <path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" />,
   watchlist: <path d="M6 4h12v16l-6-4-6 4z" />,
   history: (

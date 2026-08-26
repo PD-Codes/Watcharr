@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { t } from '@/i18n';
+import { useT } from '@/i18n/client';
 
 export default function SetupForm() {
+  const t = useT();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -21,7 +22,7 @@ export default function SetupForm() {
     });
     setBusy(false);
     if (res.ok) router.push('/login');
-    else setError(((await res.json()) as { error?: string }).error ?? 'Setup failed');
+    else setError(((await res.json()) as { error?: string }).error ?? t('setup.failed'));
   }
 
   return (

@@ -4,13 +4,15 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon } from '@/components/Icons';
 import { isActive, type NavItem } from './nav';
+import { useT } from '@/i18n/client';
 
 /** Material navigation bar: the five destinations a phone gets one tap away. */
 export default function BottomNav({ items, liveCount }: { items: NavItem[]; liveCount: number }) {
   const pathname = usePathname();
+  const t = useT();
 
   return (
-    <nav className="bottomnav" aria-label="Primary">
+    <nav className="bottomnav" aria-label={t('shell.primaryNav')}>
       <ul>
         {items.map((item) => {
           const active = isActive(pathname, item.href);

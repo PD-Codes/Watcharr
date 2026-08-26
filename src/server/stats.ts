@@ -86,6 +86,73 @@ export async function getDailyActivity(scope: Scope, days = 30): Promise<Labelle
 }
 
 /**
+ * Plays per day rather than minutes. Tautulli's "Daily play count" reads differently from
+ * a watch-time chart: an evening of five sitcom episodes outranks a single long film on
+ * count and loses on time, and both answers are worth having.
+ */
+export async function getDailyPlays(scope: Scope, days = 30): Promise<LabelledValue[]> {
+  const rows = await db.all<{ day: string; plays: number }>(sql`
+    WITH RECURSIVE calendar(day) AS (
+      SELECT date('now', 'localtime', ${`-${days - 1} days`})
+      UNION ALL
+      SELECT date(day, '+1 day') FROM calendar WHERE day < date('now', 'localtime')
+    )
+    SELECT calendar.day AS day, count(h.id) AS plays
+    FROM calendar
+    LEFT JOIN watch_history h
+      ON ${localDay('h.watched_at')} = calendar.day AND ${scopeFilter(scope, 'h.')}
+    GROUP BY calendar.day
+    ORDER BY calendar.day
+  `);
+  return rows.map((r) => ({ label: r.day, value: Number(r.plays) }));
+}
+
+/** Plays per weekday, Monday first — the count counterpart to getWeekdayActivity. */
+export async function getWeekdayPlays(scope: Scope, days?: number): Promise<LabelledValue[]> {
+  const rows = await db.all<{ weekday: string; plays: number }>(sql`
+    SELECT strftime('%w', watched_at / 1000, 'unixepoch', 'localtime') AS weekday,
+           count(*) AS plays
+    FROM watch_history
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
+    GROUP BY weekday
+  `);
+  const found = new Map(rows.map((r) => [Number(r.weekday), Number(r.plays)]));
+  const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return names.map((label, index) => ({ label, value: found.get((index + 1) % 7) ?? 0 }));
+}
+
+/** Plays per media type — the movies-versus-TV split behind every "by type" chart. */
+export async function getPlaysByMediaType(scope: Scope, days?: number): Promise<LabelledValue[]> {
+  const rows = await db.all<{ label: string; plays: number }>(sql`
+    SELECT media_type AS label, count(*) AS plays
+    FROM watch_history
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
+    GROUP BY label
+    ORDER BY plays DESC
+  `);
+  return rows.map((r) => ({ label: r.label, value: Number(r.plays) }));
+}
+
+/** Plays per user. getUserLeaderboard answers the same question in minutes. */
+export async function getPlaysByUser(
+  serverId?: number,
+  days?: number,
+  limit = 10,
+): Promise<LabelledValue[]> {
+  const onServer = serverId === undefined ? sql`1 = 1` : sql`u.server_id = ${serverId}`;
+  const rows = await db.all<{ username: string; plays: number }>(sql`
+    SELECT u.username AS username, count(h.id) AS plays
+    FROM users u
+    LEFT JOIN watch_history h ON h.user_id = u.id AND ${sinceFilter(days, 'h.')}
+    WHERE ${onServer}
+    GROUP BY u.id
+    ORDER BY plays DESC
+    LIMIT ${limit}
+  `);
+  return rows.map((r) => ({ label: r.username, value: Number(r.plays) }));
+}
+
+/**
  * Ranking metric shared by the top lists. "How often" and "how long" produce very
  * different leaderboards — a daily sitcom wins on plays, a film trilogy wins on time.
  */
@@ -132,6 +199,88 @@ export async function getTopTitles(
     LIMIT ${limit}
   `);
   return rows.map((r) => ({ label: r.label, value: Number(r.total) }));
+}
+
+/**
+ * Top titles of one kind. `mediaType` is the raw history value, so 'movie' answers films
+ * and 'episode' answers series — episodes still group under their show, which is why the
+ * filter has to sit in the WHERE rather than in the GROUP BY.
+ */
+export async function getTopTitlesByType(
+  scope: Scope,
+  mediaType: string,
+  limit = 5,
+  by: RankBy = 'count',
+  days?: number,
+): Promise<LabelledValue[]> {
+  const rows = await db.all<{ label: string; total: number }>(sql`
+    SELECT coalesce(grandparent_title, title) AS label, ${metric(by)} AS total
+    FROM watch_history
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)} AND media_type = ${mediaType}
+    GROUP BY label
+    ORDER BY total DESC, label ASC
+    LIMIT ${limit}
+  `);
+  return rows.map((r) => ({ label: r.label, value: Number(r.total) }));
+}
+
+/**
+ * Titles ranked by how many *different* people watched them — Tautulli's "most popular"
+ * next to its "most watched". One person on a rewatch marathon tops the play count and
+ * says nothing about what the household actually likes; this is the other half.
+ */
+export async function getPopularTitlesByType(
+  scope: Scope,
+  mediaType: string,
+  limit = 5,
+  days?: number,
+): Promise<LabelledValue[]> {
+  const rows = await db.all<{ label: string; viewers: number }>(sql`
+    SELECT coalesce(grandparent_title, title) AS label, count(DISTINCT user_id) AS viewers
+    FROM watch_history
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)} AND media_type = ${mediaType}
+    GROUP BY label
+    ORDER BY viewers DESC, label ASC
+    LIMIT ${limit}
+  `);
+  return rows.map((r) => ({ label: r.label, value: Number(r.viewers) }));
+}
+
+export interface RecentPlay {
+  itemId: string;
+  title: string;
+  grandparentTitle: string | null;
+  username: string | null;
+  watchedAt: Date;
+}
+
+/** The last few plays, with who made them. Server-wide when the scope says so. */
+export async function getRecentPlays(scope: Scope, limit = 5): Promise<RecentPlay[]> {
+  const rows = await db.all<{
+    item_id: string;
+    title: string;
+    show: string | null;
+    username: string | null;
+    watched_at: number;
+  }>(sql`
+    SELECT h.item_id AS item_id,
+           h.title AS title,
+           h.grandparent_title AS show,
+           u.username AS username,
+           h.watched_at AS watched_at
+    FROM watch_history h
+    LEFT JOIN users u ON u.id = h.user_id
+    WHERE ${scopeFilter(scope, 'h.')}
+    ORDER BY h.watched_at DESC
+    LIMIT ${limit}
+  `);
+  return rows.map((r) => ({
+    itemId: r.item_id,
+    title: r.title,
+    grandparentTitle: r.show,
+    username: r.username,
+    watchedAt: new Date(Number(r.watched_at)),
+  }));
 }
 
 /** Same grouping as getTopTitles, but ranked by watch time instead of play count. */

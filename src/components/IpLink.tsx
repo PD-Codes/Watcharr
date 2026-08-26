@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useT } from '@/i18n/client';
 
 // The address itself is the control: clicking it resolves the address on demand rather
 // than on render, so a history page with fifty rows costs nothing until someone asks.
@@ -33,6 +34,7 @@ function Row({ label, value }: { label: string; value: string | null }) {
 }
 
 export default function IpLink({ ip }: { ip: string | null }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [details, setDetails] = useState<Details | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export default function IpLink({ ip }: { ip: string | null }) {
       if (cancelled) return;
       if (!res?.ok) {
         const body = (await res?.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? 'Could not resolve this address');
+        setError(body?.error ?? t('ip.resolveFailed'));
         return;
       }
       setDetails((await res.json()) as Details);
@@ -53,7 +55,7 @@ export default function IpLink({ ip }: { ip: string | null }) {
     return () => {
       cancelled = true;
     };
-  }, [open, details, error, ip]);
+  }, [open, details, error, ip, t]);
 
   // Escape closes the dialog, the same as the command palette.
   useEffect(() => {
@@ -82,40 +84,40 @@ export default function IpLink({ ip }: { ip: string | null }) {
             className="modal"
             role="dialog"
             aria-modal="true"
-            aria-label={`Address ${ip}`}
+            aria-label={t('ip.dialog', { ip })}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="modal-head">
               <h2 style={{ margin: 0 }}>{ip}</h2>
               <button type="button" className="outlined" onClick={() => setOpen(false)}>
-                Close
+                {t('ip.close')}
               </button>
             </div>
 
             {error && <p className="error">{error}</p>}
-            {!details && !error && <p className="muted">Resolving…</p>}
+            {!details && !error && <p className="muted">{t('ip.resolving')}</p>}
 
             {details && (
               <>
                 <p className="stat-label" style={{ marginTop: 4 }}>
-                  Connection
+                  {t('ip.connection')}
                 </p>
-                <Row label="Location" value={details.isLocal ? 'LAN' : 'WAN'} />
-                <Row label="Host" value={details.host} />
+                <Row label={t('ip.location')} value={details.isLocal ? t('stream.lan') : t('stream.wan')} />
+                <Row label={t('ip.host')} value={details.host} />
 
                 {!details.isLocal && (
                   <>
                     <p className="stat-label" style={{ marginTop: 16 }}>
-                      Geolocation
+                      {t('ip.geolocation')}
                     </p>
                     {located ? (
                       <>
-                        <Row label="Location" value={located} />
-                        <Row label="Continent" value={details.continent} />
-                        <Row label="Postal code" value={details.postalCode} />
-                        <Row label="Timezone" value={details.timezone} />
+                        <Row label={t('ip.location')} value={located} />
+                        <Row label={t('ip.continent')} value={details.continent} />
+                        <Row label={t('ip.postalCode')} value={details.postalCode} />
+                        <Row label={t('ip.timezone')} value={details.timezone} />
                         <Row
-                          label="Coordinates"
+                          label={t('ip.coordinates')}
                           value={
                             details.latitude && details.longitude
                               ? `${details.latitude}, ${details.longitude}`
@@ -125,19 +127,18 @@ export default function IpLink({ ip }: { ip: string | null }) {
                       </>
                     ) : (
                       <p className="muted">
-                        No geolocation data. Country lookup is off, or the provider returned
-                        nothing — see Settings.
+                        {t('ip.noGeo')}
                       </p>
                     )}
 
                     {(details.isp || details.organisation || details.asn) && (
                       <>
                         <p className="stat-label" style={{ marginTop: 16 }}>
-                          Network
+                          {t('ip.network')}
                         </p>
-                        <Row label="ISP" value={details.isp} />
-                        <Row label="Organisation" value={details.organisation} />
-                        <Row label="ASN" value={details.asn} />
+                        <Row label={t('ip.isp')} value={details.isp} />
+                        <Row label={t('ip.organisation')} value={details.organisation} />
+                        <Row label={t('ip.asn')} value={details.asn} />
                       </>
                     )}
                   </>

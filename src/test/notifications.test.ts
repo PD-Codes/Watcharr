@@ -16,22 +16,31 @@ async function main() {
     '../server/notifications'
   );
   const { verifyArtSignature, publicArtUrl } = await import('../server/artlink');
+  const { translator } = await import('../i18n');
+  const en = translator('en-US');
 
   assert.match(
-    describe('playback.start', { user: 'dome', title: 'Arcane', server: { label: 'Jellyfin' } }),
+    describe(en, 'playback.start', { user: 'dome', title: 'Arcane', server: { label: 'Jellyfin' } }),
     /dome started "Arcane" \(Jellyfin\)/,
   );
   assert.match(
-    describe('playback.stop', { user: 'dome', title: 'Arcane', percent: 92 }),
+    describe(en, 'playback.stop', { user: 'dome', title: 'Arcane', percent: 92 }),
     /dome stopped "Arcane" at 92%/,
   );
-  assert.match(describe('server.down', { server: { label: 'Jellyfin' } }), /Jellyfin is unreachable/);
-  assert.match(describe('media.added', { title: 'Dune', year: 2021 }), /New: "Dune" \(2021\)/);
+  assert.match(describe(en, 'server.down', { server: { label: 'Jellyfin' } }), /Jellyfin is unreachable/);
+  assert.match(describe(en, 'media.added', { title: 'Dune', year: 2021 }), /New: "Dune" \(2021\)/);
   assert.match(
-    describe('monitor.alert', { message: 'dome has 4 concurrent streams (limit 2)' }),
+    describe(en, 'monitor.alert', { message: 'dome has 4 concurrent streams (limit 2)' }),
     /4 concurrent streams/,
   );
   console.log('ok - notification text is built per event');
+
+  // The line a channel receives follows the configured language. Without this the app
+  // could be entirely German while every Discord message stayed English.
+  const de = translator('de-DE');
+  const german = describe(de, 'playback.start', { user: 'dome', title: 'Arcane' });
+  assert.ok(german.includes('gestartet') && !german.includes('started'), german);
+  console.log('ok - notification text follows the configured language');
 
   // A channel's config must round-trip through the encrypted blob without ever being
   // readable from listChannels() — that is the whole point of encrypting it.

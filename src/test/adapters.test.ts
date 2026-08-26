@@ -76,6 +76,15 @@ async function testJellyfinSessions() {
     width: 1280,
     height: 720,
     transcodeReason: 'VideoCodecNotSupported',
+    audioChannels: undefined,
+    subtitleCodec: undefined,
+    // The source side of the same stream: what the file holds, before the re-encode above.
+    // Both halves are reported so a stream panel can show "HEVC 1080p → H264 720p".
+    sourceVideoCodec: 'hevc',
+    sourceAudioCodec: 'eac3',
+    sourceContainer: 'mkv',
+    sourceHeight: 1080,
+    sourceBitrateKbps: 12_000,
     terminateKey: 's1',
     remoteAddress: undefined,
     lastCheckInAt: new Date('2026-08-23T10:00:00.000Z'),
@@ -201,11 +210,46 @@ async function testPlexDirectPlay() {
   assert.equal(session.height, 2160);
 }
 
+/**
+ * A show library needs three counts, a movie library one. Getting that wrong is invisible
+ * in the UI — a missing season total just renders as a dash — so it is asserted here, and
+ * the stub also proves no Season/Episode request is made for a movie library.
+ */
+async function testJellyfinLibraryCounts() {
+  const asked: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    asked.push(url);
+    if (url.includes('/Library/VirtualFolders')) {
+      return Response.json([
+        { Name: 'Filme', ItemId: 'lib-movies', CollectionType: 'movies' },
+        { Name: 'Serien', ItemId: 'lib-shows', CollectionType: 'tvshows' },
+        // Music is not covered by the adapter and must not appear at all.
+        { Name: 'Hörspiele', ItemId: 'lib-music', CollectionType: 'music' },
+      ]);
+    }
+    const totals: Record<string, number> = { Movie: 2335, Series: 501, Season: 2023, Episode: 34214 };
+    const type = Object.keys(totals).find((t) => url.includes(`IncludeItemTypes=${t}`));
+    return Response.json({ TotalRecordCount: type ? totals[type] : 0 });
+  }) as typeof fetch;
+
+  const sections = await createAdapter('jellyfin', 'http://jf:8096', 'tok').getLibraries();
+  assert.deepEqual(sections, [
+    { id: 'lib-movies', name: 'Filme', mediaType: 'movie', itemCount: 2335, seasonCount: undefined, episodeCount: undefined },
+    { id: 'lib-shows', name: 'Serien', mediaType: 'show', itemCount: 501, seasonCount: 2023, episodeCount: 34214 },
+  ]);
+  assert.ok(
+    !asked.some((url) => url.includes('lib-movies') && url.includes('IncludeItemTypes=Season')),
+    'a movie library must not be asked for seasons',
+  );
+}
+
 async function main() {
   for (const test of [
   testJellyfinSessions,
   testJellyfinDirectPlayUsesSourceStreams,
   testJellyfinHistoryFiltersBySince,
+  testJellyfinLibraryCounts,
   testPlexSessions,
   testPlexDirectPlay,
 ]) {

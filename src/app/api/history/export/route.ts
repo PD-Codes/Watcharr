@@ -2,17 +2,13 @@ import { NextResponse } from 'next/server';
 import { desc } from 'drizzle-orm';
 import { db } from '@/db';
 import { watchHistory } from '@/db/schema';
+import { csvResponse, toCsv } from '@/server/csv';
 import { historyFilters } from '@/server/history';
 import { getSession } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
 
 const MAX_ROWS = 50000;
-
-function csvCell(value: unknown): string {
-  const s = value === null || value === undefined ? '' : String(value);
-  return /["\n,]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
-}
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -36,28 +32,19 @@ export async function GET(request: Request) {
     .orderBy(desc(watchHistory.watchedAt))
     .limit(MAX_ROWS);
 
-  const lines = ['Watched,Title,Episode,Type,Year,Genres,Duration (min),Device'];
-  for (const row of rows) {
-    lines.push(
-      [
-        row.watchedAt.toISOString(),
-        row.grandparentTitle ?? row.title,
-        row.grandparentTitle ? row.title : '',
-        row.mediaType,
-        row.year ?? '',
-        row.genres.join('; '),
-        Math.round(row.durationMs / 60000),
-        row.deviceName ?? '',
-      ]
-        .map(csvCell)
-        .join(','),
-    );
-  }
+  const body = toCsv(
+    ['Watched', 'Title', 'Episode', 'Type', 'Year', 'Genres', 'Duration (min)', 'Device'],
+    rows.map((row) => [
+      row.watchedAt.toISOString(),
+      row.grandparentTitle ?? row.title,
+      row.grandparentTitle ? row.title : '',
+      row.mediaType,
+      row.year ?? '',
+      row.genres.join('; '),
+      Math.round(row.durationMs / 60000),
+      row.deviceName ?? '',
+    ]),
+  );
 
-  return new Response(lines.join('\n'), {
-    headers: {
-      'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': 'attachment; filename="watcharr-history.csv"',
-    },
-  });
+  return csvResponse('watcharr-history.csv', body);
 }

@@ -2,20 +2,23 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { TranslationKey } from '@/i18n';
+import { useT } from '@/i18n/client';
 
 interface ChannelField {
   key: string;
-  label: string;
+  labelKey: TranslationKey;
   type: string;
 }
 interface ChannelTypeDef {
   type: string;
+  /** A product name (Discord, Slack), so it is not translated. */
   label: string;
   fields: readonly ChannelField[];
 }
 interface EventDef {
   key: string;
-  label: string;
+  labelKey: TranslationKey;
 }
 export interface ChannelCard {
   id: number;
@@ -40,6 +43,7 @@ export default function NotificationsManager({
   events: readonly EventDef[];
 }) {
   const router = useRouter();
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -59,7 +63,7 @@ export default function NotificationsManager({
       setMessage(done);
       router.refresh();
     } else {
-      setError(((await res.json()) as { error?: string }).error ?? 'Something went wrong');
+      setError(((await res.json()) as { error?: string }).error ?? t('error.generic'));
     }
   }
 
@@ -88,7 +92,7 @@ export default function NotificationsManager({
         events: readEvents(form),
         enabled: form.get('enabled') === 'on',
       },
-      'Saved.',
+      t('action.saved'),
     );
   }
 
@@ -103,14 +107,14 @@ export default function NotificationsManager({
         config: readConfig(form, fieldsFor(channelTypes, newType)),
         events: readEvents(form),
       },
-      'Channel added.',
+      t('notifications.channelAdded'),
     );
     event.currentTarget.reset();
   }
 
   async function onDelete(channel: ChannelCard) {
-    if (!window.confirm(`Remove the "${channel.name}" channel?`)) return;
-    await send('DELETE', { id: channel.id }, 'Channel removed.');
+    if (!window.confirm(t('notifications.confirmRemove', { name: channel.name }))) return;
+    await send('DELETE', { id: channel.id }, t('notifications.channelRemoved'));
   }
 
   async function onTest(id: number) {
@@ -124,8 +128,8 @@ export default function NotificationsManager({
     });
     setBusy(false);
     const body = (await res.json()) as { ok?: boolean; error?: string };
-    if (res.ok && body.ok) setMessage('Test notification sent.');
-    else setError(body.error ?? 'Test failed.');
+    if (res.ok && body.ok) setMessage(t('notifications.testSent'));
+    else setError(body.error ?? t('notifications.testFailed'));
   }
 
   return (
@@ -138,23 +142,25 @@ export default function NotificationsManager({
               {channelTypes.find((c) => c.type === channel.type)?.label ?? channel.type}
             </p>
             <label>
-              Name
+              {t('notifications.name')}
               <input name="name" defaultValue={channel.name} required />
             </label>
             {fields.map((field) => (
               <label key={field.key}>
-                {field.label}
+                {t(field.labelKey)}
                 <input
                   name={`config.${field.key}`}
                   type={field.type}
                   placeholder={
-                    channel.configuredFields.includes(field.key) ? 'configured' : 'not set'
+                    channel.configuredFields.includes(field.key)
+                      ? t('notifications.configured')
+                      : t('notifications.notSet')
                   }
                 />
               </label>
             ))}
             <p className="stat-label" style={{ marginTop: 14 }}>
-              Events
+              {t('notifications.events')}
             </p>
             {events.map((e) => (
               <label className="row" key={e.key}>
@@ -164,7 +170,7 @@ export default function NotificationsManager({
                   defaultChecked={channel.events.includes(e.key)}
                   style={{ width: 'auto' }}
                 />
-                {e.label}
+                {t(e.labelKey)}
               </label>
             ))}
             <label className="row" style={{ marginTop: 10 }}>
@@ -174,17 +180,17 @@ export default function NotificationsManager({
                 defaultChecked={channel.enabled}
                 style={{ width: 'auto' }}
               />
-              Enabled
+              {t('notifications.enabled')}
             </label>
             <div className="row" style={{ gap: 10, marginTop: 12 }}>
-              <button disabled={busy}>Save</button>
+              <button disabled={busy}>{t('action.save')}</button>
               <button
                 type="button"
                 className="outlined"
                 disabled={busy}
                 onClick={() => onTest(channel.id)}
               >
-                Send test
+                {t('notifications.sendTest')}
               </button>
               <button
                 type="button"
@@ -192,17 +198,17 @@ export default function NotificationsManager({
                 disabled={busy}
                 onClick={() => onDelete(channel)}
               >
-                Remove
+                {t('notifications.remove')}
               </button>
             </div>
           </form>
         );
       })}
 
-      <h2 className="section">Add a channel</h2>
+      <h2 className="section">{t('notifications.addChannel')}</h2>
       <form className="card" onSubmit={onAdd} style={{ maxWidth: 520 }}>
         <label>
-          Type
+          {t('notifications.type')}
           <select name="type" value={newType} onChange={(e) => setNewType(e.target.value)}>
             {channelTypes.map((c) => (
               <option key={c.type} value={c.type}>
@@ -212,26 +218,26 @@ export default function NotificationsManager({
           </select>
         </label>
         <label>
-          Name
+          {t('notifications.name')}
           <input name="name" placeholder={newType} />
         </label>
         {fieldsFor(channelTypes, newType).map((field) => (
           <label key={field.key}>
-            {field.label}
+            {t(field.labelKey)}
             <input name={`config.${field.key}`} type={field.type} required />
           </label>
         ))}
         <p className="stat-label" style={{ marginTop: 14 }}>
-          Events
+          {t('notifications.events')}
         </p>
         {events.map((e) => (
           <label className="row" key={e.key}>
             <input type="checkbox" name={`event.${e.key}`} style={{ width: 'auto' }} />
-            {e.label}
+            {t(e.labelKey)}
           </label>
         ))}
         <button disabled={busy} style={{ marginTop: 12 }}>
-          Add channel
+          {t('notifications.addButton')}
         </button>
       </form>
 

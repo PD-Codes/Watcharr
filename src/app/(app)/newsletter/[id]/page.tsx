@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { formatDate } from '@/components/format';
 import { getSettings } from '@/server/config';
 import { requireUser } from '@/server/session';
+import { getT } from '@/i18n/server';
 
 // No loading.tsx in this segment: it calls notFound(). See the streaming note in CLAUDE.md.
 export const dynamic = 'force-dynamic';
@@ -13,6 +14,7 @@ export const dynamic = 'force-dynamic';
  */
 export default async function NewsletterPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
+  const t = await getT();
   const { id } = await params;
   const settings = await getSettings();
 
@@ -20,12 +22,12 @@ export default async function NewsletterPage({ params }: { params: Promise<{ id:
 
   return (
     <>
-      <p className="eyebrow">Newsletter</p>
+      <p className="eyebrow">{t('nav.adminNewsletter')}</p>
       <h1>{settings.newsletterSubject}</h1>
       <p className="subtitle">
         {settings.newsletterLastSentAt
-          ? `Issue sent ${formatDate(settings.newsletterLastSentAt)}.`
-          : 'Latest issue.'}
+          ? t('newsletter.issueSent', { date: formatDate(settings.newsletterLastSentAt) })
+          : t('newsletter.latestIssue')}
       </p>
 
       {/* The stored HTML is built by server/newsletter.ts from escaped media server data,

@@ -1,0 +1,650 @@
+{
+  "weekday.monday": {
+    "en": "Monday",
+    "de": "Montag"
+  },
+  "weekday.tuesday": {
+    "en": "Tuesday",
+    "de": "Dienstag"
+  },
+  "weekday.wednesday": {
+    "en": "Wednesday",
+    "de": "Mittwoch"
+  },
+  "weekday.thursday": {
+    "en": "Thursday",
+    "de": "Donnerstag"
+  },
+  "weekday.friday": {
+    "en": "Friday",
+    "de": "Freitag"
+  },
+  "weekday.saturday": {
+    "en": "Saturday",
+    "de": "Samstag"
+  },
+  "weekday.sunday": {
+    "en": "Sunday",
+    "de": "Sonntag"
+  },
+  "overview.greeting.stillUp": {
+    "en": "Still up",
+    "de": "Noch wach"
+  },
+  "overview.greeting.morning": {
+    "en": "Good morning",
+    "de": "Guten Morgen"
+  },
+  "overview.greeting.afternoon": {
+    "en": "Good afternoon",
+    "de": "Guten Tag"
+  },
+  "overview.greeting.evening": {
+    "en": "Good evening",
+    "de": "Guten Abend"
+  },
+  "overview.sessionRunning": {
+    "en": "Your session is running below.",
+    "de": "Deine Wiedergabe läuft unten."
+  },
+  "overview.watchedTotal": {
+    "en": "You have watched {duration} on this server.",
+    "de": "Du hast auf diesem Server {duration} gesehen."
+  },
+  "overview.plays": {
+    "en": "Plays",
+    "de": "Wiedergaben"
+  },
+  "overview.playsHint": {
+    "en": "{movies} movies · {episodes} episodes",
+    "de": "{movies} Filme · {episodes} Episoden"
+  },
+  "overview.last30Days": {
+    "en": "last 30 days",
+    "de": "letzte 30 Tage"
+  },
+  "overview.watchTimeInfo": {
+    "en": "Sum of the runtime of everything you played in the last 30 days.",
+    "de": "Summe der Laufzeit von allem, was du in den letzten 30 Tagen abgespielt hast."
+  },
+  "overview.streak": {
+    "en": "Streak",
+    "de": "Serie"
+  },
+  "overview.streakInfo": {
+    "en": "Consecutive days with at least one play. Opens your year in review.",
+    "de": "Aufeinanderfolgende Tage mit mindestens einer Wiedergabe. Öffnet deinen Jahresrückblick."
+  },
+  "overview.serverNow": {
+    "en": "Server right now",
+    "de": "Server gerade jetzt"
+  },
+  "overview.activeStreams": {
+    "en": "Active streams",
+    "de": "Aktive Streams"
+  },
+  "overview.bandwidth": {
+    "en": "Bandwidth",
+    "de": "Bandbreite"
+  },
+  "overview.viewers": {
+    "en": "Viewers",
+    "de": "Zuschauer"
+  },
+  "overview.recentlyWatched": {
+    "en": "Recently watched",
+    "de": "Zuletzt gesehen"
+  },
+  "overview.noPlays": {
+    "en": "No plays recorded yet.",
+    "de": "Noch keine Wiedergaben erfasst."
+  },
+  "overview.mostPlayed": {
+    "en": "Your most played",
+    "de": "Deine meistgesehenen Titel"
+  },
+  "activity.eyebrow": {
+    "en": "Live",
+    "de": "Live"
+  },
+  "activity.title": {
+    "en": "Watch Activity",
+    "de": "Wiedergabe-Aktivität"
+  },
+  "activity.subtitle": {
+    "en": "Your current playback sessions, refreshed every 10 seconds.",
+    "de": "Deine laufenden Wiedergaben, alle 10 Sekunden aktualisiert."
+  },
+  "history.eyebrow": {
+    "en": "Library",
+    "de": "Bibliothek"
+  },
+  "history.subtitle": {
+    "en": "{count} plays recorded.",
+    "de": "{count} Wiedergaben erfasst."
+  },
+  "history.searchPlaceholder": {
+    "en": "Title…",
+    "de": "Titel…"
+  },
+  "history.chipGenre": {
+    "en": "Genre: {genre}",
+    "de": "Genre: {genre}"
+  },
+  "history.chipDay": {
+    "en": "Day: {day}",
+    "de": "Tag: {day}"
+  },
+  "history.noMatch": {
+    "en": "No plays match these filters.",
+    "de": "Keine Wiedergaben passen zu diesen Filtern."
+  },
+  "watchlist.subtitle": {
+    "en": "Titles you plan to watch. Plex watchlists are synced automatically.",
+    "de": "Titel, die du sehen möchtest. Plex-Merklisten werden automatisch synchronisiert."
+  },
+  "watchlist.addFromLibrary": {
+    "en": "Add from library",
+    "de": "Aus der Bibliothek hinzufügen"
+  },
+  "watchlist.searchPlaceholder": {
+    "en": "Search titles…",
+    "de": "Titel suchen…"
+  },
+  "watchlist.add": {
+    "en": "Add",
+    "de": "Hinzufügen"
+  },
+  "watchlist.empty": {
+    "en": "Your watchlist is empty.",
+    "de": "Deine Merkliste ist leer."
+  },
+  "watchlist.status": {
+    "en": "Status",
+    "de": "Status"
+  },
+  "watchlist.source": {
+    "en": "Source",
+    "de": "Quelle"
+  },
+  "watchlist.planned": {
+    "en": "Planned",
+    "de": "Geplant"
+  },
+  "watchlist.watching": {
+    "en": "Watching",
+    "de": "Wird gesehen"
+  },
+  "watchlist.done": {
+    "en": "Done",
+    "de": "Fertig"
+  },
+  "watchlist.remove": {
+    "en": "Remove",
+    "de": "Entfernen"
+  },
+  "stats.eyebrow": {
+    "en": "You",
+    "de": "Du"
+  },
+  "stats.subtitle": {
+    "en": "Your viewing habits. Hover anything for the exact number; a title, a genre, a day or an hour opens the plays behind it.",
+    "de": "Deine Sehgewohnheiten. Zeige auf ein Element für die genaue Zahl; ein Titel, ein Genre, ein Tag oder eine Stunde öffnet die Wiedergaben dahinter."
+  },
+  "stats.daysShort": {
+    "en": "{count} d",
+    "de": "{count} T"
+  },
+  "stats.lastNDays": {
+    "en": "last {days} days",
+    "de": "letzte {days} Tage"
+  },
+  "stats.watchTimeInfo": {
+    "en": "Sum of the runtime of every play in the period. The arrow compares it with the period before.",
+    "de": "Summe der Laufzeit aller Wiedergaben im Zeitraum. Der Pfeil vergleicht mit dem Zeitraum davor."
+  },
+  "stats.activeDays": {
+    "en": "Active days",
+    "de": "Aktive Tage"
+  },
+  "stats.activeDaysInfo": {
+    "en": "Days in the period with at least one play.",
+    "de": "Tage im Zeitraum mit mindestens einer Wiedergabe."
+  },
+  "stats.currentStreak": {
+    "en": "Current streak",
+    "de": "Aktuelle Serie"
+  },
+  "stats.longestStreakHint": {
+    "en": "longest: {count} d",
+    "de": "längste: {count} T"
+  },
+  "stats.streakInfo": {
+    "en": "Consecutive days with at least one play, counting back from today.",
+    "de": "Aufeinanderfolgende Tage mit mindestens einer Wiedergabe, von heute zurückgerechnet."
+  },
+  "stats.busiestDay": {
+    "en": "Busiest day",
+    "de": "Aktivster Tag"
+  },
+  "stats.busiestDayInfo": {
+    "en": "The single day with the most watch time in your whole history. Opens that day.",
+    "de": "Der Tag mit der höchsten Sehdauer in deinem gesamten Verlauf. Öffnet diesen Tag."
+  },
+  "stats.longestPlay": {
+    "en": "Longest play",
+    "de": "Längste Wiedergabe"
+  },
+  "stats.longestPlayInfo": {
+    "en": "Runtime of the longest single thing you watched.",
+    "de": "Laufzeit des längsten Einzeltitels, den du gesehen hast."
+  },
+  "stats.bingeRecord": {
+    "en": "Binge record",
+    "de": "Binge-Rekord"
+  },
+  "stats.bingeRecordInfo": {
+    "en": "Most plays of one title within a single day.",
+    "de": "Die meisten Wiedergaben eines Titels an einem einzigen Tag."
+  },
+  "stats.libraryExplored": {
+    "en": "Library explored",
+    "de": "Bibliothek erkundet"
+  },
+  "stats.libraryExploredHint": {
+    "en": "{watched} of {total} titles",
+    "de": "{watched} von {total} Titeln"
+  },
+  "stats.libraryExploredInfo": {
+    "en": "Share of the movies and series in your libraries that you have started at least once.",
+    "de": "Anteil der Filme und Serien in deinen Bibliotheken, die du mindestens einmal gestartet hast."
+  },
+  "stats.dailyActivity": {
+    "en": "Daily activity (minutes)",
+    "de": "Tägliche Aktivität (Minuten)"
+  },
+  "stats.whenYouWatch": {
+    "en": "When you watch",
+    "de": "Wann du siehst"
+  },
+  "stats.whenYouWatchHint": {
+    "en": "Minutes per weekday and hour, across your whole history. Click a cell to see what was playing in that slot.",
+    "de": "Minuten je Wochentag und Stunde über deinen gesamten Verlauf. Klicke eine Zelle, um zu sehen, was in diesem Zeitfenster lief."
+  },
+  "stats.swipeDay": {
+    "en": "Swipe sideways for the rest of the day.",
+    "de": "Seitwärts wischen für den Rest des Tages."
+  },
+  "stats.topLists": {
+    "en": "Top lists",
+    "de": "Top-Listen"
+  },
+  "stats.titles": {
+    "en": "Titles",
+    "de": "Titel"
+  },
+  "stats.devices": {
+    "en": "Devices",
+    "de": "Geräte"
+  },
+  "stats.byWeekday": {
+    "en": "By weekday (minutes)",
+    "de": "Nach Wochentag (Minuten)"
+  },
+  "stats.byHour": {
+    "en": "By hour of day",
+    "de": "Nach Tagesstunde"
+  },
+  "stats.byMonth": {
+    "en": "{year} by month (minutes)",
+    "de": "{year} nach Monat (Minuten)"
+  },
+  "stats.last365": {
+    "en": "Your last 365 days",
+    "de": "Deine letzten 365 Tage"
+  },
+  "stats.swipeStrip": {
+    "en": "Swipe the strip sideways, tap a frame for that day.",
+    "de": "Streifen seitwärts wischen, ein Feld antippen für diesen Tag."
+  },
+  "stats.moviesVsEpisodes": {
+    "en": "Movies vs. episodes",
+    "de": "Filme vs. Episoden"
+  },
+  "stats.newVsRewatched": {
+    "en": "New vs. rewatched",
+    "de": "Neu vs. wiedergesehen"
+  },
+  "stats.firstWatch": {
+    "en": "First watch",
+    "de": "Erstmals gesehen"
+  },
+  "stats.rewatch": {
+    "en": "Rewatch",
+    "de": "Wiedergesehen"
+  },
+  "stats.delivery": {
+    "en": "How your streams were delivered",
+    "de": "Wie deine Streams ausgeliefert wurden"
+  },
+  "stats.deliverySubtitle": {
+    "en": "Recorded from your own sessions since {date} — {count} sessions so far.",
+    "de": "Aus deinen eigenen Sitzungen seit {date} erfasst — bisher {count} Sitzungen."
+  },
+  "stats.finishedVsAbandoned": {
+    "en": "Finished vs. abandoned",
+    "de": "Beendet vs. abgebrochen"
+  },
+  "stats.finished": {
+    "en": "Finished",
+    "de": "Beendet"
+  },
+  "stats.abandoned": {
+    "en": "Abandoned",
+    "de": "Abgebrochen"
+  },
+  "stats.finishedFrom": {
+    "en": "Counted as finished from {percent}% of the runtime.",
+    "de": "Ab {percent} % der Laufzeit als beendet gewertet."
+  },
+  "stats.playbackMethod": {
+    "en": "Playback method",
+    "de": "Wiedergabemethode"
+  },
+  "stats.transcodeReasons": {
+    "en": "Why content was transcoded",
+    "de": "Warum transkodiert wurde"
+  },
+  "stats.yourClients": {
+    "en": "Your clients",
+    "de": "Deine Clients"
+  },
+  "stats.yourDevices": {
+    "en": "Your devices",
+    "de": "Deine Geräte"
+  },
+  "stats.resolutions": {
+    "en": "Resolutions",
+    "de": "Auflösungen"
+  },
+  "stats.videoCodecs": {
+    "en": "Video codecs",
+    "de": "Video-Codecs"
+  },
+  "stats.bitrate": {
+    "en": "Bitrate distribution",
+    "de": "Bitratenverteilung"
+  },
+  "suggestions.subtitle": {
+    "en": "Based on the genres, decades and formats you already watch. Refreshed daily.",
+    "de": "Basierend auf den Genres, Jahrzehnten und Formaten, die du bereits siehst. Täglich aktualisiert."
+  },
+  "suggestions.empty": {
+    "en": "Watch a few titles first — suggestions need some history to work with.",
+    "de": "Sieh zuerst ein paar Titel — Vorschläge brauchen etwas Verlauf als Grundlage."
+  },
+  "suggestions.tmdb": {
+    "en": "Similar titles from TMDB",
+    "de": "Ähnliche Titel von TMDB"
+  },
+  "wrapped.title": {
+    "en": "Your Year in Review",
+    "de": "Dein Jahresrückblick"
+  },
+  "wrapped.subtitle": {
+    "en": "Everything you watched, counted.",
+    "de": "Alles, was du gesehen hast, gezählt."
+  },
+  "wrapped.nothing": {
+    "en": "Nothing was watched in {year}.",
+    "de": "In {year} wurde nichts gesehen."
+  },
+  "wrapped.watchTimeInfo": {
+    "en": "Sum of the runtime of everything you played this year. Opens the statistics.",
+    "de": "Summe der Laufzeit von allem, was du dieses Jahr abgespielt hast. Öffnet die Statistiken."
+  },
+  "wrapped.titles": {
+    "en": "Titles",
+    "de": "Titel"
+  },
+  "wrapped.titlesInfo": {
+    "en": "Different movies and shows, episodes grouped under their show.",
+    "de": "Verschiedene Filme und Serien, Episoden unter ihrer Serie zusammengefasst."
+  },
+  "wrapped.longestStreakHint": {
+    "en": "longest streak: {count} days",
+    "de": "längste Serie: {count} Tage"
+  },
+  "wrapped.firstPlay": {
+    "en": "First play of the year",
+    "de": "Erste Wiedergabe des Jahres"
+  },
+  "wrapped.lastPlay": {
+    "en": "Last play of the year",
+    "de": "Letzte Wiedergabe des Jahres"
+  },
+  "wrapped.noPlays": {
+    "en": "No plays.",
+    "de": "Keine Wiedergaben."
+  },
+  "wrapped.genreFan": {
+    "en": "You are a {genre} fan — {share}% of everything you watched",
+    "de": "Du bist ein {genre}-Fan — {share} % von allem, was du gesehen hast"
+  },
+  "wrapped.mostPlays": {
+    "en": "Most plays of the year",
+    "de": "Meiste Wiedergaben des Jahres"
+  },
+  "wrapped.yearInDays": {
+    "en": "Your year in days",
+    "de": "Dein Jahr in Tagen"
+  },
+  "wrapped.yearInDaysHint": {
+    "en": "{count} days with activity. Tap a frame to see what ran that day.",
+    "de": "{count} Tage mit Aktivität. Tippe ein Feld an, um zu sehen, was an dem Tag lief."
+  },
+  "wrapped.swipe": {
+    "en": "Swipe the strip sideways.",
+    "de": "Streifen seitwärts wischen."
+  },
+  "wrapped.weekdayCrown": {
+    "en": "{weekday} took the crown",
+    "de": "{weekday} hat die Krone geholt"
+  },
+  "wrapped.whereYouWatched": {
+    "en": "Where you watched",
+    "de": "Wo du gesehen hast"
+  },
+  "libraries.eyebrow": {
+    "en": "Server",
+    "de": "Server"
+  },
+  "libraries.subtitle": {
+    "en": "What is on the server, what arrived recently, and what is still sitting there unwatched.",
+    "de": "Was auf dem Server liegt, was zuletzt dazugekommen ist und was noch ungesehen dort liegt."
+  },
+  "libraries.none": {
+    "en": "The media server did not report any libraries.",
+    "de": "Der Media-Server hat keine Bibliotheken gemeldet."
+  },
+  "libraries.moviesLower": {
+    "en": "movies",
+    "de": "Filme"
+  },
+  "libraries.sectionInfo": {
+    "en": "Opens this library's own usage figures.",
+    "de": "Öffnet die Nutzungszahlen dieser Bibliothek."
+  },
+  "libraries.recentlyAdded": {
+    "en": "Recently added",
+    "de": "Zuletzt hinzugefügt"
+  },
+  "libraries.nothingNew": {
+    "en": "Nothing new.",
+    "de": "Nichts Neues."
+  },
+  "libraries.neverStarted": {
+    "en": "Never started",
+    "de": "Nie gestartet"
+  },
+  "libraries.neverStartedHint": {
+    "en": "{count} of {total} titles have no play in your history.",
+    "de": "{count} von {total} Titeln haben keine Wiedergabe in deinem Verlauf."
+  },
+  "library.items": {
+    "en": "{count} items",
+    "de": "{count} Einträge"
+  },
+  "library.serverWide": {
+    "en": "server-wide figures",
+    "de": "serverweite Zahlen"
+  },
+  "library.yoursOnly": {
+    "en": "your plays only",
+    "de": "nur deine Wiedergaben"
+  },
+  "library.last24h": {
+    "en": "Last 24 hours",
+    "de": "Letzte 24 Stunden"
+  },
+  "library.last7d": {
+    "en": "Last 7 days",
+    "de": "Letzte 7 Tage"
+  },
+  "library.last30d": {
+    "en": "Last 30 days",
+    "de": "Letzte 30 Tage"
+  },
+  "library.allTimeInfo": {
+    "en": "Plays counted from the media server's own history, so this reaches back before Watcharr was installed.",
+    "de": "Wiedergaben aus dem Verlauf des Media-Servers selbst, reicht also bis vor die Installation von Watcharr zurück."
+  },
+  "library.lastPlayed": {
+    "en": "Last played: {title}",
+    "de": "Zuletzt gespielt: {title}"
+  },
+  "library.mostPlayed": {
+    "en": "Most played",
+    "de": "Meistgesehen"
+  },
+  "library.yourPlays": {
+    "en": "Your plays",
+    "de": "Deine Wiedergaben"
+  },
+  "library.mediaInfo": {
+    "en": "Media info",
+    "de": "Medieninformationen"
+  },
+  "library.mediaInfoHint": {
+    "en": "What the media server reports about the files themselves. Blank cells are fields this backend does not report — Plex has no file for a series, only for its episodes.",
+    "de": "Was der Media-Server über die Dateien selbst meldet. Leere Zellen sind Felder, die dieses Backend nicht liefert — Plex hat keine Datei für eine Serie, nur für deren Episoden."
+  },
+  "library.resolution": {
+    "en": "Resolution",
+    "de": "Auflösung"
+  },
+  "library.codec": {
+    "en": "Codec",
+    "de": "Codec"
+  },
+  "library.size": {
+    "en": "Size",
+    "de": "Größe"
+  },
+  "library.lastPlayedCol": {
+    "en": "Last played",
+    "de": "Zuletzt gespielt"
+  },
+  "library.noItems": {
+    "en": "The media server did not report any items for this library.",
+    "de": "Der Media-Server hat für diese Bibliothek keine Einträge gemeldet."
+  },
+  "library.showingLimited": {
+    "en": "Showing {shown} of {total}. The CSV export has all of them.",
+    "de": "Es werden {shown} von {total} angezeigt. Der CSV-Export enthält alle."
+  },
+  "library.nothingNew": {
+    "en": "Nothing new in this library.",
+    "de": "Nichts Neues in dieser Bibliothek."
+  },
+  "profile.eyebrow": {
+    "en": "Account",
+    "de": "Konto"
+  },
+  "profile.signedInThrough": {
+    "en": "Signed in through {server}",
+    "de": "Angemeldet über {server}"
+  },
+  "profile.globalAdminSuffix": {
+    "en": "global administrator",
+    "de": "globaler Administrator"
+  },
+  "profile.tabAccount": {
+    "en": "Account",
+    "de": "Konto"
+  },
+  "profile.tabSessions": {
+    "en": "Sessions",
+    "de": "Sitzungen"
+  },
+  "profile.sessionsSubtitle": {
+    "en": "Every device currently signed in as you. Signing one out is immediate.",
+    "de": "Jedes Gerät, das gerade als du angemeldet ist. Eine Abmeldung wirkt sofort."
+  },
+  "profile.signedInCol": {
+    "en": "Signed in",
+    "de": "Angemeldet"
+  },
+  "profile.expiresCol": {
+    "en": "Expires",
+    "de": "Läuft ab"
+  },
+  "profile.languageHint": {
+    "en": "Stored with your account, so it is the same on every device. The deployment default is {default}.",
+    "de": "Wird mit deinem Konto gespeichert und ist damit auf jedem Gerät gleich. Der Standard dieser Installation ist {default}."
+  },
+  "profile.nlSchedule": {
+    "en": "Sent every {weekday} at {hour}:00, covering the last {days} days.",
+    "de": "Wird jeden {weekday} um {hour}:00 Uhr verschickt und deckt die letzten {days} Tage ab."
+  },
+  "profile.nlOff": {
+    "en": "The newsletter is currently switched off by the administrator, but you can still subscribe for when it is turned on.",
+    "de": "Der Newsletter ist derzeit vom Administrator abgeschaltet, du kannst dich aber schon für später eintragen."
+  },
+  "profile.nlHeading": {
+    "en": "Recently added newsletter",
+    "de": "Newsletter „Zuletzt hinzugefügt“"
+  },
+  "profile.nlEmail": {
+    "en": "Email address",
+    "de": "E-Mail-Adresse"
+  },
+  "profile.nlSubscribe": {
+    "en": "Subscribe",
+    "de": "Abonnieren"
+  },
+  "profile.nlUpdate": {
+    "en": "Update address",
+    "de": "Adresse ändern"
+  },
+  "profile.nlUnsubscribe": {
+    "en": "Unsubscribe",
+    "de": "Abbestellen"
+  },
+  "profile.nlSubscribed": {
+    "en": "Subscribed.",
+    "de": "Abonniert."
+  },
+  "profile.nlUnsubscribed": {
+    "en": "Unsubscribed.",
+    "de": "Abbestellt."
+  },
+  "profile.nlDeliveredTo": {
+    "en": "Currently delivered to {email}.",
+    "de": "Wird derzeit an {email} zugestellt."
+  },
+  "activity.nothingPlayingMine": {
+    "en": "Nothing is playing. Start something on your server.",
+    "de": "Es läuft nichts. Starte etwas auf deinem Server."
+  }
+}

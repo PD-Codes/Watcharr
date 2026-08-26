@@ -6,11 +6,13 @@ import Beam from '@/components/Beam';
 import AutoRefresh from '@/components/AutoRefresh';
 import { liveSessionFilter, reportSyncError, syncActivity } from '@/server/sync';
 import { requireUser } from '@/server/session';
+import { getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ActivityPage() {
   const session = await requireUser();
+  const t = await getT();
   await syncActivity().catch(reportSyncError('activity sync'));
 
   const rows = await db
@@ -21,13 +23,13 @@ export default async function ActivityPage() {
   return (
     <>
       <AutoRefresh seconds={10} />
-      <p className="eyebrow">Live</p>
-      <h1>Watch Activity</h1>
-      <p className="subtitle">Your current playback sessions, refreshed every 10 seconds.</p>
+      <p className="eyebrow">{t('activity.eyebrow')}</p>
+      <h1>{t('activity.title')}</h1>
+      <p className="subtitle">{t('activity.subtitle')}</p>
       <Beam
         session={rows[0] ?? null}
         serverSlug={session.server.slug}
-        emptyLabel="Nothing is playing. Start something on your server."
+        emptyLabel={t('activity.nothingPlayingMine')}
       />
 
       {rows.length > 1 && (

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useT } from '@/i18n/client';
 
 /** The subscribe/unsubscribe control. Always the user's own — there is no id to pass. */
 export default function NewsletterSubscription({
@@ -15,6 +16,7 @@ export default function NewsletterSubscription({
   scheduleHint: string;
 }) {
   const router = useRouter();
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,10 +33,10 @@ export default function NewsletterSubscription({
     setBusy(false);
     const body = (await res.json()) as { ok?: boolean; error?: string };
     if (!res.ok || body.error) {
-      setError(body.error ?? 'Something went wrong');
+      setError(body.error ?? t('error.generic'));
       return;
     }
-    setMessage(method === 'POST' ? 'Subscribed.' : 'Unsubscribed.');
+    setMessage(method === 'POST' ? t('profile.nlSubscribed') : t('profile.nlUnsubscribed'));
     router.refresh();
   }
 
@@ -47,13 +49,13 @@ export default function NewsletterSubscription({
         void call('POST', String(new FormData(event.currentTarget).get('email') ?? ''));
       }}
     >
-      <p className="stat-label">Recently added newsletter</p>
+      <p className="stat-label">{t('profile.nlHeading')}</p>
       <p className="muted" style={{ marginTop: 0 }}>
         {scheduleHint}
       </p>
 
       <label>
-        Email address
+        {t('profile.nlEmail')}
         <input
           name="email"
           type="email"
@@ -64,7 +66,9 @@ export default function NewsletterSubscription({
       </label>
 
       <div className="row" style={{ gap: 10, marginTop: 12 }}>
-        <button disabled={busy}>{subscribedEmail ? 'Update address' : 'Subscribe'}</button>
+        <button disabled={busy}>
+          {subscribedEmail ? t('profile.nlUpdate') : t('profile.nlSubscribe')}
+        </button>
         {subscribedEmail && (
           <button
             type="button"
@@ -72,14 +76,14 @@ export default function NewsletterSubscription({
             disabled={busy}
             onClick={() => void call('DELETE')}
           >
-            Unsubscribe
+            {t('profile.nlUnsubscribe')}
           </button>
         )}
       </div>
 
       {subscribedEmail && (
         <p className="muted" style={{ marginTop: 12 }}>
-          Currently delivered to {subscribedEmail}.
+          {t('profile.nlDeliveredTo', { email: subscribedEmail })}
         </p>
       )}
       {message && <p className="muted">{message}</p>}

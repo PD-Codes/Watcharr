@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useT } from '@/i18n/client';
 
 /**
  * Grants or revokes the deployment-wide admin role. Only rendered for a global admin; the
@@ -20,12 +21,13 @@ export default function RoleToggle({
   self: boolean;
 }) {
   const router = useRouter();
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function toggle() {
-    if (globalAdmin && self && !window.confirm('Give up your own global admin rights?')) return;
-    if (!globalAdmin && !window.confirm(`Make ${username} a global admin of every server?`)) return;
+    if (globalAdmin && self && !window.confirm(t('users.confirmDemoteSelf'))) return;
+    if (!globalAdmin && !window.confirm(t('users.confirmPromote', { username }))) return;
 
     setBusy(true);
     setError(null);
@@ -36,13 +38,13 @@ export default function RoleToggle({
     });
     setBusy(false);
     if (res.ok) router.refresh();
-    else setError(((await res.json()) as { error?: string }).error ?? 'Could not change the role');
+    else setError(((await res.json()) as { error?: string }).error ?? t('users.roleFailed'));
   }
 
   return (
     <>
       <button type="button" className="outlined" onClick={toggle} disabled={busy}>
-        {globalAdmin ? 'Revoke global' : 'Make global'}
+        {globalAdmin ? t('users.revokeGlobal') : t('users.makeGlobal')}
       </button>
       {error && (
         <p className="muted" role="alert" style={{ margin: '6px 0 0' }}>

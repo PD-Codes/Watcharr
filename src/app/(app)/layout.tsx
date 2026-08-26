@@ -6,7 +6,7 @@ import { getSettings, isConfigured } from '@/server/config';
 import { isEnabled } from '@/server/features';
 import { liveSessionFilter, reportSyncError, syncActivity } from '@/server/sync';
 import { getSession, isAdmin } from '@/server/session';
-import { t } from '@/i18n';
+import { getT } from '@/i18n/server';
 import NavLink from './NavLink';
 import SignOutButton from './SignOutButton';
 import AppBar from './AppBar';
@@ -23,6 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await getSession();
   if (!session) redirect('/login');
 
+  const t = await getT();
   const settings = await getSettings();
   const suggestionsEnabled = isEnabled(settings.features, 'suggestions');
   const serverStatsEnabled = isEnabled(settings.features, 'serverWideStats');
@@ -37,9 +38,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .where(liveSessionFilter());
   const liveCount = Number(live?.count ?? 0);
 
-  const nav = userNav(suggestionsEnabled);
+  const nav = userNav(t, suggestionsEnabled);
   const adminItems = isAdmin(session.user)
-    ? adminNav(serverStatsEnabled, session.user.globalAdmin)
+    ? adminNav(t, serverStatsEnabled, session.user.globalAdmin)
     : [];
 
   return (
@@ -49,7 +50,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="wordmark">
           <span
             className={`bulb ${liveCount > 0 ? 'on' : ''}`}
-            data-tip={liveCount > 0 ? `${liveCount} playing` : 'Idle'}
+            data-tip={liveCount > 0 ? t('shell.playing', { count: liveCount }) : t('shell.idle')}
           />
           <span>{t('app.name')}</span>
         </div>
@@ -107,7 +108,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main className="main">{children}</main>
       </div>
 
-      <BottomNav items={bottomNav(suggestionsEnabled)} liveCount={liveCount} />
+      <BottomNav items={bottomNav(t, suggestionsEnabled)} liveCount={liveCount} />
       <CommandPalette />
       <Tooltip />
     </div>

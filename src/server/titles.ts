@@ -17,7 +17,13 @@ export interface TitleDetail {
   devices: LabelledValue[];
   viewers: LabelledValue[];
   daily: LabelledValue[];
-  recent: { title: string; watchedAt: Date; durationMs: number; deviceName: string | null }[];
+  recent: {
+    itemId: string;
+    title: string;
+    watchedAt: Date;
+    durationMs: number;
+    deviceName: string | null;
+  }[];
   /** Distinct items under this label — the episode list for a show, one row for a movie. */
   episodes: { itemId: string; title: string; plays: number; watchtimeMs: number; lastWatched: Date }[];
 }
@@ -97,12 +103,13 @@ export async function getTitleDetail(label: string, scope: Scope): Promise<Title
   `);
 
   const recent = await db.all<{
+    item_id: string;
     title: string;
     watched_at: number;
     duration_ms: number;
     device_name: string | null;
   }>(sql`
-    SELECT title, watched_at, duration_ms, device_name
+    SELECT item_id, title, watched_at, duration_ms, device_name
     FROM watch_history
     WHERE ${where}
     ORDER BY watched_at DESC
@@ -143,6 +150,7 @@ export async function getTitleDetail(label: string, scope: Scope): Promise<Title
     viewers: viewers.map((v) => ({ label: v.label, value: Number(v.minutes) })),
     daily: daily.map((d) => ({ label: d.day, value: Number(d.minutes) })),
     recent: recent.map((r) => ({
+      itemId: r.item_id,
       title: r.title,
       watchedAt: new Date(Number(r.watched_at)),
       durationMs: Number(r.duration_ms),
@@ -155,6 +163,129 @@ export async function getTitleDetail(label: string, scope: Scope): Promise<Title
       watchtimeMs: Number(e.watchtime),
       lastWatched: new Date(Number(e.last_watched)),
     })),
+  };
+}
+
+/**
+ * The same view built from playback_sessions instead of the history, for an item the
+ * history has never heard of. Every history aggregate comes back at zero, because that is
+ * the truth: the media server has not counted this as played yet.
+ */
+async function liveItemDetail(itemId: string, scope: Scope): Promise<ItemDetail | null> {
+  const scoped = scope.userId === null ? sql`1 = 1` : sql`user_id = ${scope.userId}`;
+  const [row] = await db.all<{
+    title: string;
+    show_label: string | null;
+    media_type: string;
+  }>(sql`
+    SELECT title, grandparent_title AS show_label, media_type
+    FROM playback_sessions
+    WHERE item_id = ${itemId} AND ${scoped}
+    ORDER BY started_at DESC
+    LIMIT 1
+  `);
+  if (!row) return null;
+
+  // Devices come from the sessions here, since that is the only record there is.
+  const devices = await db.all<{ label: string; minutes: number }>(sql`
+    SELECT coalesce(device_name, client_name, 'Unknown') AS label,
+           sum(progress_ms) / 60000 AS minutes
+    FROM playback_sessions
+    WHERE item_id = ${itemId} AND ${scoped}
+    GROUP BY label
+    ORDER BY minutes DESC
+  `);
+
+  const viewers = await db.all<{ label: string; minutes: number }>(sql`
+    SELECT u.username AS label, sum(p.progress_ms) / 60000 AS minutes
+    FROM playback_sessions p
+    JOIN users u ON u.id = p.user_id
+    WHERE p.item_id = ${itemId}
+    GROUP BY u.id
+    ORDER BY minutes DESC
+  `);
+
+  return {
+    itemId,
+    title: row.title,
+    showLabel: row.show_label,
+    mediaType: row.media_type,
+    year: null,
+    genres: [],
+    plays: 0,
+    watchtimeMs: 0,
+    firstWatched: null,
+    lastWatched: null,
+    devices: devices.map((d) => ({ label: d.label, value: Number(d.minutes) })),
+    viewers: viewers.map((v) => ({ label: v.label, value: Number(v.minutes) })),
+    plays_list: [],
+  };
+}
+
+export interface ItemMedia {
+  fileSizeBytes?: number;
+  videoCodec?: string;
+  audioCodec?: string;
+  container?: string;
+  height?: number;
+  bitrateKbps?: number;
+  /** Where the numbers came from, since the two sources answer slightly different questions. */
+  source: 'library' | 'session';
+}
+
+/**
+ * What the file behind one item looks like. Two sources, because neither alone covers it:
+ *
+ * - The library listing carries the file size, but only for movies and series — an episode
+ *   is not in it, since getLibrary() asks for Movie and Series only.
+ * - A past playback session carries the source codec, resolution and bitrate for anything
+ *   that was ever played, episodes included, but never a file size.
+ *
+ * The library wins where it has an entry; otherwise the newest session fills in. Null when
+ * neither knows the item, which is the normal case for something never played on a backend
+ * that does not list it.
+ */
+export async function getItemMedia(itemId: string, serverId: number): Promise<ItemMedia | null> {
+  const { getLibrary } = await import('./library');
+  const entry = await getLibrary(serverId)
+    .then((items) => items.find((item) => item.itemId === itemId))
+    .catch(() => undefined);
+
+  if (entry && (entry.fileSizeBytes || entry.videoCodec || entry.height)) {
+    return {
+      fileSizeBytes: entry.fileSizeBytes,
+      videoCodec: entry.videoCodec,
+      height: entry.height,
+      source: 'library',
+    };
+  }
+
+  const [row] = await db.all<{
+    video: string | null;
+    audio: string | null;
+    container: string | null;
+    height: number | null;
+    bitrate: number | null;
+  }>(sql`
+    SELECT coalesce(source_video_codec, video_codec) AS video,
+           coalesce(source_audio_codec, audio_codec) AS audio,
+           coalesce(source_container, container) AS container,
+           coalesce(source_height, height) AS height,
+           coalesce(source_bitrate_kbps, bitrate_kbps) AS bitrate
+    FROM playback_sessions
+    WHERE item_id = ${itemId}
+    ORDER BY started_at DESC
+    LIMIT 1
+  `);
+  if (!row || !(row.video || row.height || row.bitrate)) return null;
+
+  return {
+    videoCodec: row.video ?? undefined,
+    audioCodec: row.audio ?? undefined,
+    container: row.container ?? undefined,
+    height: row.height ?? undefined,
+    bitrateKbps: row.bitrate ?? undefined,
+    source: 'session',
   };
 }
 
@@ -200,7 +331,11 @@ export async function getItemDetail(itemId: string, scope: Scope): Promise<ItemD
     FROM watch_history
     WHERE ${where}
   `);
-  if (!summary || Number(summary.plays) === 0) return null;
+  // Nothing in the history does not mean the item is unknown. A stream running right now
+  // has a playback_sessions row and no history row at all — the history is the media
+  // server's own played list and only catches up afterwards — so the episode linked from
+  // Now Playing used to 404 on the way in.
+  if (!summary || Number(summary.plays) === 0) return liveItemDetail(itemId, scope);
 
   const genres = await db.all<{ genre: string }>(sql`
     SELECT DISTINCT genre.value AS genre
