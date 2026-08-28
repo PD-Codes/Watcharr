@@ -101,8 +101,8 @@ export default async function ActivityTable({
             {showUser && <th scope="col">{t('common.user')}</th>}
             <th scope="col">{t('common.title')}</th>
             <th scope="col">{t('activity.progress')}</th>
-            <th scope="col">{t('activity.client')}</th>
-            <th scope="col">{t('activity.stream')}</th>
+            <th scope="col" className="secondary-col">{t('activity.client')}</th>
+            <th scope="col" className="secondary-col">{t('activity.stream')}</th>
             {canTerminate && <th scope="col">{t('activity.action')}</th>}
           </tr>
         </thead>
@@ -137,7 +137,7 @@ export default async function ActivityTable({
                 <br />
                 <span className={`badge ${row.state === 'playing' ? 'live' : ''}`}>{row.state}</span>
               </td>
-              <td>
+              <td className="secondary-col">
                 {row.clientName ?? '—'}
                 <br />
                 <span className="muted">{row.deviceName ?? ''}</span>
@@ -155,7 +155,7 @@ export default async function ActivityTable({
                   </>
                 )}
               </td>
-              <td data-tip={
+              <td className="secondary-col" data-tip={
                   row.transcodeReason
                     ? t('stream.reason', { reason: row.transcodeReason })
                     : t('stream.delivered')

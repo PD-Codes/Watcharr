@@ -502,6 +502,15 @@ async function main() {
       lastSeenAt: new Date(),
       progressAt: new Date(Date.now() - 10 * 60_000),
     },
+    {
+      // Paused days ago and still reported by the server: an abandoned tab, not a stream.
+      ...base,
+      sessionKey: 'abandoned',
+      state: 'paused',
+      progressMs: 1000,
+      lastSeenAt: new Date(),
+      progressAt: new Date(Date.now() - 3 * 24 * 60 * 60_000),
+    },
   ]);
   const liveKeys = (await db.select().from(playbackSessions).where(liveSessionFilter())).map(
     (row) => row.sessionKey,
@@ -516,6 +525,165 @@ async function main() {
   assert.throws(() => decryptSecret(stored.slice(0, -4) + 'AAAA'), 'tampering must be detected');
   assert.equal(decryptSecret('legacy-plain-value'), 'legacy-plain-value');
   console.log('ok - token encryption');
+
+  // Three writers now share watch_history and describe the same evening differently. The
+  // unique index only catches an identical timestamp, so this is the check that one film
+  // watched once stays one row — and that the metadata still lands on it.
+  {
+    const { recordPlays } = await import('../server/plays');
+    const { watchHistory } = await import('../db/schema');
+    const [viewer] = await db
+      .insert(users)
+      .values({ serverId: 1, serverUserId: 'dedupe-1', username: 'dedupe' })
+      .returning();
+    const at = new Date('2024-05-01T20:00:00Z');
+
+    const first = await recordPlays(
+      viewer.id,
+      [{ itemId: 'film-1', title: 'Arrival', mediaType: 'movie', watchedAt: at, durationMs: 6_000_000 }],
+      'session',
+    );
+    assert.equal(first, 1, 'a finished stream is recorded');
+
+    // The media server marks the same film played a few minutes later, with the genres a
+    // session never carries.
+    const second = await recordPlays(
+      viewer.id,
+      [
+        {
+          itemId: 'film-1',
+          title: 'Arrival',
+          mediaType: 'movie',
+          year: 2016,
+          genres: ['Sci-Fi'],
+          watchedAt: new Date(at.getTime() + 7 * 60_000),
+          durationMs: 6_600_000,
+        },
+      ],
+      'server',
+    );
+    assert.equal(second, 0, 'the same play from the other writer is not a second row');
+
+    const rows = await db
+      .select()
+      .from(watchHistory)
+      .where(eq(watchHistory.userId, viewer.id));
+    assert.equal(rows.length, 1, 'one play, one row');
+    assert.deepEqual(rows[0].genres, ['Sci-Fi'], 'the later metadata fills the session row in');
+    assert.equal(rows[0].year, 2016);
+
+    // A week later is a rewatch, not the same evening.
+    const third = await recordPlays(
+      viewer.id,
+      [
+        {
+          itemId: 'film-1',
+          title: 'Arrival',
+          mediaType: 'movie',
+          watchedAt: new Date(at.getTime() + 7 * 86_400_000),
+          durationMs: 6_000_000,
+        },
+      ],
+      'server',
+    );
+    assert.equal(third, 1, 'a rewatch is its own play');
+    console.log('ok - one play stays one row across all three writers');
+  }
+
+  // Retention deletes rows people cannot get back, so the check is that it deletes exactly
+  // what is past its cutoff and leaves a live stream alone whatever its age.
+  {
+    const { prune } = await import('../server/retention');
+    const { updateSettings } = await import('../server/config');
+    const { loginHistory, playbackSessions: sessions } = await import('../db/schema');
+    const old = new Date(Date.now() - 100 * 86_400_000);
+
+    await db.insert(loginHistory).values([
+      { username: 'old', success: true, createdAt: old },
+      { username: 'recent', success: true, createdAt: new Date() },
+    ]);
+    await db.insert(sessions).values({
+      sessionKey: 'ancient-but-live',
+      itemId: 'x',
+      title: 'Still going',
+      mediaType: 'movie',
+      state: 'playing',
+      startedAt: old,
+      lastSeenAt: new Date(),
+      progressAt: new Date(),
+    });
+
+    await updateSettings({ retentionLogDays: 30, retentionSessionDays: 30 });
+    await prune();
+
+    const logins = (await db.select().from(loginHistory)).map((row) => row.username);
+    assert.ok(!logins.includes('old'), 'the row past the cutoff goes');
+    assert.ok(logins.includes('recent'), 'a row inside the window stays');
+    const stillThere = await db.select().from(sessions).where(eq(sessions.sessionKey, 'ancient-but-live'));
+    assert.equal(stillThere.length, 1, 'a running stream is never pruned, however old');
+    await updateSettings({ retentionLogDays: null, retentionSessionDays: null });
+    console.log('ok - retention deletes past the cutoff and nothing that is still running');
+  }
+
+  // The import reads somebody else's schema, which is the part that cannot be checked by
+  // reading this repository — so it runs against a database shaped like Tautulli's.
+  {
+    const { importFromTautulli } = await import('../server/tautulli');
+    const source = join(dir, 'tautulli.db');
+    const tautulli = new Database(source);
+    tautulli.exec(`
+      CREATE TABLE session_history (
+        id INTEGER PRIMARY KEY, started INTEGER, stopped INTEGER, user TEXT,
+        rating_key TEXT, media_type TEXT, platform TEXT, player TEXT, ip_address TEXT);
+      CREATE TABLE session_history_metadata (
+        id INTEGER PRIMARY KEY, title TEXT, grandparent_title TEXT, year INTEGER,
+        genres TEXT, duration INTEGER);
+      CREATE TABLE session_history_media_info (
+        id INTEGER PRIMARY KEY, transcode_decision TEXT, container TEXT, video_codec TEXT,
+        audio_codec TEXT, height INTEGER, bitrate INTEGER, transcode_container TEXT,
+        transcode_video_codec TEXT, transcode_audio_codec TEXT, transcode_height INTEGER);
+    `);
+    const started = Math.floor(Date.now() / 1000) - 3600;
+    tautulli
+      .prepare('INSERT INTO session_history VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(started, started + 5400, 'importer', 'rk-9', 'movie', 'Chrome', 'Desktop', '10.0.0.5');
+    // A second row for a user this deployment does not know, which must be reported rather
+    // than filed under somebody else.
+    tautulli
+      .prepare('INSERT INTO session_history VALUES (2, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(started, started + 60, 'a-stranger', 'rk-8', 'movie', 'Chrome', 'Desktop', '10.0.0.6');
+    tautulli
+      .prepare('INSERT INTO session_history_metadata VALUES (1, ?, NULL, ?, ?, ?)')
+      .run('Dune', 2021, 'Sci-Fi;Adventure', 9_000_000);
+    tautulli
+      .prepare('INSERT INTO session_history_media_info VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run('transcode', 'mkv', 'hevc', 'truehd', 2160, 40_000, 'mp4', 'h264', 'aac', 1080);
+    tautulli.close();
+
+    await db
+      .insert(users)
+      .values({ serverId: 1, serverUserId: 'imp-1', username: 'importer' });
+
+    const preview = await importFromTautulli(source, 1, { dryRun: true });
+    assert.equal(preview.plays, 1, 'only rows belonging to a known account are imported');
+    assert.deepEqual(preview.unmatchedUsers, ['a-stranger'], 'unknown names are reported, not guessed');
+
+    const result = await importFromTautulli(source, 1);
+    assert.equal(result.plays, 1);
+    assert.equal(result.streams, 1);
+
+    const { watchHistory: history } = await import('../db/schema');
+    const [play] = await db.select().from(history).where(eq(history.itemId, 'rk-9'));
+    assert.equal(play.title, 'Dune');
+    assert.deepEqual(play.genres, ['Sci-Fi', 'Adventure'], 'a semicolon list is still a list');
+    assert.equal(play.durationMs, 5_400_000, 'watch time is what was watched, not the runtime');
+    assert.equal(play.source, 'tautulli');
+
+    // Running it twice must not double anything — the same guarantee as the two live writers.
+    const again = await importFromTautulli(source, 1);
+    assert.equal(again.plays, 0, 'a second import adds nothing');
+    console.log('ok - a Tautulli database imports once and only once');
+  }
 
   // WAL files stay locked on Windows until the handle is closed.
   closeDb();

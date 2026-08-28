@@ -42,6 +42,14 @@ export const appSettings = sqliteTable('app_settings', {
   // and that choice lives in the database rather than a cookie so it follows the account
   // to every browser and device.
   defaultLocale: text('default_locale').notNull().default('en-US'),
+  // IANA zone every date aggregate is bucketed in. Null follows the container's own TZ,
+  // which is what the queries did before this existed. Applied by setting process.env.TZ
+  // once at connect time rather than by rewriting every strftime() call — SQLite's
+  // 'localtime' modifier reads the same zone the process does. See db/index.ts.
+  timezone: text('timezone'),
+  // Read-only HTTP API for dashboards (Homepage, Grafana, a shell script). Encrypted like
+  // every other secret: it grants deployment-wide read access to activity and statistics.
+  apiKey: text('api_key'),
   features: text('features', { mode: 'json' })
     .$type<Record<string, boolean>>()
     .notNull()
@@ -86,6 +94,15 @@ export const appSettings = sqliteTable('app_settings', {
   backupIntervalHours: integer('backup_interval_hours').notNull().default(24),
   backupRetention: integer('backup_retention').notNull().default(7),
   backupLastAt: integer('backup_last_at', { mode: 'timestamp_ms' }),
+  // Data retention, in days. Null means "keep forever", which is what every install did
+  // before these columns existed — a fresh deployment must not start deleting on its own.
+  // Playback sessions and the audit logs grow with every poll and every login; watch
+  // history is the one people would actually miss, so it has its own knob and stays off
+  // unless someone deliberately turns it on. See server/retention.ts.
+  retentionSessionDays: integer('retention_session_days'),
+  retentionLogDays: integer('retention_log_days'),
+  retentionHistoryDays: integer('retention_history_days'),
+  retentionLastAt: integer('retention_last_at', { mode: 'timestamp_ms' }),
   // Recently-added newsletter. Users subscribe themselves (newsletter_subscriptions); a
   // global admin owns the schedule, the time frame and which libraries it covers.
   newsletterEnabled: integer('newsletter_enabled', { mode: 'boolean' }).notNull().default(false),
@@ -122,6 +139,17 @@ export const notificationChannels = sqliteTable('notification_channels', {
   // a media server token), not a plain json column. See server/notifications.ts.
   config: text('config').notNull().default(''),
   events: text('events', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  // Narrows an event further than its type: only these users, only these media types,
+  // only while transcoding. The event filter above answers "what happened"; this answers
+  // "does this destination care". A Discord channel on a twenty-user server is unusable
+  // without it. Shape and matching live in server/features.ts::matchesConditions().
+  conditions: text('conditions', { mode: 'json' })
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default({}),
+  // Optional message template with {placeholders}. Empty falls back to the built-in
+  // translated sentence, which is what every channel used before.
+  template: text('template').notNull().default(''),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(now),
 });
@@ -216,6 +244,11 @@ export const users = sqliteTable(
     // Null means "follow the deployment default". Stored here rather than in a cookie so
     // the same account sees the same language on every device.
     locale: text('locale'),
+    // Personal notifications: the address this user wants events mailed to (null = none)
+    // and which events. Kept on the user rather than in notification_channels, which is
+    // the admin's deployment-wide fan-out — this one is owned by the person themselves.
+    notifyEmail: text('notify_email'),
+    notifyEvents: text('notify_events', { mode: 'json' }).$type<string[]>().notNull().default([]),
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(now),
   },
@@ -277,6 +310,11 @@ export const watchHistory = sqliteTable(
     watchedAt: integer('watched_at', { mode: 'timestamp_ms' }).notNull(),
     durationMs: integer('duration_ms').notNull().default(0),
     deviceName: text('device_name'),
+    // Where the row came from: 'server' (the media server's own played list), 'session'
+    // (a playback this app watched end to end) or 'tautulli' (imported). Three writers
+    // share this table, and without a marker an import cannot be told apart from — or
+    // undone without taking out — everything the sync pulled in. See server/plays.ts.
+    source: text('source').notNull().default('server'),
   },
   (t) => ({
     userWatchedIdx: index('watch_history_user_watched_idx').on(t.userId, t.watchedAt),

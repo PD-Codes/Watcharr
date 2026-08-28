@@ -108,6 +108,93 @@ async function main() {
   assert.ok(!html.includes('<img src=x'), 'a title cannot inject markup into the issue');
   assert.ok(html.includes('&lt;img src=x'), 'the title is still shown, escaped');
   console.log('ok - newsletter titles are escaped, not executed');
+
+  // Conditions decide whether somebody's phone lights up at two in the morning, so the
+  // three cases that matter are: unset never filters, a set one that the event can answer
+  // filters, and a set one the event cannot answer lets it through instead of eating it.
+  const { matchesConditions, renderTemplate } = await import('../server/features');
+  assert.ok(matchesConditions({}, { user: 'dome' }), 'no conditions means everything passes');
+  assert.ok(matchesConditions(null, { user: 'dome' }), 'a channel from before conditions existed');
+  assert.ok(matchesConditions({ users: ['dome'] }, { user: 'dome' }));
+  assert.ok(!matchesConditions({ users: ['someone'] }, { user: 'dome' }));
+  assert.ok(!matchesConditions({ mediaTypes: ['movie'] }, { mediaType: 'episode' }));
+  assert.ok(!matchesConditions({ transcodeOnly: true }, { transcoding: false }));
+  assert.ok(
+    matchesConditions({ transcodeOnly: true }, { message: 'bandwidth' }),
+    'an event that reports no transcode flag is not filtered by one',
+  );
+  assert.ok(
+    matchesConditions({ users: ['dome'] }, { message: 'server down' }),
+    'an event with no user is not filtered by a user condition',
+  );
+  assert.ok(matchesConditions({ libraries: ['1:movies'] }, { sectionKey: '1:movies' }));
+  assert.ok(!matchesConditions({ libraries: ['1:movies'] }, { sectionKey: '1:shows' }));
+  assert.ok(
+    !matchesConditions({ libraries: ['1:movies'] }, { sectionKey: '2:movies' }),
+    'a section id is only unique within its server, so the key carries the server',
+  );
+  assert.ok(
+    matchesConditions({ libraries: ['1:movies'] }, { title: 'Just added' }),
+    'an event whose library could not be resolved is not dropped',
+  );
+  console.log('ok - channel conditions filter what they can answer and nothing else');
+
+  assert.equal(
+    renderTemplate('{user} started {title} on {server}', {
+      user: 'dome',
+      title: 'Arcane',
+      server: { label: 'Jellyfin' },
+    }),
+    'dome started Arcane on Jellyfin',
+  );
+  assert.equal(
+    renderTemplate('{user} watched {nonexistent}', { user: 'dome' }),
+    'dome watched',
+    'an unknown placeholder renders as nothing, never as its own name',
+  );
+  console.log('ok - message templates substitute payload fields');
+
+  // The script channel is the only place an admin-supplied string becomes an executable
+  // path, so the rejections are the test — anything that is not a plain file name must not
+  // reach execFile at all.
+  const { sendTest: runChannel } = await import('../server/notifications');
+  for (const command of ['../../bin/sh', '/bin/sh', 'sub/dir.sh', '.env', '']) {
+    const { id } = await createChannel({
+      type: 'script',
+      name: 'script',
+      config: { command },
+      events: [],
+    });
+    const result = await runChannel(id);
+    assert.equal(result.ok, false, `"${command}" must be rejected before it is executed`);
+    assert.match(String(result.error), /plain file name|scripts folder/);
+  }
+  console.log('ok - a script channel only accepts a plain file name');
+
+  // The library filter stands or falls on this lookup: no media server event names a
+  // library, so a film is matched by its own id and an episode by its series title.
+  const { buildSectionIndex, lookupSection } = await import('../server/library');
+  const index = buildSectionIndex(1, [
+    { itemId: 'm-1', title: 'Blade Runner', mediaType: 'movie', genres: [], sectionId: 'movies' },
+    { itemId: 's-1', title: 'Firefly', mediaType: 'show', genres: [], sectionId: 'shows' },
+    // No section id: a backend that does not report one must not land in the index at all.
+    { itemId: 'x-1', title: 'Orphan', mediaType: 'movie', genres: [] },
+  ]);
+
+  assert.equal(lookupSection(index, { itemId: 'm-1', title: 'Blade Runner' }), '1:movies');
+  assert.equal(
+    lookupSection(index, { itemId: 'ep-14', title: 'Serenity', grandparentTitle: 'Firefly' }),
+    '1:shows',
+    'an episode id is unknown, so its series name is what places it',
+  );
+  assert.equal(
+    lookupSection(index, { itemId: 'ep-14', title: 'Firefly', grandparentTitle: null }),
+    '1:shows',
+    'a title-only match still works when there is no series name',
+  );
+  assert.equal(lookupSection(index, { itemId: 'x-1', title: 'Orphan' }), null);
+  assert.equal(lookupSection(index, { itemId: 'never-seen', title: 'Just added' }), null);
+  console.log('ok - an item resolves to its library without asking the media server');
 }
 
 void main();

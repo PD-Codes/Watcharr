@@ -415,10 +415,11 @@ async function main() {
       '/admin/config',
       '/admin/notifications',
       '/admin/newsletter',
+      '/admin/import',
       '/admin/security',
       '/profile',
-      '/profile?tab=newsletter',
       '/profile?tab=sessions',
+      '/notifications',
       '/admin/transcoding',
       '/admin/transcoding?days=all',
       '/admin/clients',
@@ -555,9 +556,15 @@ async function main() {
       [`/admin/users/${userId}?tab=streams`, ['How streams were delivered']],
       [`/admin/users/${userId}?tab=devices`, ['Players', 'Addresses']],
       ['/profile', ['Language']],
+      // The event checkboxes are named after the keys the API reads back, so a rename
+      // there breaks saving silently — the dictionary in the payload makes labels useless.
+      ['/notifications', ['event.playback.start', 'name="email"']],
       // The field name is what the settings API reads, so a rename here breaks the toggle
       // silently — the dictionary in the payload makes label text useless as a check.
       ['/admin/config', ['monitorNewAddressAlert']],
+      // The library condition is only worth anything if the form offers real libraries:
+      // the value is the section key the matcher compares against, not a display name.
+      ['/admin/notifications', ['condition.libraries', 'value="1:lib-movies"', 'Movies']],
       // An episode is reachable from the lists, not only from its show.
       ['/history', ['/item/lib-3']],
       ['/sessions', ['/item/lib-3']],
@@ -671,6 +678,52 @@ async function main() {
       const ok = res.status === 401;
       console.log(`${ok ? 'ok  ' : 'FAIL'} - GET ${path} anonymous → ${res.status}`);
       if (!ok) failures += 1;
+    }
+
+    // The public API is the one part of this app a stranger can reach without a session,
+    // so the checks are: closed until a key exists, closed to the wrong key, and open to
+    // the right one — in that order, because the first two are what protect the third.
+    {
+      for (const path of ['/api/v1/activity', '/api/v1/stats', '/api/v1/history']) {
+        const off = await fetch(base + path);
+        const ok = off.status === 403;
+        console.log(`${ok ? 'ok  ' : 'FAIL'} - GET ${path} without a key configured → ${off.status}`);
+        if (!ok) failures += 1;
+      }
+
+      const issued = await fetch(`${base}/api/admin/apikey`, {
+        method: 'POST',
+        headers: { Cookie: cookie },
+      });
+      const { key } = (await issued.json()) as { key?: string };
+      console.log(`${key ? 'ok  ' : 'FAIL'} - a global admin can issue an API key`);
+      if (!key) failures += 1;
+
+      const wrong = await fetch(`${base}/api/v1/activity`, { headers: { 'x-api-key': 'nope' } });
+      console.log(`${wrong.status === 401 ? 'ok  ' : 'FAIL'} - a wrong key → ${wrong.status}`);
+      if (wrong.status !== 401) failures += 1;
+
+      const activity = await fetch(`${base}/api/v1/activity`, {
+        headers: { 'x-api-key': key ?? '' },
+      });
+      const body = (await activity.json()) as {
+        streamCount?: number;
+        sessions?: { title: string }[];
+      };
+      const served =
+        activity.status === 200 && (body.sessions ?? []).some((s) => s.title === 'Blade Runner');
+      console.log(`${served ? 'ok  ' : 'FAIL'} - /api/v1/activity serves the live session`);
+      if (!served) failures += 1;
+
+      // Also accepted in the query string, because some dashboards can only be given a URL.
+      const viaQuery = await fetch(`${base}/api/v1/stats?apikey=${encodeURIComponent(key ?? '')}`);
+      const stats = (await viaQuery.json()) as { totals?: { plays?: number } };
+      const statsOk = viaQuery.status === 200 && (stats.totals?.plays ?? 0) > 0;
+      console.log(`${statsOk ? 'ok  ' : 'FAIL'} - /api/v1/stats accepts the key as a parameter`);
+      if (!statsOk) failures += 1;
+
+      // Turned off again so nothing after this runs against an open API.
+      await fetch(`${base}/api/admin/apikey`, { method: 'DELETE', headers: { Cookie: cookie } });
     }
 
     const guarded = await fetch(`${base}/admin/users`, { redirect: 'manual' });

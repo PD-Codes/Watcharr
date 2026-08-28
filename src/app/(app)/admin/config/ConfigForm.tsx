@@ -22,8 +22,23 @@ function splice(text: string, token: string, node: React.ReactNode) {
   );
 }
 
+/**
+ * Every zone the runtime knows, so the list cannot drift from what the server will accept.
+ * Older engines without supportedValuesOf fall back to the current zone plus UTC — enough
+ * to save the form, and the server rejects anything it does not recognise anyway.
+ */
+function timezones(): string[] {
+  const supported = (
+    Intl as unknown as { supportedValuesOf?: (key: string) => string[] }
+  ).supportedValuesOf;
+  if (typeof supported === 'function') return supported('timeZone');
+  return [...new Set(['UTC', Intl.DateTimeFormat().resolvedOptions().timeZone])];
+}
+
 export default function ConfigForm({
   hasTmdbKey,
+  hasApiKey,
+  timezone,
   defaultLocale,
   features,
   watchedThreshold,
@@ -42,8 +57,13 @@ export default function ConfigForm({
   backupAutoEnabled,
   backupIntervalHours,
   backupRetention,
+  retentionSessionDays,
+  retentionLogDays,
+  retentionHistoryDays,
 }: {
   hasTmdbKey: boolean;
+  hasApiKey: boolean;
+  timezone: string | null;
   defaultLocale: string;
   features: Record<string, boolean>;
   watchedThreshold: number;
@@ -62,12 +82,34 @@ export default function ConfigForm({
   backupAutoEnabled: boolean;
   backupIntervalHours: number;
   backupRetention: number;
+  retentionSessionDays: number | null;
+  retentionLogDays: number | null;
+  retentionHistoryDays: number | null;
 }) {
   const router = useRouter();
   const t = useT();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Shown once, right after it is generated — the key is stored encrypted and there is no
+  // endpoint that reads it back, so this is the only chance to copy it.
+  const [newApiKey, setNewApiKey] = useState<string | null>(null);
+
+  async function onApiKey(method: 'POST' | 'DELETE') {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    const res = await fetch('/api/admin/apikey', { method });
+    setBusy(false);
+    const body = (await res.json()) as { key?: string; error?: string };
+    if (!res.ok) {
+      setError(body.error ?? t('config.saveFailed'));
+      return;
+    }
+    setNewApiKey(body.key ?? null);
+    if (!body.key) setMessage(t('config.apiKeyCleared'));
+    router.refresh();
+  }
 
   async function onTestWebhook() {
     setBusy(true);
@@ -121,6 +163,16 @@ export default function ConfigForm({
       backupAutoEnabled: form.get('backupAutoEnabled') === 'on',
       backupIntervalHours: Number(form.get('backupIntervalHours') ?? 24),
       backupRetention: Number(form.get('backupRetention') ?? 7),
+      timezone: String(form.get('timezone') ?? ''),
+      // Blank means "keep forever", which is why the empty field turns into null rather
+      // than into a zero the server would have to interpret.
+      retentionSessionDays: form.get('retentionSessionDays')
+        ? Number(form.get('retentionSessionDays'))
+        : null,
+      retentionLogDays: form.get('retentionLogDays') ? Number(form.get('retentionLogDays')) : null,
+      retentionHistoryDays: form.get('retentionHistoryDays')
+        ? Number(form.get('retentionHistoryDays'))
+        : null,
     };
 
     const res = await fetch('/api/admin/config', {
@@ -151,6 +203,21 @@ export default function ConfigForm({
       </label>
       <p className="muted" style={{ marginTop: -8 }}>
         {t('config.defaultLanguageHint')}
+      </p>
+
+      <label>
+        {t('config.timezone')}
+        <select name="timezone" defaultValue={timezone ?? ''}>
+          <option value="">{t('config.timezoneContainer')}</option>
+          {timezones().map((zone) => (
+            <option key={zone} value={zone}>
+              {zone}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="muted" style={{ marginTop: -8 }}>
+        {t('config.timezoneHint')}
       </p>
 
       <label>
@@ -341,6 +408,75 @@ export default function ConfigForm({
           '{link}',
           <a href="/admin/system">{t('config.system')}</a>,
         )}
+      </p>
+
+      <p className="stat-label" style={{ marginTop: 20 }}>
+        {t('config.retention')}
+      </p>
+      <label>
+        {t('config.retentionSessions')}
+        <input
+          name="retentionSessionDays"
+          type="number"
+          min={1}
+          defaultValue={retentionSessionDays ?? ''}
+          placeholder={t('config.keepForever')}
+        />
+      </label>
+      <label>
+        {t('config.retentionLogs')}
+        <input
+          name="retentionLogDays"
+          type="number"
+          min={1}
+          defaultValue={retentionLogDays ?? ''}
+          placeholder={t('config.keepForever')}
+        />
+      </label>
+      <label>
+        {t('config.retentionHistory')}
+        <input
+          name="retentionHistoryDays"
+          type="number"
+          min={1}
+          defaultValue={retentionHistoryDays ?? ''}
+          placeholder={t('config.keepForever')}
+        />
+      </label>
+      <p className="muted" style={{ marginTop: -6 }}>
+        {t('config.retentionHint')}
+      </p>
+
+      <p className="stat-label" style={{ marginTop: 20 }}>
+        {t('config.api')}
+      </p>
+      <p className="muted" style={{ marginTop: -6 }}>
+        {hasApiKey ? t('config.apiKeySet') : t('config.apiKeyNone')}
+      </p>
+      {newApiKey && (
+        <p className="card" style={{ wordBreak: 'break-all' }}>
+          <code>{newApiKey}</code>
+          <br />
+          <span className="muted">{t('config.apiKeyOnce')}</span>
+        </p>
+      )}
+      <div className="row" style={{ gap: 10 }}>
+        <button type="button" className="outlined" disabled={busy} onClick={() => onApiKey('POST')}>
+          {hasApiKey ? t('config.apiKeyRotate') : t('config.apiKeyGenerate')}
+        </button>
+        {hasApiKey && (
+          <button
+            type="button"
+            className="outlined"
+            disabled={busy}
+            onClick={() => onApiKey('DELETE')}
+          >
+            {t('config.apiKeyClear')}
+          </button>
+        )}
+      </div>
+      <p className="muted" style={{ marginTop: 6 }}>
+        {splice(t('config.apiHint'), '{code}', <code>/api/v1/activity</code>)}
       </p>
 
       <p className="stat-label" style={{ marginTop: 20 }}>

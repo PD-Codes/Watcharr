@@ -236,7 +236,7 @@ export default async function AdminUserDetailPage({
             <tbody>
               {recent.map((row) => (
                 <tr key={row.id}>
-                  <td className="num muted" style={{ whiteSpace: 'nowrap' }}>
+                  <td className="num muted when-cell">
                     {formatDate(row.watchedAt)}
                   </td>
                   <td>

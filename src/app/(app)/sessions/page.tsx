@@ -24,7 +24,7 @@ export default async function SessionsPage() {
   const session = await requireUser();
   const t = await getT();
   // syncActivity already ran in the layout.
-  await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
+  await syncHistory(session).catch(reportSyncError('history sync'));
 
   const scope = { userId: session.user.id };
   const [mine, everyone, totals, streak, titles, recent] = await Promise.all([
@@ -136,7 +136,7 @@ export default async function SessionsPage() {
                           grandparentTitle={row.grandparentTitle}
                         />
                       </td>
-                      <td className="num muted" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <td className="num muted when-cell" style={{ textAlign: 'right' }}>
                         {formatDate(row.watchedAt)}
                       </td>
                     </tr>

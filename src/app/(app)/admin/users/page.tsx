@@ -49,9 +49,9 @@ export default async function AdminUsersPage() {
           <thead>
             <tr>
               <th scope="col">{t('common.user')}</th>
-              {global && <th scope="col">{t('users.colServer')}</th>}
+              {global && <th scope="col" className="secondary-col">{t('users.colServer')}</th>}
               <th scope="col">{t('users.colRole')}</th>
-              <th scope="col">{t('users.colPlays')}</th>
+              <th scope="col" className="secondary-col">{t('users.colPlays')}</th>
               <th scope="col">{t('common.watchTime')}</th>
               <th scope="col">{t('users.colLastSeen')}</th>
               {global && <th scope="col">{t('users.colGlobalAdmin')}</th>}
@@ -63,7 +63,7 @@ export default async function AdminUsersPage() {
                 <td>
                   <Link href={`/admin/users/${row.id}`}>{row.username}</Link>
                 </td>
-                {global && <td>{row.serverLabel ?? '—'}</td>}
+                {global && <td className="secondary-col">{row.serverLabel ?? '—'}</td>}
                 <td>
                   {row.globalAdmin
                     ? t('users.roleGlobalAdmin')
@@ -71,9 +71,11 @@ export default async function AdminUsersPage() {
                       ? t('users.roleServerAdmin')
                       : t('users.roleUser')}
                 </td>
-                <td>{row.plays}</td>
+                <td className="secondary-col">{row.plays}</td>
                 <td>{formatDuration(Number(row.watchtime))}</td>
-                <td>{row.lastSeenAt ? formatDate(row.lastSeenAt) : t('common.never')}</td>
+                <td className="when-cell">
+                  {row.lastSeenAt ? formatDate(row.lastSeenAt) : t('common.never')}
+                </td>
                 {global && (
                   <td>
                     <RoleToggle

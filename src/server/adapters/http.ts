@@ -6,6 +6,14 @@
  */
 const DEFAULT_TIMEOUT_MS = 8_000;
 
+export type HttpError = Error & { status?: number };
+
+/** True when the media server refused the credentials rather than the request. */
+export function isUnauthorized(error: unknown): boolean {
+  const status = (error as HttpError | null)?.status;
+  return status === 401 || status === 403;
+}
+
 /** Thin fetch wrapper: JSON in, JSON out, non-2xx throws with the response body. */
 export async function apiFetch<T>(
   url: string,
@@ -20,7 +28,13 @@ export async function apiFetch<T>(
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`${init.method ?? 'GET'} ${url} failed: ${res.status} ${body.slice(0, 200)}`);
+    const error = new Error(
+      `${init.method ?? 'GET'} ${url} failed: ${res.status} ${body.slice(0, 200)}`,
+    );
+    // The status carried as a field, not only inside the message: a caller that has to
+    // react to a dead token (see sync.ts) must not parse English prose to find out.
+    (error as HttpError).status = res.status;
+    throw error;
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();

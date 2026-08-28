@@ -12,8 +12,16 @@ services:
       APP_URL: ${APP_URL:-http://localhost:3000}
       # SQLite database file, kept on the named volume below.
       DATABASE_PATH: /app/data/watcharr.db
+      # Only files in here can be run by a "script" notification channel.
+      WATCHARR_SCRIPTS_DIR: /app/data/scripts
+      # Days, weekdays and hours are counted in the app's configured zone; this is only
+      # the fallback for an installation that has not chosen one under Settings.
+      TZ: ${TZ:-UTC}
     volumes:
       - watcharr-data:/app/data
+      # Uncomment to import from Tautulli: mount its folder read-only and point the import
+      # page at /import/tautulli.db. A Tautulli database is far too large to upload.
+      # - /path/to/tautulli:/import:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 30s

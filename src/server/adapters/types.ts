@@ -173,6 +173,24 @@ export interface MediaServerAdapter {
 
   /** Stops a running stream. Takes the terminateKey of a live session, not a stored row. */
   terminateSession?(terminateKey: string, reason?: string): Promise<void>;
+
+  /**
+   * Where to listen for live playback events, and what to say on connect.
+   *
+   * Deliberately narrow: the socket is only ever used as a doorbell. Whatever arrives
+   * makes the app re-read the session list through getSessions() rather than being parsed
+   * into a PlaybackSession itself — two socket protocols would otherwise become a second
+   * mapping to keep in step with the first, for data the HTTP call already returns. What
+   * it buys is latency: a stream appears when it starts instead of up to five seconds
+   * later, and an idle server stops being polled at all.
+   */
+  liveSocket?(): { url: string; hello?: string } | null;
+}
+
+export function supportsLiveSocket(
+  a: MediaServerAdapter,
+): a is MediaServerAdapter & Required<Pick<MediaServerAdapter, 'liveSocket'>> {
+  return typeof a.liveSocket === 'function';
 }
 
 export function supportsTerminate(

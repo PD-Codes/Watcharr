@@ -244,8 +244,40 @@ async function testJellyfinLibraryCounts() {
   );
 }
 
+/**
+ * A rejected token has to be recognisable from the error object, not from its English
+ * text: sync.ts drops the auth session on it.
+ */
+async function testUnauthorizedDetection() {
+  const { apiFetch, isUnauthorized } = await import('../server/adapters/http');
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => new Response('nope', { status: 401 })) as typeof fetch;
+  try {
+    const error = await apiFetch('http://example.invalid/x').then(
+      () => null,
+      (e: unknown) => e,
+    );
+    assert.ok(isUnauthorized(error), 'a 401 must be detectable');
+    assert.ok(!isUnauthorized(new Error('GET … failed: 500')), 'a 500 is not a token problem');
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+/** The address a session is attributed to must not carry the client's source port. */
+async function testEndpointAddress() {
+  const { endpointAddress } = await import('../server/adapters/jellyfin');
+  assert.equal(endpointAddress('10.0.0.5:52344'), '10.0.0.5');
+  assert.equal(endpointAddress('10.0.0.5'), '10.0.0.5');
+  assert.equal(endpointAddress('[fe80::1]:52344'), 'fe80::1');
+  assert.equal(endpointAddress('fe80::1'), 'fe80::1');
+  assert.equal(endpointAddress(undefined), undefined);
+}
+
 async function main() {
   for (const test of [
+  testUnauthorizedDetection,
+  testEndpointAddress,
   testJellyfinSessions,
   testJellyfinDirectPlayUsesSourceStreams,
   testJellyfinHistoryFiltersBySince,

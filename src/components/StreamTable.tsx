@@ -68,16 +68,16 @@ export default async function StreamTable({
             {showUser && <th scope="col">{t('common.user')}</th>}
             <th scope="col">{t('common.title')}</th>
             <th scope="col">{t('common.watched')}</th>
-            <th scope="col">{t('stream.player')}</th>
-            <th scope="col">{t('stream.video')}</th>
-            <th scope="col">{t('stream.audio')}</th>
+            <th scope="col" className="secondary-col">{t('stream.player')}</th>
+            <th scope="col" className="secondary-col">{t('stream.video')}</th>
+            <th scope="col" className="secondary-col">{t('stream.audio')}</th>
             <th scope="col">{t('stream.delivery')}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.sessionKey}>
-              <td className="num muted" style={{ whiteSpace: 'nowrap' }}>
+              <td className="num muted when-cell">
                 {formatDate(row.startedAt)}
               </td>
               {showUser && (
@@ -103,7 +103,7 @@ export default async function StreamTable({
                   {percent(row.progressMs, row.durationMs)}%
                 </div>
               </td>
-              <td>
+              <td className="secondary-col">
                 {row.clientName ?? '—'}
                 <div className="muted" style={{ fontSize: 12 }}>
                   {row.deviceName ?? ''}
@@ -114,13 +114,13 @@ export default async function StreamTable({
                   </div>
                 )}
               </td>
-              <td>
+              <td className="secondary-col">
                 {streamChain(row)}
                 <div className="muted" style={{ fontSize: 12 }}>
                   {mbps(row.bitrateKbps) ?? ''}
                 </div>
               </td>
-              <td>
+              <td className="secondary-col">
                 {audioChain(row)}
                 {row.subtitleCodec && (
                   <div className="muted" style={{ fontSize: 12 }}>

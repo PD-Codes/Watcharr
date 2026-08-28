@@ -643,6 +643,30 @@
     "en": "Currently delivered to {email}.",
     "de": "Wird derzeit an {email} zugestellt."
   },
+  "notifyMe.subtitle": {
+    "en": "How this server reaches you. Everything here is yours alone — an administrator can neither add nor read it.",
+    "de": "Wie dich dieser Server erreicht. Alles hier gehört nur dir — ein Administrator kann es weder eintragen noch einsehen."
+  },
+  "notifyMe.eventsHeading": {
+    "en": "Event emails",
+    "de": "E-Mails zu Ereignissen"
+  },
+  "notifyMe.eventsHint": {
+    "en": "Pick what you want mailed. Playback events only ever cover your own streams.",
+    "de": "Wähle, worüber du eine E-Mail bekommen willst. Wiedergabe-Ereignisse betreffen immer nur deine eigenen Streams."
+  },
+  "notifyMe.noMailChannel": {
+    "en": "No email channel is configured yet, so nothing can be delivered. Ask an administrator to add one under Notifications.",
+    "de": "Es ist noch kein E-Mail-Kanal eingerichtet, es kann also nichts zugestellt werden. Bitte einen Administrator, unter Benachrichtigungen einen anzulegen."
+  },
+  "notifyMe.saved": {
+    "en": "Saved.",
+    "de": "Gespeichert."
+  },
+  "notifyMe.turnOff": {
+    "en": "Turn off",
+    "de": "Abschalten"
+  },
   "activity.nothingPlayingMine": {
     "en": "Nothing is playing. Start something on your server.",
     "de": "Es läuft nichts. Starte etwas auf deinem Server."

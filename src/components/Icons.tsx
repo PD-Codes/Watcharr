@@ -24,7 +24,8 @@ export type IconName =
   | 'download'
   | 'back'
   | 'film'
-  | 'tv';
+  | 'tv'
+  | 'bell';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   film: (
@@ -48,6 +49,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   activity: <path d="M9 6.5v11l9-5.5z" />,
+  bell: (
+    <>
+      <path d="M6 10a6 6 0 1 1 12 0c0 3.5 1 4.8 1.8 5.6.4.4.1 1.1-.5 1.1H4.7c-.6 0-.9-.7-.5-1.1C5 14.8 6 13.5 6 10Z" />
+      <path d="M10 19.5a2 2 0 0 0 4 0" />
+    </>
+  ),
   stats: (
     <>
       <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />

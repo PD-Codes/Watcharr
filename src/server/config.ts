@@ -1,6 +1,7 @@
 import 'server-only';
+import { randomBytes } from 'node:crypto';
 import { asc, eq } from 'drizzle-orm';
-import { db } from '@/db';
+import { applyTimezone, db } from '@/db';
 import { appConfig, appSettings, users } from '@/db/schema';
 import { DEFAULT_LOCALE, isLocale } from '@/i18n';
 import { createAdapter, type MediaServerAdapter, type ServerType } from './adapters';
@@ -127,6 +128,10 @@ export interface AppSettings {
   tmdbApiKey: string | null;
   /** UI language for anyone who has not chosen one on their profile. */
   defaultLocale: string;
+  /** IANA zone every date aggregate buckets in. Null follows the container. */
+  timezone: string | null;
+  /** Read-only HTTP API key, decrypted. Null means the API is off. */
+  apiKey: string | null;
   features: Record<string, boolean>;
   /** Percentage of an item that counts as finished. Tautulli's default is 85. */
   watchedThreshold: number;
@@ -147,6 +152,10 @@ export interface AppSettings {
   backupIntervalHours: number;
   backupRetention: number;
   backupLastAt: Date | null;
+  retentionSessionDays: number | null;
+  retentionLogDays: number | null;
+  retentionHistoryDays: number | null;
+  retentionLastAt: Date | null;
   newsletterEnabled: boolean;
   newsletterDayOfWeek: number;
   newsletterHour: number;
@@ -164,6 +173,8 @@ export interface AppSettings {
 const DEFAULT_SETTINGS: AppSettings = {
   tmdbApiKey: null,
   defaultLocale: DEFAULT_LOCALE,
+  timezone: null,
+  apiKey: null,
   features: {},
   watchedThreshold: 85,
   webhookUrl: null,
@@ -183,6 +194,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   backupIntervalHours: 24,
   backupRetention: 7,
   backupLastAt: null,
+  retentionSessionDays: null,
+  retentionLogDays: null,
+  retentionHistoryDays: null,
+  retentionLastAt: null,
   newsletterEnabled: false,
   newsletterDayOfWeek: 5,
   newsletterHour: 11,
@@ -204,6 +219,8 @@ export async function getSettings(): Promise<AppSettings> {
   return {
     tmdbApiKey: row.tmdbApiKey ? decryptSecret(row.tmdbApiKey) : null,
     defaultLocale: row.defaultLocale,
+    timezone: row.timezone,
+    apiKey: row.apiKey ? decryptSecret(row.apiKey) : null,
     features: row.features,
     watchedThreshold: row.watchedThreshold,
     webhookUrl: row.webhookUrl,
@@ -223,6 +240,10 @@ export async function getSettings(): Promise<AppSettings> {
     backupIntervalHours: row.backupIntervalHours,
     backupRetention: row.backupRetention,
     backupLastAt: row.backupLastAt,
+    retentionSessionDays: row.retentionSessionDays,
+    retentionLogDays: row.retentionLogDays,
+    retentionHistoryDays: row.retentionHistoryDays,
+    retentionLastAt: row.retentionLastAt,
     newsletterEnabled: row.newsletterEnabled,
     newsletterDayOfWeek: row.newsletterDayOfWeek,
     newsletterHour: row.newsletterHour,
@@ -241,6 +262,8 @@ export async function getSettings(): Promise<AppSettings> {
 export async function updateSettings(input: {
   tmdbApiKey?: string | null;
   defaultLocale?: string;
+  timezone?: string | null;
+  apiKey?: string | null;
   features?: Record<string, boolean>;
   watchedThreshold?: number;
   webhookUrl?: string | null;
@@ -260,6 +283,10 @@ export async function updateSettings(input: {
   backupIntervalHours?: number;
   backupRetention?: number;
   backupLastAt?: Date;
+  retentionSessionDays?: number | null;
+  retentionLogDays?: number | null;
+  retentionHistoryDays?: number | null;
+  retentionLastAt?: Date;
   newsletterEnabled?: boolean;
   newsletterDayOfWeek?: number;
   newsletterHour?: number;
@@ -281,6 +308,16 @@ export async function updateSettings(input: {
   // dictionary until an admin noticed.
   if (input.defaultLocale !== undefined && isLocale(input.defaultLocale)) {
     patch.defaultLocale = input.defaultLocale;
+  }
+  if (input.timezone !== undefined) {
+    const zone = input.timezone?.trim() || null;
+    // Applied to the running process as well as stored: the aggregates would otherwise
+    // keep bucketing in the old zone until the next restart, and an admin comparing the
+    // chart against their clock would conclude the setting does nothing.
+    if (zone === null || applyTimezone(zone)) patch.timezone = zone;
+  }
+  if (input.apiKey !== undefined) {
+    patch.apiKey = input.apiKey ? encryptSecret(input.apiKey) : null;
   }
   if (input.features) patch.features = input.features;
   if (input.watchedThreshold !== undefined) {
@@ -340,6 +377,14 @@ export async function updateSettings(input: {
     patch.backupRetention = Math.max(1, Math.round(input.backupRetention));
   }
   if (input.backupLastAt) patch.backupLastAt = input.backupLastAt;
+  // Retention: a value of 0 or less means "keep forever" rather than "delete everything",
+  // because a stray zero out of a number input must never wipe the history.
+  for (const key of ['retentionSessionDays', 'retentionLogDays', 'retentionHistoryDays'] as const) {
+    const value = input[key];
+    if (value === undefined) continue;
+    patch[key] = value && value > 0 ? Math.round(value) : null;
+  }
+  if (input.retentionLastAt) patch.retentionLastAt = input.retentionLastAt;
   if (input.newsletterEnabled !== undefined) patch.newsletterEnabled = input.newsletterEnabled;
   if (input.newsletterDayOfWeek !== undefined) {
     patch.newsletterDayOfWeek = Math.min(6, Math.max(0, Math.round(input.newsletterDayOfWeek)));
@@ -372,4 +417,15 @@ export async function updateSettings(input: {
     .insert(appSettings)
     .values({ id: 1, ...patch })
     .onConflictDoUpdate({ target: appSettings.id, set: patch });
+}
+
+/**
+ * Issues a new read-only API key and returns it in clear text — the only time it is ever
+ * readable, the same way every other secret in this app is write-only afterwards. Rotating
+ * therefore invalidates whatever was configured in a dashboard, which is the point.
+ */
+export async function rotateApiKey(): Promise<string> {
+  const key = randomBytes(24).toString('base64url');
+  await updateSettings({ apiKey: key });
+  return key;
 }

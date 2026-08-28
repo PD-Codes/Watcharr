@@ -19,6 +19,8 @@ export default async function AdminConfigPage() {
       <p className="subtitle">{t('config.subtitle')}</p>
       <ConfigForm
         hasTmdbKey={Boolean(settings.tmdbApiKey)}
+        hasApiKey={Boolean(settings.apiKey)}
+        timezone={settings.timezone}
         defaultLocale={settings.defaultLocale}
         features={settings.features}
         watchedThreshold={settings.watchedThreshold}
@@ -37,6 +39,9 @@ export default async function AdminConfigPage() {
         backupAutoEnabled={settings.backupAutoEnabled}
         backupIntervalHours={settings.backupIntervalHours}
         backupRetention={settings.backupRetention}
+        retentionSessionDays={settings.retentionSessionDays}
+        retentionLogDays={settings.retentionLogDays}
+        retentionHistoryDays={settings.retentionHistoryDays}
       />
 
       <h2 className="section">{t('config.recentAlerts')}</h2>

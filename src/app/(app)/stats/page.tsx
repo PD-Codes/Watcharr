@@ -60,7 +60,7 @@ export default async function StatsPage({
 }) {
   const session = await requireUser();
   const t = await getT();
-  await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
+  await syncHistory(session).catch(reportSyncError('history sync'));
 
   const params = await searchParams;
   const days = Number(params.days ?? 30);

@@ -239,6 +239,18 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
    * Plex terminates by its own session id, which is unrelated to the sessionKey this
    * adapter reports — the latter has to stay stable across polls for the stored row.
    */
+  /**
+   * Plex pushes PlaySessionStateNotification and a dozen other event types over this
+   * socket. None of them are parsed — the arrival is the signal, and the session list is
+   * then read the normal way. No hello frame: Plex starts sending on connect.
+   */
+  liveSocket(): { url: string; hello?: string } | null {
+    const url = new URL(joinUrl(this.baseUrl, '/:/websockets/notifications'));
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.searchParams.set('X-Plex-Token', this.adminToken);
+    return { url: url.toString() };
+  }
+
   async terminateSession(terminateKey: string, reason?: string): Promise<void> {
     const params = new URLSearchParams({ sessionId: terminateKey });
     if (reason) params.set('reason', reason);

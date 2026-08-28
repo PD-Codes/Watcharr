@@ -64,11 +64,16 @@ and for the admin, without asking anyone to create yet another account.
 | **Clients** | Sessions and watch time per client, per device and per user. |
 | **Users** | All server users with a per-user drilldown into their stats and history. |
 | **System** | Media server reachability, API health, sync status. |
-| **Configuration** | Server URL and token, optional TMDB key, feature toggles. |
+| **Configuration** | Server URL and token, optional TMDB key, time zone, data retention, feature toggles. |
+| **Import** | One-shot import from a Tautulli database, with a preview first. |
+| **Read-only API** | `/api/v1/activity`, `/api/v1/stats`, `/api/v1/history` behind a key, for dashboards and scripts. |
 
 Transcoding and client statistics are recorded from live sessions, so they start empty on a
 fresh install and fill up as people watch. History-based statistics are backfilled from the
-media server on the first sync and are complete immediately.
+media server on the first sync and are complete immediately — and a stream that runs past
+the watched threshold is written into the history too, so the two grow together rather than
+staying two separate datasets. Coming from Tautulli, the import brings the years the media
+server cannot give back.
 
 ### Interface
 
@@ -162,7 +167,37 @@ configuration page.
 | `DATABASE_PATH` | `./data/watcharr.db` | SQLite file. The container defaults to `/app/data/watcharr.db`; keep that path on a volume. |
 | `APP_URL` | `http://localhost:3000` | Public base URL of this deployment. Used for the Plex sign-in callback. |
 | `PORT` | `3000` | Port the server listens on. |
+| `WATCHARR_SCRIPTS_DIR` | `./data/scripts` | The only folder a `script` notification channel may run a file from. A channel names a plain file name, never a path. |
+| `WATCHARR_NO_BACKGROUND` | *(unset)* | Set to `1` to run this instance as a web front end only: no live event sockets, no background sync. Only useful next to another instance that does the work. |
+| `TZ` | *(container default)* | Fallback time zone. Once one is picked on the configuration page, that setting wins — this only covers an installation that has not chosen. |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | *(unset)* | Set to `0` **only** if your media server uses a self-signed certificate. It disables certificate checking process-wide. |
+
+### The read-only API
+
+Generate a key on the configuration page — it is shown once and stored encrypted. Pass it
+in an `X-Api-Key` header or as `?apikey=`, whichever your dashboard can do:
+
+```bash
+curl -H "X-Api-Key: $KEY" http://localhost:3000/api/v1/activity
+curl -H "X-Api-Key: $KEY" "http://localhost:3000/api/v1/stats?days=30"
+curl -H "X-Api-Key: $KEY" "http://localhost:3000/api/v1/history?days=7&limit=50"
+```
+
+Read-only and deployment-wide. Nothing that changes anything is reachable with a key, and
+the activity endpoint deliberately leaves out client IP addresses.
+
+### Importing from Tautulli
+
+Mount the folder holding `tautulli.db` into the container read-only, then point
+**Admin → Import** at it and take the preview first — it reports how many plays would be
+written and which Tautulli user names have no account here.
+
+```yaml
+volumes:
+  - /path/to/tautulli:/import:ro
+```
+
+The file is never written to. Running the import twice adds nothing the second time.
 
 ---
 

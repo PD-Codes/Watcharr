@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { TranslationKey } from '@/i18n';
 import { useT } from '@/i18n/client';
+import { TEMPLATE_TOKENS } from '@/server/features';
 
 interface ChannelField {
   key: string;
@@ -26,7 +27,29 @@ export interface ChannelCard {
   name: string;
   configuredFields: string[];
   events: string[];
+  conditions: Record<string, unknown>;
+  template: string;
   enabled: boolean;
+}
+
+/** Comma-separated in the input, a list in the payload — one line each way. */
+const splitList = (value: string): string[] =>
+  value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+const joinList = (value: unknown): string => (Array.isArray(value) ? value.join(', ') : '');
+
+function readConditions(form: FormData): Record<string, unknown> {
+  return {
+    users: splitList(String(form.get('condition.users') ?? '')),
+    mediaTypes: splitList(String(form.get('condition.mediaTypes') ?? '')),
+    // Checkboxes rather than a text field: these are opaque keys, not names somebody could
+    // reasonably be asked to type.
+    libraries: form.getAll('condition.libraries').map(String),
+    transcodeOnly: form.get('condition.transcodeOnly') === 'on',
+  };
 }
 
 function fieldsFor(channelTypes: readonly ChannelTypeDef[], type: string): readonly ChannelField[] {
@@ -37,10 +60,12 @@ export default function NotificationsManager({
   channels,
   channelTypes,
   events,
+  libraries,
 }: {
   channels: ChannelCard[];
   channelTypes: readonly ChannelTypeDef[];
   events: readonly EventDef[];
+  libraries: { key: string; label: string }[];
 }) {
   const router = useRouter();
   const t = useT();
@@ -90,6 +115,8 @@ export default function NotificationsManager({
         name: String(form.get('name') ?? ''),
         config: readConfig(form, fieldsFor(channelTypes, channel.type)),
         events: readEvents(form),
+        conditions: readConditions(form),
+        template: String(form.get('template') ?? ''),
         enabled: form.get('enabled') === 'on',
       },
       t('action.saved'),
@@ -106,6 +133,8 @@ export default function NotificationsManager({
         name: String(form.get('name') ?? ''),
         config: readConfig(form, fieldsFor(channelTypes, newType)),
         events: readEvents(form),
+        conditions: readConditions(form),
+        template: String(form.get('template') ?? ''),
       },
       t('notifications.channelAdded'),
     );
@@ -130,6 +159,81 @@ export default function NotificationsManager({
     const body = (await res.json()) as { ok?: boolean; error?: string };
     if (res.ok && body.ok) setMessage(t('notifications.testSent'));
     else setError(body.error ?? t('notifications.testFailed'));
+  }
+
+  /**
+   * Conditions and the message template, identical on the add and the edit form. Rendered
+   * from one function so the two cannot drift — a field present in only one of them is
+   * exactly the bug that makes a filter look like it does nothing.
+   */
+  function extras(channel?: ChannelCard) {
+    return (
+      <>
+        <p className="stat-label" style={{ marginTop: 14 }}>
+          {t('notifications.conditions')}
+        </p>
+        <label>
+          {t('notifications.condition.users')}
+          <input
+            name="condition.users"
+            defaultValue={joinList(channel?.conditions.users)}
+            placeholder={t('notifications.anyValue')}
+          />
+        </label>
+        <label>
+          {t('notifications.condition.mediaTypes')}
+          <input
+            name="condition.mediaTypes"
+            defaultValue={joinList(channel?.conditions.mediaTypes)}
+            placeholder="movie, episode"
+          />
+        </label>
+        {libraries.length > 0 && (
+          <>
+            <p style={{ margin: '10px 0 4px' }}>{t('notifications.condition.libraries')}</p>
+            {libraries.map((library) => (
+              <label className="row" key={library.key}>
+                <input
+                  type="checkbox"
+                  name="condition.libraries"
+                  value={library.key}
+                  defaultChecked={
+                    Array.isArray(channel?.conditions.libraries) &&
+                    (channel.conditions.libraries as string[]).includes(library.key)
+                  }
+                  style={{ width: 'auto' }}
+                />
+                {library.label}
+              </label>
+            ))}
+          </>
+        )}
+        <label className="row">
+          <input
+            type="checkbox"
+            name="condition.transcodeOnly"
+            defaultChecked={channel?.conditions.transcodeOnly === true}
+            style={{ width: 'auto' }}
+          />
+          {t('notifications.condition.transcodeOnly')}
+        </label>
+        <p className="muted" style={{ marginTop: -6 }}>
+          {t('notifications.conditionsHint')}
+        </p>
+
+        <label style={{ marginTop: 10 }}>
+          {t('notifications.template')}
+          <input
+            name="template"
+            defaultValue={channel?.template ?? ''}
+            placeholder="{user} started {title}"
+          />
+        </label>
+        <p className="muted" style={{ marginTop: -6 }}>
+          {t('notifications.templateHint', { tokens: TEMPLATE_TOKENS.map((x) => `{${x}}`).join(' ') })}
+        </p>
+      </>
+    );
   }
 
   return (
@@ -173,6 +277,7 @@ export default function NotificationsManager({
                 {t(e.labelKey)}
               </label>
             ))}
+            {extras(channel)}
             <label className="row" style={{ marginTop: 10 }}>
               <input
                 type="checkbox"
@@ -236,6 +341,7 @@ export default function NotificationsManager({
             {t(e.labelKey)}
           </label>
         ))}
+        {extras()}
         <button disabled={busy} style={{ marginTop: 12 }}>
           {t('notifications.addButton')}
         </button>

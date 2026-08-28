@@ -3,28 +3,17 @@ import LanguagePicker from '@/components/LanguagePicker';
 import RevokeSessionButton from '@/components/RevokeSessionButton';
 import Tabs, { activeTab, type TabDef } from '@/components/Tabs';
 import { getSettings } from '@/server/config';
-import { getSubscription } from '@/server/newsletter';
 import { listUserSessions, requireUser } from '@/server/session';
-import { LOCALE_NAMES, isLocale, type Translate, type TranslationKey } from '@/i18n';
+import { LOCALE_NAMES, isLocale, type Translate } from '@/i18n';
 import { getT } from '@/i18n/server';
-import NewsletterSubscription from './NewsletterSubscription';
 
 export const dynamic = 'force-dynamic';
 
-// Sunday first, matching JavaScript's own weekday numbering used by the newsletter schedule.
-const DAY_KEYS: TranslationKey[] = [
-  'weekday.sunday',
-  'weekday.monday',
-  'weekday.tuesday',
-  'weekday.wednesday',
-  'weekday.thursday',
-  'weekday.friday',
-  'weekday.saturday',
-];
+// Newsletter and event mails moved to /notifications — everything a user decides about
+// being contacted sits in one place there.
 
 const tabs = (t: Translate): TabDef[] => [
   { key: 'account', label: t('profile.tabAccount') },
-  { key: 'newsletter', label: t('nav.adminNewsletter') },
   { key: 'sessions', label: t('profile.tabSessions') },
 ];
 
@@ -54,28 +43,6 @@ export default async function ProfilePage({
       <Tabs tabs={TABS} current={tab} hrefFor={(key) => `/profile?tab=${key}`} />
     </>
   );
-
-  if (tab === 'newsletter') {
-    const subscription = await getSubscription(user.id);
-    const scheduleHint = settings.newsletterEnabled
-      ? t('profile.nlSchedule', {
-          weekday: t(DAY_KEYS[settings.newsletterDayOfWeek]),
-          hour: String(settings.newsletterHour).padStart(2, '0'),
-          days: settings.newsletterDays,
-        })
-      : t('profile.nlOff');
-
-    return (
-      <>
-        {head}
-        <NewsletterSubscription
-          subscribedEmail={subscription?.email ?? null}
-          suggestedEmail={user.email ?? ''}
-          scheduleHint={scheduleHint}
-        />
-      </>
-    );
-  }
 
   if (tab === 'sessions') {
     const sessions = await listUserSessions(user.id);

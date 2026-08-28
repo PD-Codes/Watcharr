@@ -31,6 +31,10 @@ export async function POST(request: Request) {
     backupAutoEnabled?: boolean;
     backupIntervalHours?: number;
     backupRetention?: number;
+    timezone?: string;
+    retentionSessionDays?: number | null;
+    retentionLogDays?: number | null;
+    retentionHistoryDays?: number | null;
   };
 
   const threshold = Number(body.watchedThreshold);
@@ -62,6 +66,16 @@ export async function POST(request: Request) {
     backupAutoEnabled: typeof body.backupAutoEnabled === 'boolean' ? body.backupAutoEnabled : undefined,
     backupIntervalHours: body.backupIntervalHours,
     backupRetention: body.backupRetention,
+    // The empty option means "follow the container", so an empty string is a value here
+    // rather than an omission — hence null instead of undefined.
+    timezone: body.timezone === undefined ? undefined : body.timezone || null,
+    retentionSessionDays:
+      body.retentionSessionDays === undefined ? undefined : body.retentionSessionDays,
+    retentionLogDays: body.retentionLogDays === undefined ? undefined : body.retentionLogDays,
+    retentionHistoryDays:
+      body.retentionHistoryDays === undefined ? undefined : body.retentionHistoryDays,
   });
+  // The API key is deliberately not settable here: it is issued by /api/admin/apikey and
+  // returned once, never round-tripped through a form that would put it in a page payload.
   return NextResponse.json({ ok: true });
 }

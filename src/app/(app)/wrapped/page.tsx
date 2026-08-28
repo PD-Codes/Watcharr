@@ -17,7 +17,7 @@ export default async function WrappedPage({
 }) {
   const session = await requireUser();
   const t = await getT();
-  await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
+  await syncHistory(session).catch(reportSyncError('history sync'));
 
   const years = await getWrappedYears(session.user.id);
   const requested = Number((await searchParams).year);

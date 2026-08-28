@@ -3,6 +3,7 @@ import { and, desc, eq, gte, like, lt, ne, notInArray, or, sql } from 'drizzle-o
 import { db } from '@/db';
 import { appConfig, playbackSessions, users, watchHistory, watchlist } from '@/db/schema';
 import { createAdapter, type ServerType } from './adapters';
+import { isUnauthorized } from './adapters/http';
 import { getAdapter, getSettings, listServers, type ServerRow } from './config';
 import { isEnabled } from './features';
 import { isPrivateAddress } from './net';
@@ -10,9 +11,11 @@ import { checkAutoBackup } from './autobackup';
 import { checkDigest } from './digest';
 import { checkThresholds } from './monitor';
 import { checkNewsletter } from './newsletter';
-import { getLibrary } from './library';
+import { checkRetention } from './retention';
+import { recordPlays, type PlayInput } from './plays';
+import { cachedSectionName, getLibrary, resolveSectionKey, warmLibraryCache } from './library';
 import { prefetchTitleMeta } from './tmdb';
-import type { SessionUser } from './session';
+import { revokeSession, type Session } from './session';
 import { notify } from './notifications';
 
 /**
@@ -29,10 +32,10 @@ export function reportSyncError(what: string) {
     if (Date.now() - (reported.get(key) ?? 0) < 5 * 60_000) return;
     reported.set(key, Date.now());
     // A 401 is the one failure with an obvious fix, and the raw line does not say so: the
-    // stored media server token was revoked or expired, and only a fresh sign-in replaces
-    // it. Without the hint this reads like a bug in the app rather than a dead token.
-    const hint = / failed: 40[13]\b/.test(message)
-      ? ' — the media server rejected the stored token; sign out and back in to replace it'
+    // stored media server token was revoked or expired. The session carrying it has just
+    // been dropped, so the hint says what already happened rather than asking for it.
+    const hint = isUnauthorized(error)
+      ? ' — the media server rejected the stored token; the session was signed out and the next sign-in replaces it'
       : '';
     console.warn(`[watcharr] ${what} failed: ${message}${hint}`);
   };
@@ -50,7 +53,8 @@ function throttled(key: string, everyMs: number): boolean {
 }
 
 /** Pulls new history entries for one user. Duplicates are dropped by the unique index. */
-export async function syncHistory(user: SessionUser, token: string) {
+export async function syncHistory(session: Session) {
+  const user = session.user;
   const userId = user.id;
   if (throttled(`history:${userId}`, 60_000)) return;
 
@@ -62,26 +66,23 @@ export async function syncHistory(user: SessionUser, token: string) {
     .limit(1);
 
   const adapter = await getAdapter(user.serverId);
-  const entries = await adapter.getHistory(token, user.serverUserId, latest?.watchedAt);
+  const entries = await adapter
+    .getHistory(session.serverToken, user.serverUserId, latest?.watchedAt)
+    .catch(async (error: unknown) => {
+      // A 401 for a user token is not transient: the media server dropped it (a restart,
+      // a password change, a purged device) and it will never work again. The token lives
+      // in this auth session, so the session is what has to go — the next request lands on
+      // the sign-in page and comes back with a fresh one. Deleting the row rather than
+      // remembering the failure in memory is what makes the recovery survive a restart of
+      // either side; the alternative was a log line repeating every minute forever.
+      if (isUnauthorized(error)) await revokeSession(session.id).catch(() => {});
+      throw error;
+    });
   if (!entries.length) return;
 
-  await db
-    .insert(watchHistory)
-    .values(
-      entries.map((e) => ({
-        userId,
-        itemId: e.itemId,
-        title: e.title,
-        grandparentTitle: e.grandparentTitle,
-        mediaType: e.mediaType,
-        year: e.year,
-        genres: e.genres,
-        watchedAt: e.watchedAt,
-        durationMs: e.durationMs,
-        deviceName: e.deviceName,
-      })),
-    )
-    .onConflictDoNothing();
+  // Through recordPlays() rather than a direct insert: sessions that finished here write
+  // to the same table, and the unique index cannot tell two views of one play apart.
+  await recordPlays(userId, entries, 'server');
 }
 
 /**
@@ -92,6 +93,10 @@ export async function syncHistory(user: SessionUser, token: string) {
 export const LIVE_WINDOW_MS = 45_000; // must have been seen in the last poll or two
 const STALL_MS = 4 * 60_000; // position frozen this long means the client left
 const CHECK_IN_MS = 3 * 60_000; // server reported check-in older than this is stale
+// A pause is allowed to stand still, but not forever: a browser tab left open on a paused
+// title keeps the session in the server's list for days, and it showed up as "now playing"
+// with a start time from last week. Beyond this the pause is treated as abandoned.
+const PAUSE_STALL_MS = 2 * 60 * 60_000;
 
 export function liveSessionFilter() {
   const now = Date.now();
@@ -100,7 +105,10 @@ export function liveSessionFilter() {
     gte(playbackSessions.lastSeenAt, new Date(now - LIVE_WINDOW_MS)),
     // Paused sessions legitimately stand still, playing ones must not.
     or(
-      eq(playbackSessions.state, 'paused'),
+      and(
+        eq(playbackSessions.state, 'paused'),
+        gte(playbackSessions.progressAt, new Date(now - PAUSE_STALL_MS)),
+      ),
       gte(playbackSessions.progressAt, new Date(now - STALL_MS)),
     ),
   );
@@ -110,8 +118,11 @@ export function liveSessionFilter() {
  * Records what the server is currently playing. Rows are kept after playback ends so the
  * client, codec and transcoding statistics have something to aggregate over.
  */
-export async function syncActivity() {
-  if (throttled('activity', 5_000)) return;
+export async function syncActivity(force = false) {
+  // The live socket calls this the moment a server reports a change, which is the one
+  // caller allowed past the poll interval — otherwise the socket would only ever shorten
+  // the wait to whatever is left of the five seconds.
+  if (!force && throttled('activity', 5_000)) return;
   for (const server of await listServers()) {
     // A server that just failed is skipped for a while. The sync runs in the app layout,
     // so without this every page load would pay the connection timeout again.
@@ -119,6 +130,10 @@ export async function syncActivity() {
 
     // Cheap enough to sit in the same loop, but on its own, much slower clock.
     if (!throttled(`added:${server.id}`, 10 * 60_000)) {
+      // Before the recently-added check, so a new arrival can already be matched to its
+      // library. Warmed here rather than left to the poster prefetch, which only runs with
+      // a TMDB key — the library filter must not depend on an unrelated setting.
+      await warmLibraryCache(server.id).catch(reportSyncError(`library cache for ${server.label}`));
       await syncRecentlyAdded(server).catch(reportSyncError(`recently added on ${server.label}`));
     }
     // One unreachable server must not stop the others from being polled.
@@ -141,6 +156,7 @@ export async function syncActivity() {
   await checkDigest().catch(reportSyncError('digest'));
   await checkNewsletter().catch(reportSyncError('newsletter'));
   await checkAutoBackup().catch(reportSyncError('automatic backup'));
+  await checkRetention().catch(reportSyncError('retention'));
 }
 
 /**
@@ -195,6 +211,10 @@ async function syncRecentlyAdded(server: ServerRow) {
         itemId: item.itemId,
         mediaType: item.mediaType,
         year: item.year,
+        // A title added in the last few minutes may not be in the cached listing yet, so
+        // this is the one event where the library is genuinely often unknown. It resolves
+        // on the next refresh; until then a library condition simply does not apply.
+        ...libraryOf(server.id, item),
       });
     }
   }
@@ -211,6 +231,22 @@ async function syncRecentlyAdded(server: ServerRow) {
  * by it, so without the prefix two people's streams would collapse into one row.
  */
 export const sessionRowKey = (serverId: number, sessionKey: string) => `${serverId}:${sessionKey}`;
+
+/**
+ * Which library an event belongs to, for the notification conditions.
+ *
+ * Read straight out of the in-memory library listing — no request, which is the whole
+ * reason this is possible at all. Both fields are absent rather than guessed when the
+ * cache cannot answer; a condition on an absent library does not filter.
+ */
+function libraryOf(
+  serverId: number,
+  item: { itemId?: string; title?: string; grandparentTitle?: string | null },
+): { sectionKey?: string; library?: string } {
+  const key = resolveSectionKey(serverId, item);
+  if (!key) return {};
+  return { sectionKey: key, library: cachedSectionName(key) ?? undefined };
+}
 
 async function syncServerActivity(server: ServerRow) {
   const adapter = createAdapter(
@@ -256,6 +292,7 @@ async function syncServerActivity(server: ServerRow) {
         client: session.clientName,
         device: session.deviceName,
         transcoding: session.isTranscoding,
+        ...libraryOf(server.id, session),
       });
     }
 
@@ -345,6 +382,8 @@ async function syncServerActivity(server: ServerRow) {
         ne(playbackSessions.state, 'paused'),
         lt(playbackSessions.progressAt, new Date(now.getTime() - STALL_MS)),
       ),
+      // A pause the client never came back from. Without this the row stays open forever.
+      lt(playbackSessions.progressAt, new Date(now.getTime() - PAUSE_STALL_MS)),
       seen.length > 0 ? notInArray(playbackSessions.sessionKey, seen) : sql`1 = 1`,
     ),
   );
@@ -359,6 +398,9 @@ async function syncServerActivity(server: ServerRow) {
       mediaType: playbackSessions.mediaType,
       progressMs: playbackSessions.progressMs,
       durationMs: playbackSessions.durationMs,
+      startedAt: playbackSessions.startedAt,
+      deviceName: playbackSessions.deviceName,
+      userId: playbackSessions.userId,
       username: users.username,
     })
     .from(playbackSessions)
@@ -366,6 +408,8 @@ async function syncServerActivity(server: ServerRow) {
     .where(stopped);
 
   await db.update(playbackSessions).set({ state: 'ended' }).where(stopped);
+
+  await recordFinishedPlays(ending);
 
   for (const row of ending) {
     notify('playback.stop', {
@@ -377,12 +421,68 @@ async function syncServerActivity(server: ServerRow) {
       progressMs: row.progressMs,
       durationMs: row.durationMs,
       percent: row.durationMs > 0 ? Math.round((row.progressMs / row.durationMs) * 100) : null,
+      ...libraryOf(server.id, row),
     });
   }
 }
 
+/**
+ * Writes a finished stream into the history.
+ *
+ * Two datasets described the same viewing and never met: watch_history came from the media
+ * server and carries no progress, no device and no address, while playback_sessions knows
+ * all three but only starts at installation. Every aggregate had to pick one. A session
+ * that ran past the watched threshold is a play by any definition, so it becomes a history
+ * row too — and the two grow together instead of apart.
+ *
+ * Genres are left empty on purpose: a session does not carry them. recordPlays() fills
+ * them in when the media server's own played list catches up with the same play.
+ */
+async function recordFinishedPlays(
+  ending: {
+    itemId: string;
+    title: string;
+    grandparentTitle: string | null;
+    mediaType: string;
+    progressMs: number;
+    durationMs: number;
+    startedAt: Date;
+    deviceName: string | null;
+    userId: number | null;
+  }[],
+) {
+  if (!ending.length) return;
+  const { watchedThreshold } = await getSettings();
+
+  const byUser = new Map<number, PlayInput[]>();
+  for (const row of ending) {
+    // No user means the stream belonged to an account this app has never seen sign in;
+    // there is nobody to file the play under.
+    if (row.userId === null || row.durationMs <= 0) continue;
+    if ((row.progressMs / row.durationMs) * 100 < watchedThreshold) continue;
+    const list = byUser.get(row.userId) ?? [];
+    list.push({
+      itemId: row.itemId,
+      title: row.title,
+      grandparentTitle: row.grandparentTitle,
+      mediaType: row.mediaType,
+      // What was actually watched, not what the file is long — the whole reason a session
+      // is worth more than the server's played flag.
+      watchedAt: row.startedAt,
+      durationMs: row.progressMs,
+      deviceName: row.deviceName,
+    });
+    byUser.set(row.userId, list);
+  }
+
+  for (const [userId, plays] of byUser) {
+    await recordPlays(userId, plays, 'session').catch(reportSyncError('recording a finished play'));
+  }
+}
+
 /** Mirrors the server-side watchlist (Plex only) into the local watchlist. */
-export async function syncWatchlist(user: SessionUser, token: string) {
+export async function syncWatchlist(session: Session) {
+  const user = session.user;
   const userId = user.id;
   const settings = await getSettings();
   if (!isEnabled(settings.features, 'watchlistSync')) return;
@@ -391,7 +491,11 @@ export async function syncWatchlist(user: SessionUser, token: string) {
   if (!adapter.getWatchlist) return;
   if (throttled(`watchlist:${userId}`, 300_000)) return;
 
-  const entries = await adapter.getWatchlist(token).catch(() => []);
+  // Same dead-token rule as syncHistory: the session holding it is the thing to drop.
+  const entries = await adapter.getWatchlist(session.serverToken).catch(async (error: unknown) => {
+    if (isUnauthorized(error)) await revokeSession(session.id).catch(() => {});
+    return [];
+  });
   if (!entries.length) return;
 
   await db

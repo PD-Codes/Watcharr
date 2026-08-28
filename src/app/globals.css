@@ -180,6 +180,10 @@ body {
 }
 
 body {
+  /* Clip, not hidden: hidden would make the body a scroll container and break every
+     sticky header. Anything that sticks out sideways — a chart a few pixels wide, a
+     poster strip — must scroll inside its own box, never drag the whole page with it. */
+  overflow-x: clip;
   background: var(--ink);
   color: var(--text);
   font-family: var(--font-body-stack);
@@ -1049,6 +1053,8 @@ a.bar-label:hover {
   text-align: right;
   font-size: 12px;
   color: var(--text-dim);
+  /* "17 plays" broken over two lines reads as two numbers. */
+  white-space: nowrap;
 }
 
 .donut-wrap {
@@ -1188,6 +1194,17 @@ tbody tr:hover {
 
 td a:hover {
   color: var(--beam);
+}
+
+/*
+ * The timestamp column. Kept on one line where there is room, because a broken date is
+ * harder to scan than a wide one — but it is the widest cell in every table, and on a
+ * phone it pushed the column carrying the actual answer off the card. A class rather than
+ * an inline style so the phone breakpoint below can relax it; an inline style could not
+ * be overridden by a media query.
+ */
+.when-cell {
+  white-space: nowrap;
 }
 
 .table-wrap {
@@ -1918,8 +1935,11 @@ kbd {
     width: 62px;
   }
 
+  /* The value column is sized, not `auto`: next to a `1fr` label the flexible track takes
+     the whole row and the auto one collapses to zero, which clipped "17 plays" to nothing
+     at the card edge. */
   .bar-row {
-    grid-template-columns: 20px minmax(0, 1fr) 0 auto;
+    grid-template-columns: 20px minmax(0, 1fr) 0 68px;
     gap: 8px;
   }
 
@@ -1967,12 +1987,41 @@ kbd {
     padding: 14px;
   }
 
+  /* A table still scrolls sideways when it has to, but only after the cheap width has
+     been given back: less padding, and the timestamp allowed onto a second line. */
+  table {
+    font-size: 12px;
+  }
+
+  th,
+  td {
+    padding: 8px 8px;
+  }
+
+  .when-cell {
+    white-space: normal;
+  }
+
+  /* Columns that are context rather than answer. A seven-column table cannot fit a phone,
+     and sideways scrolling hides whichever half you are not looking at — so the secondary
+     columns drop out here instead. They are still in the CSV export and on the detail
+     page, which is where anybody comparing them is already going. */
+  .secondary-col {
+    display: none;
+  }
+
   .stat {
     padding: 13px 14px 14px;
   }
 
   .grid {
     gap: 10px;
+  }
+
+  /* Two stat cards side by side instead of one per row: at 178px the auto-fit minimum
+     never fit twice into a phone, so five numbers cost five full-width blocks. */
+  .grid.cols-4 {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
   }
 
   .palette-scrim {

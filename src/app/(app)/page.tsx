@@ -47,7 +47,7 @@ export default async function DashboardPage({
   const session = await requireUser();
   const t = await getT();
   // syncActivity already ran in the layout.
-  await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
+  await syncHistory(session).catch(reportSyncError('history sync'));
 
   const params = await searchParams;
   const requested = Number(params.days ?? 30);
@@ -203,7 +203,7 @@ export default async function DashboardPage({
                           </div>
                         )}
                       </td>
-                      <td className="num muted" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <td className="num muted when-cell" style={{ textAlign: 'right' }}>
                         {formatDate(play.watchedAt)}
                       </td>
                     </tr>

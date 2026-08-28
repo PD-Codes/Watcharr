@@ -92,6 +92,20 @@ type JfSession = {
 
 const ticksToMs = (ticks?: number) => Math.round((ticks ?? 0) / 10_000);
 
+/**
+ * RemoteEndPoint is an endpoint, not an address: it carries the client's source port
+ * ("10.0.0.5:52344", IPv6 bracketed as "[::1]:52344"). The port is noise on screen and
+ * makes both the LAN check and the geo lookup miss, so only the address is kept.
+ */
+export function endpointAddress(value?: string): string | undefined {
+  if (!value) return undefined;
+  const bracketed = value.match(/^\[(.+)\]/);
+  if (bracketed) return bracketed[1];
+  // A bare IPv6 address has several colons; only a single one is a port separator.
+  const parts = value.split(':');
+  return parts.length === 2 ? parts[0] : value;
+}
+
 /** Jellyfin reports "DirectPlay" / "DirectStream" / "Transcode". */
 function toPlayMethod(value?: string): PlayMethod | undefined {
   const normalised = value?.toLowerCase();
@@ -224,7 +238,7 @@ export class JellyfinAdapter implements MediaServerAdapter {
           sourceHeight: video?.Height,
           sourceBitrateKbps: video?.BitRate ? Math.round(video.BitRate / 1000) : undefined,
           terminateKey: s.Id,
-          remoteAddress: s.RemoteEndPoint,
+          remoteAddress: endpointAddress(s.RemoteEndPoint),
           lastCheckInAt: s.LastPlaybackCheckIn
             ? new Date(s.LastPlaybackCheckIn)
             : s.LastActivityDate
@@ -251,6 +265,24 @@ export class JellyfinAdapter implements MediaServerAdapter {
       method: 'POST',
       headers,
     });
+  }
+
+  /**
+   * Jellyfin and Emby both expose /socket, authenticated with the same token as the REST
+   * API. SessionsStart asks the server to push the session list on an interval and on
+   * every change; the payload is ignored — see liveSocket() on the interface for why.
+   */
+  liveSocket(): { url: string; hello?: string } | null {
+    const url = new URL(joinUrl(this.baseUrl, '/socket'));
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.searchParams.set('api_key', this.adminToken);
+    url.searchParams.set('deviceId', SERVER_DEVICE_ID);
+    return {
+      url: url.toString(),
+      // "initial delay, interval" in milliseconds. The interval is a fallback heartbeat,
+      // not the mechanism — changes arrive without waiting for it.
+      hello: JSON.stringify({ MessageType: 'SessionsStart', Data: '0,1500' }),
+    };
   }
 
   async getLibrary(): Promise<LibraryItem[]> {

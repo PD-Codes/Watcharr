@@ -55,7 +55,7 @@ export default async function HistoryPage({
 }) {
   const session = await requireUser();
   const t = await getT();
-  await syncHistory(session.user, session.serverToken).catch(reportSyncError('history sync'));
+  await syncHistory(session).catch(reportSyncError('history sync'));
 
   const params = await searchParams;
   const page = Math.max(1, Number(params.page ?? 1));
@@ -159,16 +159,16 @@ export default async function HistoryPage({
                 <th scope="col">{t('common.watched')}</th>
                 <th scope="col">{t('common.title')}</th>
                 <th scope="col">{t('common.genres')}</th>
-                <th scope="col">{t('common.type')}</th>
-                <th scope="col">{t('common.year')}</th>
+                <th scope="col" className="secondary-col">{t('common.type')}</th>
+                <th scope="col" className="secondary-col">{t('common.year')}</th>
                 <th scope="col">{t('common.duration')}</th>
-                <th scope="col">{t('common.device')}</th>
+                <th scope="col" className="secondary-col">{t('common.device')}</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id}>
-                  <td className="num muted" style={{ whiteSpace: 'nowrap' }}>
+                  <td className="num muted when-cell">
                     <Link href={`/history?date=${isoDay(row.watchedAt)}`}>
                       {formatDate(row.watchedAt)}
                     </Link>
@@ -189,10 +189,10 @@ export default async function HistoryPage({
                     ))}
                     {row.genres.length === 0 && '—'}
                   </td>
-                  <td className="muted">{row.mediaType}</td>
-                  <td className="num muted">{row.year ?? '—'}</td>
+                  <td className="muted secondary-col">{row.mediaType}</td>
+                  <td className="num muted secondary-col">{row.year ?? '—'}</td>
                   <td className="num">{formatDuration(row.durationMs)}</td>
-                  <td className="muted">{row.deviceName ?? '—'}</td>
+                  <td className="muted secondary-col">{row.deviceName ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

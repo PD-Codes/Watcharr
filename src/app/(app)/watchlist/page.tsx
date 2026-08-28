@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export default async function WatchlistPage() {
   const session = await requireUser();
   const t = await getT();
-  await syncWatchlist(session.user, session.serverToken).catch(reportSyncError('watchlist sync'));
+  await syncWatchlist(session).catch(reportSyncError('watchlist sync'));
   await reconcileWatchlistStatus(session.user.id);
 
   const items = await db

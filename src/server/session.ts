@@ -165,7 +165,14 @@ export async function createSession(
   return row;
 }
 
-export async function getSession(): Promise<{ user: SessionUser; serverToken: string } | null> {
+export interface Session {
+  /** The auth_sessions row id. Carried so a dead media server token can drop its session. */
+  id: string;
+  user: SessionUser;
+  serverToken: string;
+}
+
+export async function getSession(): Promise<Session | null> {
   const raw = (await cookies()).get(COOKIE)?.value;
   if (!raw) return null;
   const id = unsign(raw);
@@ -176,7 +183,7 @@ export async function getSession(): Promise<{ user: SessionUser; serverToken: st
     .from(authSessions)
     .innerJoin(users, eq(users.id, authSessions.userId))
     .where(and(eq(authSessions.id, id), gt(authSessions.expiresAt, new Date())));
-  return row ? { user: row.user, serverToken: decryptSecret(row.serverToken) } : null;
+  return row ? { id, user: row.user, serverToken: decryptSecret(row.serverToken) } : null;
 }
 
 /**

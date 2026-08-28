@@ -1,0 +1,115 @@
+{
+  "feature.liveSocket": {
+    "en": "Listen for live events from the media servers",
+    "de": "Live-Ereignisse der Media-Server abonnieren"
+  },
+
+  "config.timezone": { "en": "Time zone", "de": "Zeitzone" },
+  "config.timezoneContainer": {
+    "en": "Follow the container",
+    "de": "Container-Einstellung folgen"
+  },
+  "config.timezoneHint": {
+    "en": "Days, weekdays and hours in every chart are counted in this zone. Leaving it unset uses whatever the container is set to.",
+    "de": "Tage, Wochentage und Stunden aller Auswertungen werden in dieser Zone gezählt. Ohne Auswahl gilt die Zeitzone des Containers."
+  },
+
+  "config.retention": { "en": "Data retention", "de": "Datenaufbewahrung" },
+  "config.retentionSessions": {
+    "en": "Keep finished streams for (days)",
+    "de": "Beendete Streams aufbewahren (Tage)"
+  },
+  "config.retentionLogs": {
+    "en": "Keep logins, alerts and the notification log for (days)",
+    "de": "Anmeldungen, Alarme und Benachrichtigungsprotokoll aufbewahren (Tage)"
+  },
+  "config.retentionHistory": {
+    "en": "Keep watch history for (days)",
+    "de": "Verlauf aufbewahren (Tage)"
+  },
+  "config.keepForever": { "en": "keep forever", "de": "unbegrenzt" },
+  "config.retentionHint": {
+    "en": "Empty means nothing is ever deleted. Old rows are removed every few hours and the database file is shrunk afterwards. Watch history is the one people miss, so it is separate and off by default.",
+    "de": "Leer heißt: es wird nie etwas gelöscht. Alte Zeilen werden alle paar Stunden entfernt, danach schrumpft die Datenbankdatei. Der Verlauf ist der Teil, den man vermisst — deshalb getrennt und standardmäßig aus."
+  },
+
+  "config.api": { "en": "Read-only API", "de": "Read-only-API" },
+  "config.apiKeySet": { "en": "A key is configured.", "de": "Ein Schlüssel ist hinterlegt." },
+  "config.apiKeyNone": {
+    "en": "No key yet — the API answers 403 until one is generated.",
+    "de": "Noch kein Schlüssel — die API antwortet mit 403, bis einer erzeugt wurde."
+  },
+  "config.apiKeyOnce": {
+    "en": "Copy it now. It is stored encrypted and cannot be shown again.",
+    "de": "Jetzt kopieren. Er wird verschlüsselt gespeichert und ist danach nicht mehr einsehbar."
+  },
+  "config.apiKeyGenerate": { "en": "Generate key", "de": "Schlüssel erzeugen" },
+  "config.apiKeyRotate": { "en": "Generate a new key", "de": "Neuen Schlüssel erzeugen" },
+  "config.apiKeyClear": { "en": "Turn the API off", "de": "API abschalten" },
+  "config.apiKeyCleared": { "en": "The API is off.", "de": "Die API ist abgeschaltet." },
+  "config.apiHint": {
+    "en": "For dashboards and scripts: {code}, /api/v1/stats and /api/v1/history, with the key in an X-Api-Key header or an ?apikey= parameter. Read-only, deployment-wide.",
+    "de": "Für Dashboards und Skripte: {code}, /api/v1/stats und /api/v1/history, mit dem Schlüssel im Header X-Api-Key oder als Parameter ?apikey=. Nur lesend, deploymentweit."
+  },
+
+  "notifications.conditions": { "en": "Conditions", "de": "Bedingungen" },
+  "notifications.condition.users": { "en": "Only these users", "de": "Nur diese Nutzer" },
+  "notifications.condition.mediaTypes": {
+    "en": "Only these media types",
+    "de": "Nur diese Medientypen"
+  },
+  "notifications.condition.libraries": {
+    "en": "Only these libraries",
+    "de": "Nur diese Bibliotheken"
+  },
+  "notifications.condition.transcodeOnly": {
+    "en": "Only while transcoding",
+    "de": "Nur beim Transkodieren"
+  },
+  "notifications.anyValue": { "en": "any", "de": "beliebig" },
+  "notifications.conditionsHint": {
+    "en": "Users and media types are comma separated. Nothing selected never filters. Conditions an event cannot answer are ignored rather than silently swallowing it — a title added minutes ago may not be matched to its library yet.",
+    "de": "Nutzer und Medientypen kommagetrennt. Nichts ausgewählt filtert nie. Bedingungen, die ein Ereignis nicht beantworten kann, werden ignoriert statt es stillschweigend zu verschlucken — ein gerade hinzugefügter Titel lässt sich unter Umständen noch keiner Bibliothek zuordnen."
+  },
+  "notifications.template": { "en": "Message template", "de": "Nachrichtenvorlage" },
+  "notifications.templateHint": {
+    "en": "Empty uses the built-in wording. Available placeholders: {tokens}",
+    "de": "Leer verwendet den eingebauten Text. Verfügbare Platzhalter: {tokens}"
+  },
+  "notifications.field.command": {
+    "en": "Script file name (in the scripts folder)",
+    "de": "Skript-Dateiname (im Skriptverzeichnis)"
+  },
+
+  "nav.adminImport": { "en": "Import", "de": "Import" },
+  "import.title": { "en": "Import from Tautulli", "de": "Import aus Tautulli" },
+  "import.subtitle": {
+    "en": "Brings years of plays, clients and transcode decisions across. Everything else can be pulled from the media server; this cannot.",
+    "de": "Holt jahrelange Wiedergaben, Clients und Transkodier-Entscheidungen herüber. Alles andere lässt sich vom Media-Server nachziehen, das hier nicht."
+  },
+  "import.server": { "en": "Import into", "de": "Importieren nach" },
+  "import.path": { "en": "Path to tautulli.db", "de": "Pfad zu tautulli.db" },
+  "import.pathHint": {
+    "en": "A path inside this container, not an upload — a Tautulli database is far too large for one. Mount the folder read-only and point here.",
+    "de": "Ein Pfad in diesem Container, kein Upload — eine Tautulli-Datenbank ist dafür viel zu groß. Das Verzeichnis schreibgeschützt einhängen und hierher zeigen."
+  },
+  "import.days": { "en": "Only the last (days)", "de": "Nur die letzten (Tage)" },
+  "import.everything": { "en": "everything", "de": "alles" },
+  "import.preview": { "en": "Preview", "de": "Vorschau" },
+  "import.run": { "en": "Import now", "de": "Jetzt importieren" },
+  "import.working": { "en": "Reading…", "de": "Wird gelesen …" },
+  "import.previewResult": { "en": "Would be imported", "de": "Würde importiert" },
+  "import.doneResult": { "en": "Imported", "de": "Importiert" },
+  "import.resultPlays": {
+    "en": "{plays} plays and {streams} streams.",
+    "de": "{plays} Wiedergaben und {streams} Streams."
+  },
+  "import.resultRows": {
+    "en": "{rows} matching rows in the file.",
+    "de": "{rows} passende Zeilen in der Datei."
+  },
+  "import.unmatched": {
+    "en": "No account on this server for: {users}",
+    "de": "Kein Konto auf diesem Server für: {users}"
+  }
+}

@@ -41,6 +41,31 @@ function warnAboutPendingMigrations(sqlite: Database.Database) {
   }
 }
 
+/**
+ * Applies a configured IANA zone to the process.
+ *
+ * Every date aggregate in the app buckets with SQLite's 'localtime' modifier, which reads
+ * the process time zone — so a container running in UTC put an evening in Berlin into the
+ * wrong day and the wrong hour, silently and only for the people it applied to. Rather
+ * than passing an offset into a few dozen strftime() calls (and getting DST wrong at every
+ * one of them), the zone is set once here: assigning process.env.TZ calls tzset(), which
+ * is exactly what both Node's Date and SQLite's date functions consult.
+ *
+ * An invalid zone is ignored rather than applied — an unrecognised TZ silently means UTC,
+ * which would look like the bug this fixes.
+ */
+export function applyTimezone(zone: string | null | undefined): boolean {
+  if (!zone) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+  } catch {
+    console.warn(`[watcharr] ignoring unknown time zone "${zone}"; using the container's`);
+    return false;
+  }
+  process.env.TZ = zone;
+  return true;
+}
+
 function connect(): Database.Database {
   mkdirSync(dirname(DB_PATH), { recursive: true });
   const sqlite = new Database(DB_PATH);
@@ -49,6 +74,17 @@ function connect(): Database.Database {
   sqlite.pragma('foreign_keys = ON');
   sqlite.pragma('busy_timeout = 5000');
   warnAboutPendingMigrations(sqlite);
+  // Read raw rather than through server/config.ts: that module imports this one, and the
+  // zone has to be in place before the first date query runs.
+  try {
+    const row = sqlite.prepare('SELECT timezone FROM app_settings WHERE id = 1').get() as
+      | { timezone: string | null }
+      | undefined;
+    applyTimezone(row?.timezone);
+  } catch {
+    // No settings row or no column yet (a database that has not been migrated): the
+    // container's own zone applies, which is the behaviour this setting replaced.
+  }
   return sqlite;
 }
 
@@ -74,6 +110,18 @@ export function closeDb() {
  */
 export async function backupTo(path: string): Promise<void> {
   await sqlite.backup(path);
+}
+
+/**
+ * Returns freed pages to the filesystem after a prune. Deleting rows only marks pages
+ * reusable, so a database that shed a year of playback sessions keeps its old size — the
+ * one number an operator looks at when they came here to reclaim disk.
+ *
+ * Rebuilds the file and takes a write lock while it runs, so it is called only when a
+ * prune actually deleted something, never on a schedule.
+ */
+export function vacuum(): void {
+  sqlite.exec('VACUUM');
 }
 
 export { schema };

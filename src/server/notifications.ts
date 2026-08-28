@@ -1,11 +1,11 @@
 import 'server-only';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { notificationChannels, notificationLog } from '@/db/schema';
+import { notificationChannels, notificationLog, users } from '@/db/schema';
 import { publicArtUrl } from './artlink';
 import { getSettings } from './config';
 import { decryptSecret, encryptSecret } from './crypto';
-import type { ChannelType, NotificationEvent } from './features';
+import { matchesConditions, renderTemplate, type ChannelType, type NotificationEvent } from './features';
 import type { Translate } from '@/i18n';
 import { getDefaultT } from '@/i18n/server';
 
@@ -18,7 +18,12 @@ export type { NotificationEvent };
 
 const TIMEOUT_MS = 5_000;
 
-type Channel = { type: string; config: Record<string, string> };
+type Channel = {
+  type: string;
+  config: Record<string, string>;
+  conditions?: Record<string, unknown>;
+  template?: string;
+};
 type Result = { ok: boolean; error?: string };
 
 /**
@@ -144,6 +149,66 @@ export async function sendMail(
   return transportSend(config, { to: config.from || config.to, bcc: to, subject, html });
 }
 
+/* ------------------------------------------------------------------ *
+ * Script channel
+ *
+ * Tautulli's most-used escape hatch: run something local when an event fires. Everything
+ * else in this file is an outbound HTTP request, so this one is the only place where an
+ * admin-supplied string could become code, and it is fenced accordingly:
+ *
+ *   - the command is a bare filename, resolved inside SCRIPTS_DIR and nowhere else, so a
+ *     path or a dot segment cannot reach out of it;
+ *   - execFile, never a shell, so nothing in the name or the payload is ever parsed as one;
+ *   - the payload arrives in the environment rather than as arguments, which keeps a title
+ *     with a leading dash from being read as a flag;
+ *   - a timeout, because the sync that fires this sits in a page render.
+ * ------------------------------------------------------------------ */
+
+const SCRIPTS_DIR = process.env.WATCHARR_SCRIPTS_DIR ?? './data/scripts';
+const SCRIPT_TIMEOUT_MS = 10_000;
+/** Filenames only. No separators, no leading dot, so "..", "/etc/x" and ".env" all fail. */
+const SCRIPT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+async function runScript(
+  command: string | undefined,
+  event: NotificationEvent,
+  text: string,
+  payload: Record<string, unknown>,
+): Promise<Result> {
+  if (!command || !SCRIPT_NAME.test(command)) {
+    return { ok: false, error: 'Script name must be a plain file name inside the scripts folder' };
+  }
+  const { execFile } = await import('node:child_process');
+  const { resolve, join } = await import('node:path');
+
+  const dir = resolve(SCRIPTS_DIR);
+  const file = join(dir, command);
+  // Belt and braces: the pattern above already rules out separators, but the resolved path
+  // is what actually gets executed, so that is what gets checked.
+  if (!file.startsWith(dir)) return { ok: false, error: 'Script is outside the scripts folder' };
+
+  return new Promise<Result>((done) => {
+    execFile(
+      file,
+      [],
+      {
+        timeout: SCRIPT_TIMEOUT_MS,
+        // A clean environment plus the event: the app's own secrets (SESSION_SECRET, the
+        // database path) have no business in a script an admin dropped into a folder.
+        env: {
+          PATH: process.env.PATH ?? '',
+          NODE_ENV: process.env.NODE_ENV,
+          WATCHARR_EVENT: event,
+          WATCHARR_TEXT: text,
+          WATCHARR_PAYLOAD: JSON.stringify(payload),
+        },
+        maxBuffer: 256 * 1024,
+      },
+      (error: Error | null) => done(error ? { ok: false, error: error.message } : { ok: true }),
+    );
+  });
+}
+
 /** Poster URL for a payload, if the event carries enough to build one and APP_URL is set. */
 function posterFor(payload: Record<string, unknown>): string | null {
   const p = payload as Record<string, any>;
@@ -161,7 +226,12 @@ async function send(
   payload: Record<string, unknown>,
   t: Translate,
 ): Promise<Result> {
-  const text = describe(t, event, payload);
+  // A template replaces the built-in sentence entirely; an empty one keeps it. Falling
+  // back when the rendered result is blank means a template made only of placeholders the
+  // event does not carry sends the normal wording instead of an empty message.
+  const text =
+    (channel.template ? renderTemplate(channel.template, { event, ...payload }) : '') ||
+    describe(t, event, payload);
   const image = posterFor(payload);
   const { config } = channel;
   switch (channel.type as ChannelType | 'webhook') {
@@ -201,6 +271,8 @@ async function send(
         { type: 'note', title: 'Watcharr', body: text },
         { 'Access-Token': config.accessToken },
       );
+    case 'script':
+      return runScript(config.command, event, text, payload);
     case 'email':
       return sendEmail(config, `Watcharr: ${text}`, text);
     default:
@@ -208,8 +280,15 @@ async function send(
   }
 }
 
-/** Every enabled destination subscribed to one event: legacy webhook plus channel rows. */
-async function channelsFor(event: NotificationEvent): Promise<(Channel & { id: number | null; name: string })[]> {
+/**
+ * Every enabled destination subscribed to one event and not filtered out by its own
+ * conditions: legacy webhook plus channel rows. The webhook has no conditions — it is a
+ * single field on the settings page, not a row with a form.
+ */
+async function channelsFor(
+  event: NotificationEvent,
+  payload: Record<string, unknown>,
+): Promise<(Channel & { id: number | null; name: string })[]> {
   const { webhookUrl, webhookEvents } = await getSettings();
   const channels: (Channel & { id: number | null; name: string })[] = [];
   if (webhookUrl && webhookEvents.includes(event)) {
@@ -222,6 +301,8 @@ async function channelsFor(event: NotificationEvent): Promise<(Channel & { id: n
       type: notificationChannels.type,
       name: notificationChannels.name,
       config: notificationChannels.config,
+      conditions: notificationChannels.conditions,
+      template: notificationChannels.template,
     })
     .from(notificationChannels)
     .where(
@@ -232,7 +313,18 @@ async function channelsFor(event: NotificationEvent): Promise<(Channel & { id: n
     )
     .catch(() => []);
   channels.push(
-    ...rows.map((row) => ({ id: row.id, type: row.type, name: row.name, config: decryptConfig(row.config) })),
+    ...rows
+      // In JavaScript rather than SQL: the rule is shared with the admin form, which
+      // cannot run a query, and a filter that decides who gets woken up is worth testing.
+      .filter((row) => matchesConditions(row.conditions, payload))
+      .map((row) => ({
+        id: row.id,
+        type: row.type,
+        name: row.name,
+        config: decryptConfig(row.config),
+        conditions: row.conditions,
+        template: row.template,
+      })),
   );
   return channels;
 }
@@ -267,18 +359,107 @@ async function logDelivery(
  * not a replay mechanism.
  */
 export async function dispatch(event: NotificationEvent, payload: Record<string, unknown>) {
-  const channels = await channelsFor(event);
+  const channels = await channelsFor(event, payload);
   // Resolved once for the whole fan-out: there is no session out here, so every channel
   // gets the deployment language rather than anybody's personal one.
   const t = await getDefaultT();
 
-  await Promise.all(
-    channels.map(async (channel) => {
+  await Promise.all([
+    ...channels.map(async (channel) => {
       let result = await send(channel, event, payload, t);
       if (!result.ok) result = await send(channel, event, payload, t);
       await logDelivery(channel, event, result);
     }),
-  );
+    mailSubscribers(event, payload, t),
+  ]);
+}
+
+/* ------------------------------------------------------------------ *
+ * Personal subscriptions
+ *
+ * The channels above belong to the admin and fan an event out to the whole deployment.
+ * These belong to one person: an address on their own user row plus the events they asked
+ * for. They ride the same SMTP credentials as the newsletter, so a user subscription costs
+ * no extra configuration.
+ * ------------------------------------------------------------------ */
+
+export interface UserPrefs {
+  email: string | null;
+  events: string[];
+}
+
+export async function getUserPrefs(userId: number): Promise<UserPrefs> {
+  const [row] = await db
+    .select({ email: users.notifyEmail, events: users.notifyEvents })
+    .from(users)
+    .where(eq(users.id, userId));
+  return { email: row?.email ?? null, events: row?.events ?? [] };
+}
+
+export async function setUserPrefs(userId: number, prefs: UserPrefs): Promise<void> {
+  await db
+    .update(users)
+    .set({ notifyEmail: prefs.email, notifyEvents: prefs.events })
+    .where(eq(users.id, userId));
+}
+
+/**
+ * What a non-admin is allowed to be told. Playback events name somebody by username, and
+ * the rest is operator data (a server going down, a monitor threshold, the digest over
+ * everyone's viewing) — mailing those to any user who ticks the box would hand out other
+ * people's activity. Admins already see all of it in the UI.
+ */
+export function mayReceive(
+  event: NotificationEvent,
+  user: { isAdmin: boolean; username: string },
+  payload: Record<string, unknown>,
+): boolean {
+  if (user.isAdmin) return true;
+  if (event === 'media.added') return true;
+  if (event.startsWith('playback.')) return payload.user === user.username;
+  return false;
+}
+
+/** Events a user may pick from — the same rule as mayReceive, for the form. */
+export function selectableEvents(isAdmin: boolean): NotificationEvent[] {
+  return isAdmin
+    ? ['playback.start', 'playback.stop', 'server.down', 'media.added', 'monitor.alert', 'digest']
+    : ['playback.start', 'playback.stop', 'media.added'];
+}
+
+const escapeHtml = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** One mail per event to everyone who subscribed to it personally, recipients in BCC. */
+async function mailSubscribers(
+  event: NotificationEvent,
+  payload: Record<string, unknown>,
+  t: Translate,
+): Promise<void> {
+  const rows = await db
+    .select({
+      email: users.notifyEmail,
+      events: users.notifyEvents,
+      isAdmin: users.isAdmin,
+      globalAdmin: users.globalAdmin,
+      username: users.username,
+    })
+    .from(users)
+    .where(isNotNull(users.notifyEmail))
+    .catch(() => []);
+
+  const recipients = rows
+    .filter(
+      (row) =>
+        row.events.includes(event) &&
+        mayReceive(event, { isAdmin: row.isAdmin || row.globalAdmin, username: row.username }, payload),
+    )
+    .map((row) => row.email as string);
+  if (!recipients.length) return;
+
+  const text = describe(t, event, payload);
+  const result = await sendMail(recipients, `Watcharr: ${text}`, `<p>${escapeHtml(text)}</p>`);
+  await logDelivery({ type: 'email', id: null, name: 'Personal subscriptions' }, event, result);
 }
 
 /** Fires a synthetic event straight at one channel, bypassing its event filter. */
@@ -297,7 +478,15 @@ export async function sendTest(channelId: number | 'webhook'): Promise<Result> {
   } else {
     const [row] = await db.select().from(notificationChannels).where(eq(notificationChannels.id, channelId));
     if (!row) return { ok: false, error: 'Channel not found' };
-    channel = { type: row.type, config: decryptConfig(row.config), id: row.id, name: row.name };
+    // The template comes along so a test shows the wording that will actually be sent; the
+    // conditions deliberately do not, because a test must always arrive.
+    channel = {
+      type: row.type,
+      config: decryptConfig(row.config),
+      template: row.template,
+      id: row.id,
+      name: row.name,
+    };
   }
 
   const result = await send(channel, 'playback.start', payload, t);
@@ -346,6 +535,9 @@ export interface ChannelSummary {
   name: string;
   configuredFields: string[];
   events: string[];
+  /** Not a secret, unlike config — the form shows and edits these directly. */
+  conditions: Record<string, unknown>;
+  template: string;
   enabled: boolean;
   createdAt: Date;
 }
@@ -360,6 +552,8 @@ export async function listChannels(): Promise<ChannelSummary[]> {
       name: row.name,
       configuredFields: Object.keys(config).filter((k) => config[k]),
       events: row.events,
+      conditions: row.conditions,
+      template: row.template,
       enabled: row.enabled,
       createdAt: row.createdAt,
     };
@@ -371,6 +565,8 @@ export async function createChannel(input: {
   name: string;
   config: Record<string, string>;
   events: string[];
+  conditions?: Record<string, unknown>;
+  template?: string;
 }): Promise<{ id: number }> {
   const [row] = await db
     .insert(notificationChannels)
@@ -385,11 +581,22 @@ export async function createChannel(input: {
  */
 export async function updateChannel(
   id: number,
-  input: Partial<{ name: string; config: Record<string, string>; events: string[]; enabled: boolean }>,
+  input: Partial<{
+    name: string;
+    config: Record<string, string>;
+    events: string[];
+    conditions: Record<string, unknown>;
+    template: string;
+    enabled: boolean;
+  }>,
 ): Promise<void> {
   const patch: Partial<typeof notificationChannels.$inferInsert> = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.events !== undefined) patch.events = input.events;
+  // Replaced rather than merged, unlike config: an empty condition means "no longer
+  // filter on this", and there is no secret to preserve.
+  if (input.conditions !== undefined) patch.conditions = input.conditions;
+  if (input.template !== undefined) patch.template = input.template;
   if (input.enabled !== undefined) patch.enabled = input.enabled;
   if (input.config) {
     const [current] = await db

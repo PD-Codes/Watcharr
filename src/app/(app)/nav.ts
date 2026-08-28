@@ -24,6 +24,7 @@ export function userNav(t: Translate, suggestionsEnabled: boolean): NavItem[] {
       ? [{ href: '/suggestions', label: t('nav.suggestions'), icon: 'suggestions' as const }]
       : []),
     { href: '/wrapped', label: t('nav.wrapped'), icon: 'wrapped' },
+    { href: '/notifications', label: t('nav.notifications'), icon: 'bell' },
     { href: '/profile', label: t('nav.profile'), icon: 'users' },
   ];
 }
@@ -47,6 +48,7 @@ export function adminNav(t: Translate, serverStatsEnabled: boolean, globalAdmin 
           { href: '/admin/servers', label: t('nav.adminServers'), icon: 'server' as const },
           { href: '/admin/notifications', label: t('nav.adminNotifications'), icon: 'activity' as const },
           { href: '/admin/newsletter', label: t('nav.adminNewsletter'), icon: 'wrapped' as const },
+          { href: '/admin/import', label: t('nav.adminImport'), icon: 'server' as const },
           { href: '/admin/config', label: t('nav.adminConfig'), icon: 'settings' as const },
         ]
       : []),

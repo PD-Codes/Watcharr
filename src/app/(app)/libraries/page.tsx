@@ -198,7 +198,7 @@ export default async function LibrariesPage({
                   <td className="num">{row.items}</td>
                   <td className="num muted">{row.seasons ?? '—'}</td>
                   <td className="num muted">{row.episodes ?? '—'}</td>
-                  <td className="num muted" style={{ whiteSpace: 'nowrap' }}>
+                  <td className="num muted when-cell">
                     {row.lastPlayedAt ? formatTimeAgo(t, row.lastPlayedAt) : t('common.never')}
                   </td>
                   <td className="muted">{row.lastTitle ?? '—'}</td>
