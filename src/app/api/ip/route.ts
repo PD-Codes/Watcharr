@@ -27,6 +27,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Too many lookups, try again shortly' }, { status: 429 });
   }
 
-  const details = await lookupIp(ip);
+  // A refresh skips the cached row. Turning the country lookup on does not expire what was
+  // stored while it was off, and that entry is valid for a month — so the dialog needs a
+  // way to ask again. Same rate limit as any other lookup.
+  const details = await lookupIp(ip, new URL(request.url).searchParams.has('refresh'));
   return NextResponse.json({ ...details, isLocal: isPrivateAddress(ip) });
 }

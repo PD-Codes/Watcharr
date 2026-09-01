@@ -336,7 +336,9 @@ async function syncServerActivity(server: ServerRow) {
       .values(row)
       .onConflictDoUpdate({
         target: playbackSessions.sessionKey,
-        // startedAt is deliberately not updated, so the original start time survives.
+        // startedAt only moves when this row was not already an open session: the key is
+        // stable per item and user, so watching the same episode again reuses the ended
+        // row — without the reset, Now Playing would report a start time days old.
         // progressAt only moves when the position actually changed.
         set: {
           itemId: row.itemId,
@@ -366,6 +368,7 @@ async function syncServerActivity(server: ServerRow) {
           remoteAddress: row.remoteAddress,
           isLocal: row.isLocal,
           lastSeenAt: now,
+          ...(previousProgress.has(rowKey) ? {} : { startedAt: now, progressAt: now }),
           ...(moved ? { progressAt: now } : {}),
         },
       });

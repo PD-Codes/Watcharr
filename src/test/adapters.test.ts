@@ -271,6 +271,8 @@ async function testEndpointAddress() {
   assert.equal(endpointAddress('10.0.0.5'), '10.0.0.5');
   assert.equal(endpointAddress('[fe80::1]:52344'), 'fe80::1');
   assert.equal(endpointAddress('fe80::1'), 'fe80::1');
+  // The same client seen through the IPv4-mapped notation must not become a second row.
+  assert.equal(endpointAddress('::ffff:10.0.0.5'), '10.0.0.5');
   assert.equal(endpointAddress(undefined), undefined);
 }
 

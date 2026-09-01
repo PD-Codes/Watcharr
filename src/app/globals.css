@@ -722,6 +722,9 @@ td.num {
   margin: 5px 0 0;
   font-size: 12px;
   color: var(--text-dim);
+  /* The hint carries a title from the media server. A long one without spaces would
+     otherwise be one unbreakable word running past the card. */
+  overflow-wrap: anywhere;
 }
 
 /* A clickable metric is a drill-down. It lifts, so the affordance is visible before
@@ -984,7 +987,10 @@ td.num {
 
 .bar-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 150px) 1fr 74px;
+  /* The value column is max-content, not a fixed width: "17 plays" fits in 74px, "534
+     Wiedergaben" does not, and a nowrap value in a too-narrow track ran out of the card.
+     max-content never shrinks below its text, so the bar gives up the room instead. */
+  grid-template-columns: 22px minmax(0, 150px) minmax(40px, 1fr) max-content;
   align-items: center;
   gap: 12px;
   padding: 5px 6px;
@@ -1239,6 +1245,24 @@ textarea {
   min-height: 44px;
   transition: border-color var(--dur-short) var(--ease-standard),
     background var(--dur-short) var(--ease-standard);
+}
+
+/* The explanation under the last field of a settings card. Pulled up against the field it
+   belongs to, and with no trailing margin, so cards in a grid end at the same edge. */
+.hint-last {
+  margin-top: -6px;
+  margin-bottom: 0;
+}
+
+/* A checkbox is not a field: the 100% above stretched it into a large square wherever a
+   caller forgot the inline override. The rule belongs here, not on every call site. */
+input[type='checkbox'],
+input[type='radio'] {
+  width: auto;
+  min-height: 0;
+  margin-top: 0;
+  /* Neutral, not amber: a ticked box is a setting, not a running stream. */
+  accent-color: var(--text);
 }
 
 input:hover,
@@ -1935,11 +1959,11 @@ kbd {
     width: 62px;
   }
 
-  /* The value column is sized, not `auto`: next to a `1fr` label the flexible track takes
-     the whole row and the auto one collapses to zero, which clipped "17 plays" to nothing
-     at the card edge. */
+  /* max-content, not `auto`: next to a `1fr` label an auto column collapses towards zero
+     and clipped "17 plays" at the card edge, while a fixed width was too narrow for the
+     longer German wording. The label truncates instead — it already has an ellipsis. */
   .bar-row {
-    grid-template-columns: 20px minmax(0, 1fr) 0 68px;
+    grid-template-columns: 20px minmax(0, 1fr) 0 max-content;
     gap: 8px;
   }
 

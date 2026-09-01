@@ -93,12 +93,14 @@ const empty = (ip: string, isLocal: boolean): IpDetails => ({
  * would tell it nothing anyway — but they still get a reverse DNS lookup, which is what
  * turns a bare 192.168.x.x into a recognisable device name.
  */
-export async function lookupIp(address: string): Promise<IpDetails> {
+export async function lookupIp(address: string, refresh = false): Promise<IpDetails> {
   const ip = normalise(address);
   if (!ip) return empty(address, false);
   const local = isPrivateAddress(ip);
 
-  const [cached] = await db.select().from(geoipCache).where(eq(geoipCache.ip, ip));
+  const [cached] = refresh
+    ? []
+    : await db.select().from(geoipCache).where(eq(geoipCache.ip, ip));
   if (cached && Date.now() - cached.fetchedAt.getTime() < TTL_MS) {
     return {
       ip,

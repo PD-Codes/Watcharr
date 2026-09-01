@@ -78,6 +78,7 @@
   "config.clearTmdb": { "en": "Remove the stored TMDB key", "de": "Gespeicherten TMDB-Schlüssel entfernen" },
   "config.watchedThreshold": { "en": "Counts as finished from", "de": "Gilt als beendet ab" },
   "config.watchedThresholdHint": { "en": "Percent of the runtime a stream has to reach. Changing it re-labels past sessions too, because the split is computed on read.", "de": "Prozent der Laufzeit, die ein Stream erreichen muss. Eine Änderung stuft auch vergangene Sitzungen neu ein, weil die Grenze beim Lesen ausgewertet wird." },
+  "config.general": { "en": "General", "de": "Allgemein" },
   "config.features": { "en": "Features", "de": "Funktionen" },
   "config.genericWebhook": { "en": "Generic webhook", "de": "Generischer Webhook" },
   "config.endpointUrl": { "en": "Endpoint URL", "de": "Endpunkt-URL" },

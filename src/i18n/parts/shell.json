@@ -20,6 +20,7 @@
 
   "ip.dialog": { "en": "Address {ip}", "de": "Adresse {ip}" },
   "ip.close": { "en": "Close", "de": "Schließen" },
+  "ip.refresh": { "en": "Refresh", "de": "Aktualisieren" },
   "ip.resolving": { "en": "Resolving…", "de": "Wird aufgelöst…" },
   "ip.resolveFailed": { "en": "Could not resolve this address", "de": "Adresse konnte nicht aufgelöst werden" },
   "ip.connection": { "en": "Connection", "de": "Verbindung" },

@@ -142,6 +142,7 @@ export default function NewsletterForm({
               type="checkbox"
               name={`library.${library.id}`}
               defaultChecked={selectedLibraries.length === 0 || selectedLibraries.includes(library.id)}
+             
             />
             {library.name}
           </label>

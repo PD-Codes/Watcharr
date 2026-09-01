@@ -4,6 +4,8 @@ import { playbackSessions } from '@/db/schema';
 import ActivityTable from '@/components/ActivityTable';
 import Beam from '@/components/Beam';
 import AutoRefresh from '@/components/AutoRefresh';
+import StreamTable from '@/components/StreamTable';
+import { listSessionHistory } from '@/server/playback';
 import { liveSessionFilter, reportSyncError, syncActivity } from '@/server/sync';
 import { requireUser } from '@/server/session';
 import { getT } from '@/i18n/server';
@@ -19,6 +21,12 @@ export default async function ActivityPage() {
     .select()
     .from(playbackSessions)
     .where(and(eq(playbackSessions.userId, session.user.id), liveSessionFilter()));
+
+  // Without this the page is one beam and a screen of nothing. Past streams answer the
+  // question the live view cannot: what was delivered, and how.
+  const live = new Set(rows.map((row) => row.sessionKey));
+  const past = await listSessionHistory({ scope: { userId: session.user.id }, limit: 20 });
+  const recent = past.rows.filter((row) => !live.has(row.sessionKey)).slice(0, 15);
 
   return (
     <>
@@ -37,6 +45,13 @@ export default async function ActivityPage() {
           <ActivityTable rows={rows.slice(1)} />
         </div>
       )}
+
+      <section className="section">
+        <h2>{t('users.recentStreams')}</h2>
+        <div className="card">
+          <StreamTable rows={recent} emptyLabel={t('users.noStreams')} />
+        </div>
+      </section>
     </>
   );
 }

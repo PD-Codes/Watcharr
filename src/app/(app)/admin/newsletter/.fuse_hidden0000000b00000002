@@ -95,7 +95,7 @@ export default function NewsletterForm({
   return (
     <form className="card" onSubmit={(e) => { e.preventDefault(); void submit(e.currentTarget, false); }} style={{ maxWidth: 620 }}>
       <label className="row">
-        <input type="checkbox" name="enabled" defaultChecked={enabled} />
+        <input type="checkbox" name="enabled" defaultChecked={enabled} style={{ width: 'auto' }} />
         {t('adminNewsletter.scheduleEnabled')}
       </label>
 
@@ -142,6 +142,7 @@ export default function NewsletterForm({
               type="checkbox"
               name={`library.${library.id}`}
               defaultChecked={selectedLibraries.length === 0 || selectedLibraries.includes(library.id)}
+              style={{ width: 'auto' }}
             />
             {library.name}
           </label>

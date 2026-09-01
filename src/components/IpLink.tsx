@@ -39,11 +39,15 @@ export default function IpLink({ ip }: { ip: string | null }) {
   const [details, setDetails] = useState<Details | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Bumped by the refresh button, which is also what re-runs the effect below.
+  const [attempt, setAttempt] = useState(0);
+
   useEffect(() => {
     if (!open || details || error || !ip) return;
     let cancelled = false;
     void (async () => {
-      const res = await fetch(`/api/ip?ip=${encodeURIComponent(ip)}`).catch(() => null);
+      const query = `ip=${encodeURIComponent(ip)}${attempt > 0 ? '&refresh=1' : ''}`;
+      const res = await fetch(`/api/ip?${query}`).catch(() => null);
       if (cancelled) return;
       if (!res?.ok) {
         const body = (await res?.json().catch(() => null)) as { error?: string } | null;
@@ -55,7 +59,16 @@ export default function IpLink({ ip }: { ip: string | null }) {
     return () => {
       cancelled = true;
     };
-  }, [open, details, error, ip, t]);
+  }, [open, details, error, ip, t, attempt]);
+
+  // Clearing the result is what triggers the fetch again — the effect bails while one is
+  // already there. A cached row from before the country lookup was switched on lives for a
+  // month, so without this the dialog would keep repeating the same empty answer.
+  function refresh() {
+    setDetails(null);
+    setError(null);
+    setAttempt((n) => n + 1);
+  }
 
   // Escape closes the dialog, the same as the command palette.
   useEffect(() => {
@@ -89,9 +102,14 @@ export default function IpLink({ ip }: { ip: string | null }) {
           >
             <div className="modal-head">
               <h2 style={{ margin: 0 }}>{ip}</h2>
-              <button type="button" className="outlined" onClick={() => setOpen(false)}>
-                {t('ip.close')}
-              </button>
+              <div className="row" style={{ gap: 8 }}>
+                <button type="button" className="outlined" onClick={refresh}>
+                  {t('ip.refresh')}
+                </button>
+                <button type="button" className="outlined" onClick={() => setOpen(false)}>
+                  {t('ip.close')}
+                </button>
+              </div>
             </div>
 
             {error && <p className="error">{error}</p>}

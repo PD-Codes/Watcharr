@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { apiFetch, joinUrl } from './http';
+import { normalise } from '../net';
 import type {
   AuthResult,
   HistoryEntry,
@@ -96,14 +97,13 @@ const ticksToMs = (ticks?: number) => Math.round((ticks ?? 0) / 10_000);
  * RemoteEndPoint is an endpoint, not an address: it carries the client's source port
  * ("10.0.0.5:52344", IPv6 bracketed as "[::1]:52344"). The port is noise on screen and
  * makes both the LAN check and the geo lookup miss, so only the address is kept.
+ *
+ * Reuses net.ts's normalise(), which additionally unwraps the IPv4-mapped IPv6 form
+ * ("::ffff:10.0.0.5"): Jellyfin reports the same client in both notations depending on how
+ * it was reached, and without unwrapping, one device becomes two rows in the address list.
  */
 export function endpointAddress(value?: string): string | undefined {
-  if (!value) return undefined;
-  const bracketed = value.match(/^\[(.+)\]/);
-  if (bracketed) return bracketed[1];
-  // A bare IPv6 address has several colons; only a single one is a port separator.
-  const parts = value.split(':');
-  return parts.length === 2 ? parts[0] : value;
+  return normalise(value ?? '') || undefined;
 }
 
 /** Jellyfin reports "DirectPlay" / "DirectStream" / "Transcode". */

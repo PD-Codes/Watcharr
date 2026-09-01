@@ -190,325 +190,333 @@ export default function ConfigForm({
   }
 
   return (
-    <form className="card" onSubmit={onSubmit} style={{ maxWidth: 520 }}>
-      <label>
-        {t('config.defaultLanguage')}
-        <select name="defaultLocale" defaultValue={defaultLocale}>
-          {LOCALES.map((locale) => (
-            <option key={locale} value={locale}>
-              {LOCALE_NAMES[locale]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <p className="muted" style={{ marginTop: -8 }}>
-        {t('config.defaultLanguageHint')}
-      </p>
+    <form onSubmit={onSubmit}>
+      {/* One card per topic in an auto-fitting grid. As a single 520px column this page
+          was a two-thousand-pixel scroll on a desktop that had room for four columns. */}
+      <div className="grid cols-2">
+        <section>
+          <h2>{t('config.general')}</h2>
+          <div className="card">
+            <label>
+              {t('config.defaultLanguage')}
+              <select name="defaultLocale" defaultValue={defaultLocale}>
+                {LOCALES.map((locale) => (
+                  <option key={locale} value={locale}>
+                    {LOCALE_NAMES[locale]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="muted" style={{ marginTop: -8 }}>
+              {t('config.defaultLanguageHint')}
+            </p>
 
-      <label>
-        {t('config.timezone')}
-        <select name="timezone" defaultValue={timezone ?? ''}>
-          <option value="">{t('config.timezoneContainer')}</option>
-          {timezones().map((zone) => (
-            <option key={zone} value={zone}>
-              {zone}
-            </option>
-          ))}
-        </select>
-      </label>
-      <p className="muted" style={{ marginTop: -8 }}>
-        {t('config.timezoneHint')}
-      </p>
+            <label>
+              {t('config.timezone')}
+              <select name="timezone" defaultValue={timezone ?? ''}>
+                <option value="">{t('config.timezoneContainer')}</option>
+                {timezones().map((zone) => (
+                  <option key={zone} value={zone}>
+                    {zone}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="muted" style={{ marginTop: -8 }}>
+              {t('config.timezoneHint')}
+            </p>
 
-      <label>
-        {t('config.tmdbKey')}
-        <input
-          name="tmdbApiKey"
-          type="password"
-          placeholder={hasTmdbKey ? t('config.configured') : t('config.notSet')}
-        />
-      </label>
-      {hasTmdbKey && (
-        <label className="row">
-          <input type="checkbox" name="clearTmdb" style={{ width: 'auto' }} />{' '}
-          {t('config.clearTmdb')}
-        </label>
-      )}
+            <label>
+              {t('config.tmdbKey')}
+              <input
+                name="tmdbApiKey"
+                type="password"
+                placeholder={hasTmdbKey ? t('config.configured') : t('config.notSet')}
+              />
+            </label>
+            {hasTmdbKey && (
+              <label className="row">
+                <input type="checkbox" name="clearTmdb" /> {t('config.clearTmdb')}
+              </label>
+            )}
 
-      <label>
-        {t('config.watchedThreshold')}
-        <input
-          name="watchedThreshold"
-          type="number"
-          min={1}
-          max={100}
-          defaultValue={watchedThreshold}
-          required
-        />
-      </label>
-      <p className="muted" style={{ marginTop: -6 }}>
-        {t('config.watchedThresholdHint')}
-      </p>
+            <label>
+              {t('config.watchedThreshold')}
+              <input
+                name="watchedThreshold"
+                type="number"
+                min={1}
+                max={100}
+                defaultValue={watchedThreshold}
+                required
+              />
+            </label>
+            <p className="muted hint-last">{t('config.watchedThresholdHint')}</p>
+          </div>
+        </section>
 
-      <p className="stat-label" style={{ marginTop: 20 }}>
-        {t('config.features')}
-      </p>
-      {FEATURE_FLAGS.map((flag) => (
-        <label className="row" key={flag.key}>
-          <input
-            type="checkbox"
-            name={`feature.${flag.key}`}
-            defaultChecked={isEnabled(features, flag.key)}
-            style={{ width: 'auto' }}
-          />
-          {t(flag.labelKey)}
-        </label>
-      ))}
+        <section>
+          <h2>{t('config.features')}</h2>
+          <div className="card">
+            {FEATURE_FLAGS.map((flag) => (
+              <label className="row" key={flag.key}>
+                <input
+                  type="checkbox"
+                  name={`feature.${flag.key}`}
+                  defaultChecked={isEnabled(features, flag.key)}
+                />
+                {t(flag.labelKey)}
+              </label>
+            ))}
+          </div>
+        </section>
 
-      <p className="stat-label" style={{ marginTop: 20 }}>
-        {t('config.genericWebhook')}
-      </p>
-      <label>
-        {t('config.endpointUrl')}
-        <input name="webhookUrl" type="url" defaultValue={webhookUrl ?? ''} placeholder="https://" />
-      </label>
-      {webhookUrl && (
-        <button type="button" className="outlined" disabled={busy} onClick={onTestWebhook}>
-          {t('config.sendTest')}
-        </button>
-      )}
-      <p className="muted" style={{ marginTop: -6 }}>
-        {splice(
-          t('config.webhookHint'),
-          '{link}',
-          <a href="/admin/notifications">{t('config.notificationsLink')}</a>,
-        )}
-      </p>
-      {NOTIFICATION_EVENTS.map((event) => (
-        <label className="row" key={event.key}>
-          <input
-            type="checkbox"
-            name={`event.${event.key}`}
-            defaultChecked={webhookEvents.includes(event.key)}
-            style={{ width: 'auto' }}
-          />
-          {t(event.labelKey)}
-        </label>
-      ))}
+        <section>
+          <h2>{t('config.genericWebhook')}</h2>
+          <div className="card">
+            <label>
+              {t('config.endpointUrl')}
+              <input
+                name="webhookUrl"
+                type="url"
+                defaultValue={webhookUrl ?? ''}
+                placeholder="https://"
+              />
+            </label>
+            {webhookUrl && (
+              <button type="button" className="outlined" disabled={busy} onClick={onTestWebhook}>
+                {t('config.sendTest')}
+              </button>
+            )}
+            <p className="muted" style={{ marginTop: -6 }}>
+              {splice(
+                t('config.webhookHint'),
+                '{link}',
+                <a href="/admin/notifications">{t('config.notificationsLink')}</a>,
+              )}
+            </p>
+            {NOTIFICATION_EVENTS.map((event) => (
+              <label className="row" key={event.key}>
+                <input
+                  type="checkbox"
+                  name={`event.${event.key}`}
+                  defaultChecked={webhookEvents.includes(event.key)}
+                />
+                {t(event.labelKey)}
+              </label>
+            ))}
+          </div>
+        </section>
 
-      <p className="stat-label" style={{ marginTop: 20 }}>
-        {t('config.monitoring')}
-      </p>
-      <label>
-        {t('config.maxStreamsPerUser')}
-        <input
-          name="monitorMaxStreamsPerUser"
-          type="number"
-          min={1}
-          defaultValue={monitorMaxStreamsPerUser ?? ''}
-          placeholder={t('config.off')}
-        />
-      </label>
-      <label>
-        {t('config.bandwidthAlert')}
-        <input
-          name="monitorBandwidthMbps"
-          type="number"
-          min={1}
-          defaultValue={monitorBandwidthMbps ?? ''}
-          placeholder={t('config.off')}
-        />
-      </label>
-      <label className="row">
-        <input
-          type="checkbox"
-          name="monitorTranscodeAlert"
-          defaultChecked={monitorTranscodeAlert}
-          style={{ width: 'auto' }}
-        />
-        {t('config.transcodeAlert')}
-      </label>
-      <label>
-        {t('config.failedLogins')}
-        <input
-          name="monitorFailedLoginThreshold"
-          type="number"
-          min={1}
-          defaultValue={monitorFailedLoginThreshold ?? ''}
-          placeholder={t('config.off')}
-        />
-      </label>
-      <label>
-        {t('config.failedLoginWindow')}
-        <input
-          name="monitorFailedLoginWindowMin"
-          type="number"
-          min={1}
-          defaultValue={monitorFailedLoginWindowMin}
-        />
-      </label>
-      <label className="row">
-        <input
-          type="checkbox"
-          name="monitorNewAddressAlert"
-          defaultChecked={monitorNewAddressAlert}
-        />
-        {t('config.newAddressAlert')}
-      </label>
-      <p className="muted" style={{ marginTop: -6 }}>
-        {t('config.monitoringHint')}
-      </p>
+        <section>
+          <h2>{t('config.monitoring')}</h2>
+          <div className="card">
+            <label>
+              {t('config.maxStreamsPerUser')}
+              <input
+                name="monitorMaxStreamsPerUser"
+                type="number"
+                min={1}
+                defaultValue={monitorMaxStreamsPerUser ?? ''}
+                placeholder={t('config.off')}
+              />
+            </label>
+            <label>
+              {t('config.bandwidthAlert')}
+              <input
+                name="monitorBandwidthMbps"
+                type="number"
+                min={1}
+                defaultValue={monitorBandwidthMbps ?? ''}
+                placeholder={t('config.off')}
+              />
+            </label>
+            <label className="row">
+              <input
+                type="checkbox"
+                name="monitorTranscodeAlert"
+                defaultChecked={monitorTranscodeAlert}
+              />
+              {t('config.transcodeAlert')}
+            </label>
+            <label>
+              {t('config.failedLogins')}
+              <input
+                name="monitorFailedLoginThreshold"
+                type="number"
+                min={1}
+                defaultValue={monitorFailedLoginThreshold ?? ''}
+                placeholder={t('config.off')}
+              />
+            </label>
+            <label>
+              {t('config.failedLoginWindow')}
+              <input
+                name="monitorFailedLoginWindowMin"
+                type="number"
+                min={1}
+                defaultValue={monitorFailedLoginWindowMin}
+              />
+            </label>
+            <label className="row">
+              <input
+                type="checkbox"
+                name="monitorNewAddressAlert"
+                defaultChecked={monitorNewAddressAlert}
+              />
+              {t('config.newAddressAlert')}
+            </label>
+            <p className="muted hint-last">{t('config.monitoringHint')}</p>
+          </div>
+        </section>
 
-      <p className="stat-label" style={{ marginTop: 20 }}>
-        {t('config.digest')}
-      </p>
-      <label className="row">
-        <input
-          type="checkbox"
-          name="digestEnabled"
-          defaultChecked={digestEnabled}
-          style={{ width: 'auto' }}
-        />
-        {t('config.digestEnabled')}
-      </label>
-      <label>
-        {t('config.frequency')}
-        <select name="digestFrequency" defaultValue={digestFrequency}>
-          <option value="daily">{t('config.daily')}</option>
-          <option value="weekly">{t('config.weekly')}</option>
-        </select>
-      </label>
-      <p className="muted" style={{ marginTop: -6 }}>
-        {splice(t('config.digestHint'), '{code}', <code>digest</code>)}
-      </p>
+        <section>
+          <h2>{t('config.digest')}</h2>
+          <div className="card">
+            <label className="row">
+              <input type="checkbox" name="digestEnabled" defaultChecked={digestEnabled} />
+              {t('config.digestEnabled')}
+            </label>
+            <label>
+              {t('config.frequency')}
+              <select name="digestFrequency" defaultValue={digestFrequency}>
+                <option value="daily">{t('config.daily')}</option>
+                <option value="weekly">{t('config.weekly')}</option>
+              </select>
+            </label>
+            <p className="muted hint-last">
+              {splice(t('config.digestHint'), '{code}', <code>digest</code>)}
+            </p>
+          </div>
+        </section>
 
-      <p className="stat-label" style={{ marginTop: 20 }}>
-        {t('config.backups')}
-      </p>
-      <label className="row">
-        <input
-          type="checkbox"
-          name="backupAutoEnabled"
-          defaultChecked={backupAutoEnabled}
-          style={{ width: 'auto' }}
-        />
-        {t('config.backupEnabled')}
-      </label>
-      <label>
-        {t('config.backupInterval')}
-        <input name="backupIntervalHours" type="number" min={1} defaultValue={backupIntervalHours} />
-      </label>
-      <label>
-        {t('config.backupRetention')}
-        <input name="backupRetention" type="number" min={1} defaultValue={backupRetention} />
-      </label>
-      <p className="muted" style={{ marginTop: -6 }}>
-        {splice(
-          t('config.backupHint'),
-          '{link}',
-          <a href="/admin/system">{t('config.system')}</a>,
-        )}
-      </p>
+        <section>
+          <h2>{t('config.backups')}</h2>
+          <div className="card">
+            <label className="row">
+              <input type="checkbox" name="backupAutoEnabled" defaultChecked={backupAutoEnabled} />
+              {t('config.backupEnabled')}
+            </label>
+            <label>
+              {t('config.backupInterval')}
+              <input
+                name="backupIntervalHours"
+                type="number"
+                min={1}
+                defaultValue={backupIntervalHours}
+              />
+            </label>
+            <label>
+              {t('config.backupRetention')}
+              <input name="backupRetention" type="number" min={1} defaultValue={backupRetention} />
+            </label>
+            <p className="muted hint-last">
+              {splice(t('config.backupHint'), '{link}', <a href="/admin/system">{t('config.system')}</a>)}
+            </p>
+          </div>
+        </section>
 
-      <p className="stat-label" style={{ marginTop: 20 }}>
-        {t('config.retention')}
-      </p>
-      <label>
-        {t('config.retentionSessions')}
-        <input
-          name="retentionSessionDays"
-          type="number"
-          min={1}
-          defaultValue={retentionSessionDays ?? ''}
-          placeholder={t('config.keepForever')}
-        />
-      </label>
-      <label>
-        {t('config.retentionLogs')}
-        <input
-          name="retentionLogDays"
-          type="number"
-          min={1}
-          defaultValue={retentionLogDays ?? ''}
-          placeholder={t('config.keepForever')}
-        />
-      </label>
-      <label>
-        {t('config.retentionHistory')}
-        <input
-          name="retentionHistoryDays"
-          type="number"
-          min={1}
-          defaultValue={retentionHistoryDays ?? ''}
-          placeholder={t('config.keepForever')}
-        />
-      </label>
-      <p className="muted" style={{ marginTop: -6 }}>
-        {t('config.retentionHint')}
-      </p>
+        <section>
+          <h2>{t('config.retention')}</h2>
+          <div className="card">
+            <label>
+              {t('config.retentionSessions')}
+              <input
+                name="retentionSessionDays"
+                type="number"
+                min={1}
+                defaultValue={retentionSessionDays ?? ''}
+                placeholder={t('config.keepForever')}
+              />
+            </label>
+            <label>
+              {t('config.retentionLogs')}
+              <input
+                name="retentionLogDays"
+                type="number"
+                min={1}
+                defaultValue={retentionLogDays ?? ''}
+                placeholder={t('config.keepForever')}
+              />
+            </label>
+            <label>
+              {t('config.retentionHistory')}
+              <input
+                name="retentionHistoryDays"
+                type="number"
+                min={1}
+                defaultValue={retentionHistoryDays ?? ''}
+                placeholder={t('config.keepForever')}
+              />
+            </label>
+            <p className="muted hint-last">{t('config.retentionHint')}</p>
+          </div>
+        </section>
 
-      <p className="stat-label" style={{ marginTop: 20 }}>
-        {t('config.api')}
-      </p>
-      <p className="muted" style={{ marginTop: -6 }}>
-        {hasApiKey ? t('config.apiKeySet') : t('config.apiKeyNone')}
-      </p>
-      {newApiKey && (
-        <p className="card" style={{ wordBreak: 'break-all' }}>
-          <code>{newApiKey}</code>
-          <br />
-          <span className="muted">{t('config.apiKeyOnce')}</span>
-        </p>
-      )}
-      <div className="row" style={{ gap: 10 }}>
-        <button type="button" className="outlined" disabled={busy} onClick={() => onApiKey('POST')}>
-          {hasApiKey ? t('config.apiKeyRotate') : t('config.apiKeyGenerate')}
-        </button>
-        {hasApiKey && (
-          <button
-            type="button"
-            className="outlined"
-            disabled={busy}
-            onClick={() => onApiKey('DELETE')}
-          >
-            {t('config.apiKeyClear')}
-          </button>
-        )}
+        <section>
+          <h2>{t('config.api')}</h2>
+          <div className="card">
+            <p className="muted">{hasApiKey ? t('config.apiKeySet') : t('config.apiKeyNone')}</p>
+            {newApiKey && (
+              <p className="card" style={{ wordBreak: 'break-all' }}>
+                <code>{newApiKey}</code>
+                <br />
+                <span className="muted">{t('config.apiKeyOnce')}</span>
+              </p>
+            )}
+            <div className="row" style={{ gap: 10 }}>
+              <button
+                type="button"
+                className="outlined"
+                disabled={busy}
+                onClick={() => onApiKey('POST')}
+              >
+                {hasApiKey ? t('config.apiKeyRotate') : t('config.apiKeyGenerate')}
+              </button>
+              {hasApiKey && (
+                <button
+                  type="button"
+                  className="outlined"
+                  disabled={busy}
+                  onClick={() => onApiKey('DELETE')}
+                >
+                  {t('config.apiKeyClear')}
+                </button>
+              )}
+            </div>
+            <p className="muted hint-last" style={{ marginTop: 12 }}>
+              {splice(t('config.apiHint'), '{code}', <code>/api/v1/activity</code>)}
+            </p>
+          </div>
+        </section>
+
+        <section>
+          <h2>{t('config.geoip')}</h2>
+          <div className="card">
+            <label className="row">
+              <input type="checkbox" name="geoipEnabled" defaultChecked={geoipEnabled} />
+              {t('config.geoipEnabled')}
+            </label>
+            <label>
+              {t('config.geoipUrl')}
+              <input
+                name="geoipUrl"
+                type="url"
+                defaultValue={geoipUrl ?? ''}
+                placeholder="https://ipapi.co/{ip}/json/"
+              />
+            </label>
+            <p className="muted hint-last">{t('config.geoipHint')}</p>
+          </div>
+        </section>
       </div>
-      <p className="muted" style={{ marginTop: 6 }}>
-        {splice(t('config.apiHint'), '{code}', <code>/api/v1/activity</code>)}
-      </p>
 
-      <p className="stat-label" style={{ marginTop: 20 }}>
-        {t('config.geoip')}
-      </p>
-      <label className="row">
-        <input
-          type="checkbox"
-          name="geoipEnabled"
-          defaultChecked={geoipEnabled}
-          style={{ width: 'auto' }}
-        />
-        {t('config.geoipEnabled')}
-      </label>
-      <label>
-        {t('config.geoipUrl')}
-        <input
-          name="geoipUrl"
-          type="url"
-          defaultValue={geoipUrl ?? ''}
-          placeholder="https://ipapi.co/{ip}/json/"
-        />
-      </label>
-      <p className="muted" style={{ marginTop: -6 }}>
-        {t('config.geoipHint')}
-      </p>
-
-      <button disabled={busy} style={{ marginTop: 16 }}>
-        {t('action.save')}
-      </button>
-      {message && <p className="muted">{message}</p>}
-      {error && <p className="error">{error}</p>}
+      {/* Outside the grid: one save button for the whole form, not one per card. */}
+      <div className="row section">
+        <button disabled={busy}>{t('action.save')}</button>
+        {message && <span className="muted">{message}</span>}
+        {error && <span className="error">{error}</span>}
+      </div>
     </form>
   );
 }

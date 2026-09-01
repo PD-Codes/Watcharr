@@ -201,6 +201,7 @@ export default function NotificationsManager({
                     Array.isArray(channel?.conditions.libraries) &&
                     (channel.conditions.libraries as string[]).includes(library.key)
                   }
+                 
                 />
                 {library.label}
               </label>
@@ -212,6 +213,7 @@ export default function NotificationsManager({
             type="checkbox"
             name="condition.transcodeOnly"
             defaultChecked={channel?.conditions.transcodeOnly === true}
+           
           />
           {t('notifications.condition.transcodeOnly')}
         </label>
@@ -270,6 +272,7 @@ export default function NotificationsManager({
                   type="checkbox"
                   name={`event.${e.key}`}
                   defaultChecked={channel.events.includes(e.key)}
+                 
                 />
                 {t(e.labelKey)}
               </label>
@@ -280,6 +283,7 @@ export default function NotificationsManager({
                 type="checkbox"
                 name="enabled"
                 defaultChecked={channel.enabled}
+               
               />
               {t('notifications.enabled')}
             </label>

@@ -84,6 +84,7 @@ export default function EventPrefs({
               type="checkbox"
               name={`event.${key}`}
               defaultChecked={events.includes(key)}
+              style={{ width: 'auto' }}
             />
             {t(labels.get(key) ?? 'error.generic')}
           </label>
