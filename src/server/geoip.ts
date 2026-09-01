@@ -15,6 +15,7 @@ import { isPrivateAddress, normalise } from './net';
 // same code, which is why the URL is a template instead of a hard-coded provider.
 
 const TIMEOUT_MS = 4_000;
+const USER_AGENT = 'Watcharr';
 const TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface IpDetails {
@@ -127,10 +128,19 @@ export async function lookupIp(address: string, refresh = false): Promise<IpDeta
   if (!local && geoipEnabled && geoipUrl?.includes('{ip}')) {
     try {
       const res = await fetch(geoipUrl.replace('{ip}', encodeURIComponent(ip)), {
-        headers: { accept: 'application/json' },
+        // Node sends no User-Agent of its own, and providers treat a request without one
+        // as anonymous abuse: ipapi.co answers 429 "RateLimited" on the first call, while
+        // the identical URL in a browser returns 200. Without this header the lookup looks
+        // like a provider that knows nothing, not like a refused request.
+        headers: { accept: 'application/json', 'user-agent': USER_AGENT },
         signal: AbortSignal.timeout(TIMEOUT_MS),
         cache: 'no-store',
       });
+      if (!res.ok) {
+        // Otherwise a refused request is indistinguishable from "the provider knows
+        // nothing about this address", and it stays that way for the whole TTL.
+        console.warn(`geoip lookup for ${ip} failed: ${res.status} ${res.statusText}`);
+      }
       if (res.ok) {
         const body = (await res.json()) as Record<string, unknown>;
         for (const key of Object.keys(FIELDS) as (keyof typeof FIELDS)[]) {
