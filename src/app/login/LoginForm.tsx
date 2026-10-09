@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useT } from '@/i18n/client';
 
 /** Credential login for Jellyfin and Emby. */
-export default function LoginForm({ serverId }: { serverId: number }) {
+export default function LoginForm({ serverId, askSetupToken }: { serverId: number; askSetupToken?: boolean }) {
   const t = useT();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -24,8 +24,8 @@ export default function LoginForm({ serverId }: { serverId: number }) {
       });
       if (res.ok) router.push('/watchlist');
       else {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(data.error ?? t('login.failed'));
+        const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+        setError(data.code === 'setup-token' ? t('login.setupTokenInvalid') : (data.error ?? t('login.failed')));
       }
     } catch {
       setError(t('login.failed'));
@@ -44,6 +44,13 @@ export default function LoginForm({ serverId }: { serverId: number }) {
         {t('login.password')}
         <input name="password" type="password" autoComplete="current-password" required />
       </label>
+      {askSetupToken && (
+        <label>
+          {t('login.setupToken')}
+          <input name="setupToken" autoComplete="off" spellCheck={false} placeholder="XXXX-XXXX" />
+          <span className="muted">{t('login.setupTokenHint')}</span>
+        </label>
+      )}
       <button disabled={busy}>{t('action.signIn')}</button>
       {error && <p className="error">{error}</p>}
     </form>

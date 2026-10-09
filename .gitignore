@@ -5,3 +5,4 @@ data
 next-env.d.ts
 *.tsbuildinfo
 CLAUDE.md
+/_ops_backup*

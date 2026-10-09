@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { playbackSessions } from '@/db/schema';
 import { formatDuration, percent } from './format';
 import IpLink from './IpLink';
+import { LiveBar } from './LiveProgress';
 import TerminateButton from './TerminateButton';
 import TitleLink from './TitleLink';
 import { getT } from '@/i18n/server';
@@ -20,6 +21,7 @@ type Row = Pick<
   | 'grandparentTitle'
   | 'state'
   | 'progressMs'
+  | 'lastSeenAt'
   | 'durationMs'
   | 'clientName'
   | 'deviceName'
@@ -136,12 +138,13 @@ export default async function ActivityTable({
                   grandparentTitle={row.grandparentTitle}
                   serverWide={showUser}
                 />
-                <div
-                  className="progress"
-                  data-tip={t('activity.percentWatched', { percent: percent(row.progressMs, row.durationMs) })}
-                >
-                  <span style={{ width: `${percent(row.progressMs, row.durationMs)}%` }} />
-                </div>
+                <LiveBar
+                  progressMs={row.progressMs}
+                  durationMs={row.durationMs}
+                  playing={row.state === 'playing'}
+                  ageMs={Math.min(15_000, Math.max(0, Date.now() - row.lastSeenAt.getTime()))}
+                  tip={t('activity.percentWatched', { percent: percent(row.progressMs, row.durationMs) })}
+                />
               </td>
               <td>
                 {formatDuration(row.progressMs)} / {formatDuration(row.durationMs)}

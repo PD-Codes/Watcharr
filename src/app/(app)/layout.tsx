@@ -16,6 +16,8 @@ import Tooltip from '@/components/Tooltip';
 import CommandPalette from '@/components/CommandPalette';
 import Shortcuts from '@/components/Shortcuts';
 import RailToggle from './RailToggle';
+import ViewAsButton from './ViewAsButton';
+import DataProgress from './DataProgress';
 import TopBar from './TopBar';
 import './shell.css';
 
@@ -131,6 +133,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           adminItems={adminItems}
         />
         <main className="main" id="main" tabIndex={-1}>
+          <DataProgress />
           {children}
         </main>
       </div>
@@ -139,6 +142,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <CommandPalette userKey={session.user.id} pages={[...nav, ...adminItems]} />
       <Shortcuts />
       <Tooltip />
+      {session.preview && (
+        // Fixed pill rather than a bar in the grid: it must never move the page it is previewing.
+        <div className="preview-pill" role="status">
+          <span>{t('viewAs.banner', { user: session.user.username, admin: session.preview.admin.username })}</span>
+          <ViewAsButton />
+        </div>
+      )}
     </div>
   );
 }

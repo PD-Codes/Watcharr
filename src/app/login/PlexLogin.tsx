@@ -11,12 +11,13 @@ const POLL_MS = 2000;
 const POLL_DEADLINE_MS = 15 * 60_000;
 
 /** Plex PIN OAuth: open plex.tv, approve the code, poll until a token comes back. */
-export default function PlexLogin({ serverId }: { serverId: number }) {
+export default function PlexLogin({ serverId, askSetupToken }: { serverId: number; askSetupToken?: boolean }) {
   const t = useT();
   const router = useRouter();
   const [pin, setPin] = useState<Pin | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [setupToken, setSetupToken] = useState('');
 
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
@@ -56,12 +57,14 @@ export default function PlexLogin({ serverId }: { serverId: number }) {
           const poll = await fetch('/api/auth/plex/check', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pinId: next.pinId, serverId }),
+            body: JSON.stringify({ pinId: next.pinId, serverId, setupToken: setupToken || undefined }),
           });
           const data = (await poll.json().catch(() => ({}))) as { ok?: boolean };
           if (data.ok) {
             stop();
             router.push('/watchlist');
+          } else if (poll.status === 401 || poll.status === 429) {
+            giveUp(t('login.setupTokenInvalid')); // a wrong or throttled setup token: retrying cannot help
           } else if (poll.status === 403) {
             giveUp(t('login.plexNoAccess')); // approved, but by an account this server does not list
           } else if (poll.status === 400) {
@@ -81,6 +84,19 @@ export default function PlexLogin({ serverId }: { serverId: number }) {
 
   return (
     <div>
+      {!pin && askSetupToken && (
+        <label>
+          {t('login.setupToken')}
+          <input
+            value={setupToken}
+            onChange={(event) => setSetupToken(event.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="XXXX-XXXX"
+          />
+          <span className="muted">{t('login.setupTokenHint')}</span>
+        </label>
+      )}
       {!pin ? (
         <button onClick={start}>{t('login.plexButton')}</button>
       ) : (

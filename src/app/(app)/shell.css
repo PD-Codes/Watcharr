@@ -300,3 +300,50 @@
   box-shadow: none;
   filter: none;
 }
+
+/* --- Admin preview ("view as") ------------------------------------------------------ */
+
+.preview-pill {
+  position: fixed;
+  left: 50%;
+  bottom: 88px;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 8px 8px 18px;
+  transform: translateX(-50%);
+  border-radius: var(--shape-full);
+  background: var(--surface-container-highest);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--elev-3);
+  font-size: 14px;
+}
+
+@media (min-width: 881px) {
+  .preview-pill {
+    bottom: 24px;
+  }
+}
+
+/* --- Background loading progress ----------------------------------------------------- */
+
+.data-progress {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--shape-md);
+  background: var(--surface-container-low);
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.data-progress progress {
+  flex: 1 1 160px;
+  min-width: 120px;
+}

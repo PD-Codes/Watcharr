@@ -150,7 +150,16 @@ export interface MediaServerAdapter {
   /** Live playback sessions. Pass a token to scope to that user, omit for server-wide. */
   getSessions(token?: string): Promise<PlaybackSession[]>;
 
-  getHistory(token: string, serverUserId: string, since?: Date): Promise<HistoryEntry[]>;
+  /**
+   * `username` is the fallback identity for servers whose history ids differ from the ids the
+   * user signed in with (Plex numbers the owner 1 locally, but by plex.tv id everywhere else).
+   */
+  getHistory(
+    token: string,
+    serverUserId: string,
+    since?: Date,
+    username?: string,
+  ): Promise<HistoryEntry[]>;
 
   /** Movies and series in the server's libraries. Used for search and suggestions. */
   getLibrary(): Promise<LibraryItem[]>;
@@ -183,8 +192,11 @@ export interface MediaServerAdapter {
    * mapping to keep in step with the first, for data the HTTP call already returns. What
    * it buys is latency: a stream appears when it starts instead of up to five seconds
    * later, and an idle server stops being polled at all.
+   *
+   * `relevant` lets an adapter tell playback frames from the rest of a chatty socket (Plex
+   * also announces library scans); it only ever skips work and is never needed for correctness.
    */
-  liveSocket?(): { url: string; hello?: string } | null;
+  liveSocket?(): { url: string; hello?: string; relevant?: (frame: string) => boolean } | null;
 }
 
 export function supportsLiveSocket(

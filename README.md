@@ -37,7 +37,8 @@ and for the admin, without asking anyone to create yet another account.
 
 - **One or more servers.** Plex, Jellyfin and Emby can be mixed; the first is chosen during setup, more are added under Admin → Servers.
 - **No password system.** People sign in with their media server account. The server's admin
-  flag becomes the app's admin role.
+  flag becomes the app's admin role — or, on a fresh install, a one-time setup token printed
+  to the console does (see [First run](#first-run)).
 - **One container, one file.** SQLite, no separate database service, no Redis, no queue.
 - **Everything drills down.** A number, a genre, a day in the heatmap, an hour in the week
   grid and every title lead to the plays behind them, down to the individual episode.
@@ -48,7 +49,8 @@ and for the admin, without asking anyone to create yet another account.
 |---|---|
 | **Watchlist** | Search the library, mark titles as planned / watching / done. Plex watchlists are synced where the server exposes them. |
 | **History** | Every play, filterable by search, type, period, genre, day, weekday and hour. Exportable as CSV. |
-| **Activity** | What is playing right now, with progress, timecode and transcode state. |
+| **Activity** | What is playing right now, with progress, timecode and transcode state. Near-live: the page refreshes every few seconds and the progress bar keeps moving in between. |
+| **Lobby display** | `/screen`: a full-screen, hands-off display for a TV in the hallway. The running film with poster, progress and "ends at" time; between films a slideshow of new arrivals and the week's numbers. Animated, burn-in safe (slow drift, dimming when idle) and still with `prefers-reduced-motion`. |
 | **Statistics** | Watch time, plays, streaks, active days, records, daily and monthly activity, top genres, titles, devices, peak hours, a weekday × hour grid, a 365-day film-strip heatmap, plus how your own streams were delivered (direct play vs. transcode, codecs, resolutions, bitrates). |
 | **Suggestions** | Derived from your own history — genres, decades, formats — and optionally enriched with TMDB "similar titles". Each card links to the title page and out to the media server. |
 | **Wrapped** | A year in review: totals, first and last play of the year, top genres and titles, a calendar of the year, weekday crown, devices. |
@@ -64,9 +66,17 @@ and for the admin, without asking anyone to create yet another account.
 | **Clients** | Sessions and watch time per client, per device and per user. |
 | **Users** | All server users with a per-user drilldown into their stats and history. |
 | **System** | Media server reachability, API health, sync status. |
+| **System check** | A self-diagnosis that rates the database, disk space, media servers, caches, backups and background work, worst first. |
+| **Backups** | Create, verify, download, upload and restore database snapshots. See [Backup](#backup). |
+| **Caches** | How much of the library already has posters and TMDB details, how old the entries are, and buttons to renew or retry them. |
+| **View as user** | Preview the app exactly as a chosen user sees it, read-only. A banner shows the preview; one click ends it. |
+| **Newsletter** | Weekly "recently added" mail with schedule, libraries and wording. The preview renders unsaved form values in each subscriber language and can send a test mail to your own address. |
 | **Configuration** | Server URL and token, optional TMDB key, time zone, data retention, feature toggles. |
-| **Import** | One-shot import from a Tautulli database, with a preview first. |
+| **Import** | Import from a Tautulli database — by path or by upload, in the background, with a preview first. See [Importing from Tautulli](#importing-from-tautulli). |
 | **Read-only API** | `/api/v1/activity`, `/api/v1/stats`, `/api/v1/history` behind a key, for dashboards and scripts. |
+
+A fresh install loads posters and details in the background; a progress banner shows how far
+that has come and disappears when it is done.
 
 Transcoding and client statistics are recorded from live sessions, so they start empty on a
 fresh install and fill up as people watch. History-based statistics are backfilled from the
@@ -170,6 +180,7 @@ configuration page.
 | `APP_URL` | `http://localhost:3000` | Public base URL of this deployment: **the address you actually type into the browser**. Used for the artwork links in Discord and Slack notifications and as an accepted origin for state-changing requests. |
 | `PORT` | `3000` | Port the server listens on. |
 | `WATCHARR_SCRIPTS_DIR` | `./data/scripts` | The only folder a `script` notification channel may run a file from. A channel names a plain file name, never a path. |
+| `WATCHARR_IMPORT_MAX_GB` | `50` | Largest Tautulli database the upload accepts, in GB. |
 | `WATCHARR_NO_BACKGROUND` | *(unset)* | Set to `1` to run this instance as a web front end only: no live event sockets, no background sync. Only useful next to another instance that does the work. |
 | `TZ` | *(container default)* | Fallback time zone. Once one is picked on the configuration page, that setting wins — this only covers an installation that has not chosen. |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | *(unset)* | Set to `0` **only** if your media server uses a self-signed certificate. It disables certificate checking process-wide. |
@@ -190,16 +201,24 @@ the activity endpoint deliberately leaves out client IP addresses.
 
 ### Importing from Tautulli
 
-Mount the folder holding `tautulli.db` into the container read-only, then point
-**Admin → Import** at it and take the preview first — it reports how many plays would be
-written and which Tautulli user names have no account here.
+Two ways in, both under **Admin → Import**, and both start with a preview that reports how
+many plays would be written and which Tautulli user names have no account here:
 
-```yaml
-volumes:
-  - /path/to/tautulli:/import:ro
-```
+- **Upload.** Pick `tautulli.db` in the browser. It is sent in 4 MB pieces, so a reverse proxy
+  with a body limit does not matter, and an interrupted upload resumes where it stopped.
+  Files up to 50 GB are accepted (`WATCHARR_IMPORT_MAX_GB` changes that).
+- **Path.** Mount the folder holding `tautulli.db` into the container read-only and point the
+  page at it.
 
-The file is never written to. Running the import twice adds nothing the second time.
+  ```yaml
+  volumes:
+    - /path/to/tautulli:/import:ro
+  ```
+
+The import then runs as a **background job**: you can leave the page, a progress bar shows the
+current state, and it can be stopped and resumed. It reads in batches (about 6,000 rows per
+second and flat memory in a 400,000-row stress test), takes a safety backup first, and never
+writes to the source file. Running it twice adds nothing the second time.
 
 ---
 
@@ -239,6 +258,13 @@ server type, the server URL and an admin API token.
    which servers an account may use.
 
 </details>
+
+**Becoming the first admin.** While nobody is admin yet, the console log (`docker compose logs
+watcharr`) shows a one-time setup token like `K7QM-3XWP`. On the sign-in page a *Setup token*
+field appears — enter it together with your normal sign-in (for Plex before pressing the
+button) and your account becomes the global admin. The token then stops working. It exists
+only in memory, so a restart prints a new one. Skipping it still works: the first account the
+media server itself calls an admin claims the role, as before.
 
 After setup, everyone else signs in with their own media server account:
 
@@ -309,7 +335,14 @@ is semantic: a major bump means something needs your attention.
 
 ## Backup
 
-Everything lives in one SQLite file. Stop the container, copy it, start it again:
+**In the app** (Admin → Backups): create a snapshot, check that it opens and is intact,
+download it, upload one, or restore it. Snapshots are taken while the app runs, so they are
+consistent. A restore is staged and applied when the app next starts, after a verification in
+a separate process; the previous database is kept as a safety copy. Scheduled automatic backups with a
+retention count are switched on under Admin → Configuration; all snapshots live in
+`data/backups`, and manual ones are never pruned.
+
+**By hand**: everything lives in one SQLite file. Stop the container, copy it, start it again:
 
 ```bash
 docker compose stop
@@ -330,8 +363,9 @@ somewhere safe and separate.
 
 ## Security
 
-- No local password store. Authentication is delegated to the media server, and its admin
-  flag is the only source of the admin role.
+- No local password store. Authentication is delegated to the media server. The admin role
+  comes from its admin flag, or from the one-time setup token while no admin exists (a few
+  wrong guesses lock that field per address for ten minutes).
 - Media server tokens are encrypted at rest (AES-256-GCM) with a key derived from
   `SESSION_SECRET`.
 - Session cookies carry a signed random id and nothing else; sessions live server-side and

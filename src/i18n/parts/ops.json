@@ -1,0 +1,578 @@
+{
+  "action.delete": {
+    "en": "Delete",
+    "de": "Löschen"
+  },
+  "nav.adminBackups": {
+    "en": "Backups",
+    "de": "Backups"
+  },
+  "nav.adminCaches": {
+    "en": "Caches",
+    "de": "Caches"
+  },
+  "nav.adminDoctor": {
+    "en": "System check",
+    "de": "Systemcheck"
+  },
+  "viewAs.start": {
+    "en": "View as",
+    "de": "Ansicht als"
+  },
+  "viewAs.column": {
+    "en": "Preview",
+    "de": "Vorschau"
+  },
+  "viewAs.exit": {
+    "en": "Exit preview",
+    "de": "Vorschau beenden"
+  },
+  "viewAs.banner": {
+    "en": "Previewing as {user} (read-only, you are {admin})",
+    "de": "Vorschau als {user} (nur lesend, du bist {admin})"
+  },
+  "adminNewsletter.preview": {
+    "en": "Preview",
+    "de": "Vorschau"
+  },
+  "adminNewsletter.previewFailed": {
+    "en": "The preview could not be built.",
+    "de": "Die Vorschau konnte nicht erstellt werden."
+  },
+  "adminNewsletter.previewLanguage": {
+    "en": "Preview language",
+    "de": "Sprache der Vorschau"
+  },
+  "adminNewsletter.previewSubscribers": {
+    "en": "{count} subscribers",
+    "de": "{count} Abonnenten"
+  },
+  "adminNewsletter.previewTitle": {
+    "en": "Preview with unsaved values · {count} titles",
+    "de": "Vorschau mit nicht gespeicherten Werten · {count} Titel"
+  },
+  "adminNewsletter.sendTest": {
+    "en": "Send test mail",
+    "de": "Testmail senden"
+  },
+  "adminNewsletter.testPrompt": {
+    "en": "Send the test issue to which address?",
+    "de": "An welche Adresse soll die Testausgabe gehen?"
+  },
+  "adminNewsletter.testSent": {
+    "en": "Test issue sent to {email}.",
+    "de": "Testausgabe an {email} gesendet."
+  },
+  "import.source": {
+    "en": "Source",
+    "de": "Quelle"
+  },
+  "import.sourceUpload": {
+    "en": "Upload the database file",
+    "de": "Datenbankdatei hochladen"
+  },
+  "import.sourcePath": {
+    "en": "File path on the server",
+    "de": "Dateipfad auf dem Server"
+  },
+  "import.chooseFile": {
+    "en": "Tautulli database (tautulli.db)",
+    "de": "Tautulli-Datenbank (tautulli.db)"
+  },
+  "import.uploadHint": {
+    "en": "Uploaded in 4 MB pieces. If the connection drops or you pause, choose the same file again and it continues where it stopped.",
+    "de": "Wird in 4-MB-Stücken hochgeladen. Bricht die Verbindung ab oder pausierst du, wähle dieselbe Datei erneut – es geht dort weiter, wo es aufgehört hat."
+  },
+  "import.uploading": {
+    "en": "{name}: {sent} of {size}",
+    "de": "{name}: {sent} von {size}"
+  },
+  "import.pause": {
+    "en": "Pause",
+    "de": "Pausieren"
+  },
+  "import.partial": {
+    "en": "{percent}% uploaded",
+    "de": "{percent} % hochgeladen"
+  },
+  "import.safetyBackup": {
+    "en": "Take a backup before importing",
+    "de": "Vor dem Import ein Backup anlegen"
+  },
+  "import.progress": {
+    "en": "{scanned} of {total} rows ({percent}%)",
+    "de": "{scanned} von {total} Zeilen ({percent} %)"
+  },
+  "import.stop": {
+    "en": "Stop after this batch",
+    "de": "Nach diesem Stapel anhalten"
+  },
+  "import.resume": {
+    "en": "Continue where it stopped",
+    "de": "Dort fortsetzen, wo es aufgehört hat"
+  },
+  "import.mapTitle": {
+    "en": "Unmatched users",
+    "de": "Nicht zugeordnete Benutzer"
+  },
+  "import.mapHint": {
+    "en": "These Tautulli names have no account of the same name. Pick the account their history belongs to, or leave them out.",
+    "de": "Zu diesen Tautulli-Namen gibt es kein gleichnamiges Konto. Wähle das Konto, zu dem der Verlauf gehört, oder lass sie weg."
+  },
+  "import.mapRows": {
+    "en": "{rows} rows",
+    "de": "{rows} Zeilen"
+  },
+  "import.mapSkip": {
+    "en": "Leave out",
+    "de": "Weglassen"
+  },
+  "import.status.running": {
+    "en": "running",
+    "de": "läuft"
+  },
+  "import.status.done": {
+    "en": "finished",
+    "de": "fertig"
+  },
+  "import.status.failed": {
+    "en": "failed",
+    "de": "fehlgeschlagen"
+  },
+  "import.status.stopped": {
+    "en": "stopped",
+    "de": "angehalten"
+  },
+  "import.status.interrupted": {
+    "en": "interrupted",
+    "de": "unterbrochen"
+  },
+  "backups.subtitle": {
+    "en": "Snapshots of the database: create one, check it, download it, or restore it.",
+    "de": "Momentaufnahmen der Datenbank: anlegen, prüfen, herunterladen oder zurückspielen."
+  },
+  "backups.scheduleOn": {
+    "en": "Automatic backup every {hours} h, the newest {count} are kept.",
+    "de": "Automatisches Backup alle {hours} h, die letzten {count} bleiben erhalten."
+  },
+  "backups.scheduleOff": {
+    "en": "Automatic backups are off.",
+    "de": "Automatische Backups sind aus."
+  },
+  "backups.lastScheduled": {
+    "en": "Last one: {date}.",
+    "de": "Letztes: {date}."
+  },
+  "backups.changeSchedule": {
+    "en": "Change schedule",
+    "de": "Zeitplan ändern"
+  },
+  "backups.create": {
+    "en": "Back up now",
+    "de": "Jetzt sichern"
+  },
+  "backups.creating": {
+    "en": "Backing up…",
+    "de": "Sichere…"
+  },
+  "backups.colFile": {
+    "en": "File",
+    "de": "Datei"
+  },
+  "backups.colKind": {
+    "en": "Type",
+    "de": "Art"
+  },
+  "backups.colSize": {
+    "en": "Size",
+    "de": "Größe"
+  },
+  "backups.colCreated": {
+    "en": "Created",
+    "de": "Erstellt"
+  },
+  "backups.colActions": {
+    "en": "Actions",
+    "de": "Aktionen"
+  },
+  "backups.kind.scheduled": {
+    "en": "Scheduled",
+    "de": "Geplant"
+  },
+  "backups.kind.manual": {
+    "en": "Manual",
+    "de": "Manuell"
+  },
+  "backups.kind.pre-restore": {
+    "en": "Before a restore",
+    "de": "Vor Wiederherstellung"
+  },
+  "backups.kind.pre-import": {
+    "en": "Before an import",
+    "de": "Vor Import"
+  },
+  "backups.kind.other": {
+    "en": "Other",
+    "de": "Sonstige"
+  },
+  "backups.download": {
+    "en": "Download",
+    "de": "Herunterladen"
+  },
+  "backups.verify": {
+    "en": "Verify",
+    "de": "Prüfen"
+  },
+  "backups.verifying": {
+    "en": "Checking…",
+    "de": "Prüfe…"
+  },
+  "backups.verified": {
+    "en": "Intact: {users} users, {history} plays.",
+    "de": "Intakt: {users} Benutzer, {history} Wiedergaben."
+  },
+  "backups.verifyFailed": {
+    "en": "The check failed.",
+    "de": "Die Prüfung ist fehlgeschlagen."
+  },
+  "backups.restore": {
+    "en": "Restore",
+    "de": "Wiederherstellen"
+  },
+  "backups.confirmRestore": {
+    "en": "Restore {name}? It is checked first, then applied at the next start. The current database is kept as a “before a restore” backup.",
+    "de": "{name} wiederherstellen? Es wird zuerst geprüft und beim nächsten Start eingespielt. Die aktuelle Datenbank bleibt als Backup „Vor Wiederherstellung“ erhalten."
+  },
+  "backups.confirmDelete": {
+    "en": "Delete {name} for good?",
+    "de": "{name} endgültig löschen?"
+  },
+  "backups.none": {
+    "en": "No backups yet.",
+    "de": "Noch keine Backups."
+  },
+  "backups.pendingTitle": {
+    "en": "Restore of {name} is waiting for a restart",
+    "de": "Wiederherstellung von {name} wartet auf einen Neustart"
+  },
+  "backups.pendingHint": {
+    "en": "Restart the app (or the container) to apply it. Until then nothing has changed.",
+    "de": "Starte die App (bzw. den Container) neu, um sie einzuspielen. Bis dahin hat sich nichts geändert."
+  },
+  "backups.pendingHintDocker": {
+    "en": "Restart the container to apply it — the button below does that. Until then nothing has changed.",
+    "de": "Starte den Container neu, um sie einzuspielen – der Knopf unten macht das. Bis dahin hat sich nichts geändert."
+  },
+  "backups.restartNow": {
+    "en": "Restart now",
+    "de": "Jetzt neu starten"
+  },
+  "backups.confirmRestart": {
+    "en": "Restart now? The app is unavailable for a few seconds and everyone sees an error page until it is back.",
+    "de": "Jetzt neu starten? Die App ist einige Sekunden nicht erreichbar."
+  },
+  "backups.restarting": {
+    "en": "Restarting… reload this page in a few seconds.",
+    "de": "Starte neu… lade diese Seite in ein paar Sekunden neu."
+  },
+  "backups.cancelRestore": {
+    "en": "Cancel restore",
+    "de": "Wiederherstellung abbrechen"
+  },
+  "backups.restoreNote": {
+    "en": "The swap happens at startup, before the database is opened. Only scheduled backups are pruned by the retention setting; manual ones stay until you delete them. To restore a file from elsewhere, put it into the backups folder inside the data volume.",
+    "de": "Der Austausch passiert beim Start, bevor die Datenbank geöffnet wird. Nur geplante Backups räumt die Aufbewahrung auf; manuelle bleiben, bis du sie löschst. Um eine Datei von woanders einzuspielen, lege sie in den Ordner „backups“ im Datenvolume."
+  },
+  "caches.subtitle": {
+    "en": "What the app keeps so pages stay fast, how old it is, and how to renew it.",
+    "de": "Was die App zwischenspeichert, damit Seiten schnell bleiben, wie alt es ist und wie du es erneuerst."
+  },
+  "caches.tmdb": {
+    "en": "TMDB metadata",
+    "de": "TMDB-Metadaten"
+  },
+  "caches.tmdbHint": {
+    "en": "Posters, cast and ratings. Titles of your libraries are renewed in the background, 25 every 10 minutes, once their answer expires (30 days; 7 days for titles TMDB did not know).",
+    "de": "Poster, Besetzung und Bewertungen. Titel deiner Bibliotheken werden im Hintergrund erneuert, 25 alle 10 Minuten, sobald die Antwort abläuft (30 Tage; 7 Tage für Titel, die TMDB nicht kannte)."
+  },
+  "caches.noTmdbKey": {
+    "en": "No TMDB API key is set, so nothing is fetched or renewed.",
+    "de": "Es ist kein TMDB-API-Key gesetzt, daher wird nichts geladen oder erneuert."
+  },
+  "caches.tmdbNumbers": {
+    "en": "{entries} entries: {found} found, {misses} unknown to TMDB",
+    "de": "{entries} Einträge: {found} gefunden, {misses} TMDB unbekannt"
+  },
+  "caches.expired": {
+    "en": "{count} expired",
+    "de": "{count} abgelaufen"
+  },
+  "caches.oldest": {
+    "en": "oldest from {date}",
+    "de": "ältester vom {date}"
+  },
+  "caches.refreshNow": {
+    "en": "Refresh now",
+    "de": "Jetzt aktualisieren"
+  },
+  "caches.refreshing": {
+    "en": "Refreshing in the background — up to 500 titles…",
+    "de": "Aktualisiere im Hintergrund – bis zu 500 Titel…"
+  },
+  "caches.refreshed": {
+    "en": "Last refresh looked up {count} titles.",
+    "de": "Die letzte Aktualisierung hat {count} Titel abgefragt."
+  },
+  "caches.retryMisses": {
+    "en": "Retry unknown titles",
+    "de": "Unbekannte Titel erneut versuchen"
+  },
+  "caches.clear": {
+    "en": "Clear",
+    "de": "Leeren"
+  },
+  "caches.confirmClear": {
+    "en": "Clear this cache? It fills up again by itself.",
+    "de": "Diesen Cache leeren? Er füllt sich von selbst wieder."
+  },
+  "caches.removed": {
+    "en": "{count} entries removed.",
+    "de": "{count} Einträge entfernt."
+  },
+  "caches.library": {
+    "en": "Library listings",
+    "de": "Bibliothekslisten"
+  },
+  "caches.libraryHint": {
+    "en": "Held in memory for 5 minutes per server; powers search, posters and library filters.",
+    "de": "Pro Server 5 Minuten im Speicher; speist Suche, Poster und Bibliotheksfilter."
+  },
+  "caches.libraryNumbers": {
+    "en": "{items} items, {sections} libraries",
+    "de": "{items} Titel, {sections} Bibliotheken"
+  },
+  "caches.age": {
+    "en": "{age} old",
+    "de": "{age} alt"
+  },
+  "caches.libraryCold": {
+    "en": "Nothing loaded yet.",
+    "de": "Noch nichts geladen."
+  },
+  "caches.geoip": {
+    "en": "Address lookups",
+    "de": "Adress-Abfragen"
+  },
+  "caches.suggestions": {
+    "en": "Suggestions",
+    "de": "Vorschläge"
+  },
+  "caches.entries": {
+    "en": "{count} entries",
+    "de": "{count} Einträge"
+  },
+  "doctor.allGood": {
+    "en": "Everything looks fine.",
+    "de": "Alles sieht gut aus."
+  },
+  "doctor.problems": {
+    "en": "{count} things need a look.",
+    "de": "{count} Punkte brauchen einen Blick."
+  },
+  "doctor.fix": {
+    "en": "Fix",
+    "de": "Beheben"
+  },
+  "doctor.level.ok": {
+    "en": "OK",
+    "de": "In Ordnung"
+  },
+  "doctor.level.warn": {
+    "en": "Warning",
+    "de": "Warnung"
+  },
+  "doctor.level.fail": {
+    "en": "Problem",
+    "de": "Problem"
+  },
+  "doctor.usage": {
+    "en": "Disk use in the data folder",
+    "de": "Speicherbelegung im Datenordner"
+  },
+  "doctor.usage.database": {
+    "en": "Database",
+    "de": "Datenbank"
+  },
+  "doctor.usage.wal": {
+    "en": "Write-ahead log",
+    "de": "Write-Ahead-Log"
+  },
+  "doctor.usage.backups": {
+    "en": "Backups",
+    "de": "Backups"
+  },
+  "doctor.usage.imports": {
+    "en": "Import files",
+    "de": "Importdateien"
+  },
+  "doctor.secret": {
+    "en": "Session secret",
+    "de": "Sitzungs-Geheimnis"
+  },
+  "doctor.secret.ok": {
+    "en": "Set.",
+    "de": "Gesetzt."
+  },
+  "doctor.secret.fail": {
+    "en": "SESSION_SECRET is missing, short or still the placeholder: stored tokens can be decrypted from a copy of the database.",
+    "de": "SESSION_SECRET fehlt, ist zu kurz oder noch der Platzhalter: gespeicherte Tokens lassen sich aus einer Kopie der Datenbank entschlüsseln."
+  },
+  "doctor.migrations": {
+    "en": "Database schema",
+    "de": "Datenbankschema"
+  },
+  "doctor.migrations.ok": {
+    "en": "Up to date.",
+    "de": "Auf dem neuesten Stand."
+  },
+  "doctor.migrations.fail": {
+    "en": "{count} migration(s) not applied. Restart the app.",
+    "de": "{count} Migration(en) nicht angewendet. Starte die App neu."
+  },
+  "doctor.servers": {
+    "en": "Media servers",
+    "de": "Medienserver"
+  },
+  "doctor.servers.ok": {
+    "en": "All reachable.",
+    "de": "Alle erreichbar."
+  },
+  "doctor.servers.fail": {
+    "en": "Not reachable: {servers}.",
+    "de": "Nicht erreichbar: {servers}."
+  },
+  "doctor.backup": {
+    "en": "Backups",
+    "de": "Backups"
+  },
+  "doctor.backup.ok": {
+    "en": "Backups are current.",
+    "de": "Backups sind aktuell."
+  },
+  "doctor.backup.warn": {
+    "en": "Automatic backups are off and there is no recent backup.",
+    "de": "Automatische Backups sind aus und es gibt kein aktuelles Backup."
+  },
+  "doctor.backup.fail": {
+    "en": "Scheduled backups have stopped: the last one is more than twice the interval ago.",
+    "de": "Geplante Backups sind ausgeblieben: das letzte liegt mehr als das Doppelte des Intervalls zurück."
+  },
+  "doctor.disk": {
+    "en": "Free disk space",
+    "de": "Freier Speicher"
+  },
+  "doctor.disk.ok": {
+    "en": "{free} GB free.",
+    "de": "{free} GB frei."
+  },
+  "doctor.disk.warn": {
+    "en": "Only {free} GB free. Backups, VACUUM and imports each need about the size of the database.",
+    "de": "Nur {free} GB frei. Backups, VACUUM und Importe brauchen je etwa die Größe der Datenbank."
+  },
+  "doctor.disk.fail": {
+    "en": "Only {free} GB free: the next write may fail.",
+    "de": "Nur {free} GB frei: der nächste Schreibvorgang kann scheitern."
+  },
+  "doctor.update": {
+    "en": "Updates",
+    "de": "Updates"
+  },
+  "doctor.update.ok": {
+    "en": "Up to date.",
+    "de": "Auf dem neuesten Stand."
+  },
+  "doctor.update.warn": {
+    "en": "Version {version} is available.",
+    "de": "Version {version} ist verfügbar."
+  },
+  "doctor.import": {
+    "en": "Import",
+    "de": "Import"
+  },
+  "doctor.import.ok": {
+    "en": "No unfinished import.",
+    "de": "Kein unfertiger Import."
+  },
+  "doctor.import.warn": {
+    "en": "An import was interrupted and can be continued.",
+    "de": "Ein Import wurde unterbrochen und lässt sich fortsetzen."
+  },
+  "doctor.restore": {
+    "en": "Restore",
+    "de": "Wiederherstellung"
+  },
+  "doctor.restore.ok": {
+    "en": "Nothing pending.",
+    "de": "Nichts ausstehend."
+  },
+  "doctor.restore.warn": {
+    "en": "A restore is waiting for a restart.",
+    "de": "Eine Wiederherstellung wartet auf einen Neustart."
+  },
+  "doctor.email": {
+    "en": "Email for the newsletter",
+    "de": "E-Mail für den Newsletter"
+  },
+  "doctor.email.ok": {
+    "en": "Fine.",
+    "de": "In Ordnung."
+  },
+  "doctor.email.warn": {
+    "en": "The newsletter is on, but no email channel is set up.",
+    "de": "Der Newsletter ist an, aber es ist kein E-Mail-Channel eingerichtet."
+  },
+  "doctor.appUrl": {
+    "en": "Public address (APP_URL)",
+    "de": "Öffentliche Adresse (APP_URL)"
+  },
+  "doctor.appUrl.ok": {
+    "en": "Set.",
+    "de": "Gesetzt."
+  },
+  "doctor.appUrl.warn": {
+    "en": "Not set: posters in Discord/Slack messages and newsletters stay out, and cross-site protection is looser.",
+    "de": "Nicht gesetzt: Poster in Discord-/Slack-Nachrichten und Newslettern fehlen, der Cross-Site-Schutz ist lockerer."
+  },
+  "doctor.tmdb": {
+    "en": "TMDB",
+    "de": "TMDB"
+  },
+  "doctor.tmdb.ok": {
+    "en": "API key set.",
+    "de": "API-Key gesetzt."
+  },
+  "doctor.tmdb.warn": {
+    "en": "No API key: no posters, cast or ratings beyond what the media server has.",
+    "de": "Kein API-Key: keine Poster, Besetzung oder Bewertungen über das hinaus, was der Medienserver liefert."
+  },
+  "doctor.timezone": {
+    "en": "Time zone",
+    "de": "Zeitzone"
+  },
+  "doctor.timezone.ok": {
+    "en": "Set.",
+    "de": "Gesetzt."
+  },
+  "doctor.timezone.warn": {
+    "en": "Not set: days and hours follow the container, which is often UTC.",
+    "de": "Nicht gesetzt: Tage und Stunden folgen dem Container, oft UTC."
+  },
+  "progress.artwork": {
+    "en": "Loading posters and details in the background: {cached} of {total} titles",
+    "de": "Poster und Details werden im Hintergrund geladen: {cached} von {total} Titeln"
+  },
+  "caches.coverage": {
+    "en": "{cached} of {total} library titles have an answer from TMDB (or a note that it does not know them).",
+    "de": "Für {cached} von {total} Bibliothekstiteln liegt eine Antwort von TMDB vor (oder der Vermerk, dass es sie nicht kennt)."
+  }
+}

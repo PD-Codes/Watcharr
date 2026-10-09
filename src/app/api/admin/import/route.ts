@@ -1,58 +1,89 @@
 import { NextResponse } from 'next/server';
 import { badBody, readBody } from '@/server/body';
-import { getServer } from '@/server/config';
+import { getJob, startJob, stopJob, type JobParams } from '@/server/importjob';
+import { UploadError } from '@/server/importupload';
 import { getSession } from '@/server/session';
-import { importFromTautulli } from '@/server/tautulli';
 
 export const dynamic = 'force-dynamic';
-// A few hundred thousand history rows take longer than a default route budget.
-export const maxDuration = 300;
+
+async function requireGlobal() {
+  const session = await getSession();
+  return session?.user.globalAdmin ? session : null;
+}
+
+const denied = () => NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
+
+/** Progress of the current (or last) import — what the page polls. */
+export async function GET() {
+  if (!(await requireGlobal())) return denied();
+  return NextResponse.json({ job: await getJob() });
+}
 
 /**
- * Imports a Tautulli database into one media server's accounts.
+ * Starts an import as a background job and returns at once.
  *
- * Global admin only, and the path is read from the container's own filesystem — this is
- * the one endpoint that opens a file the caller names, so it is fenced by the strongest
- * role in the app rather than by validation of the path itself. A server admin can already
- * see everything on their server; being able to name a file on the host is a different
- * kind of power and belongs with whoever runs the deployment.
+ * Global admin only, and a `path` is read from the container's own filesystem — this is the
+ * one endpoint that opens a file the caller names, so it is fenced by the strongest role in
+ * the app rather than by validation of the path itself. A server admin can already see
+ * everything on their server; being able to name a file on the host is a different kind of
+ * power and belongs with whoever runs the deployment. An uploaded file is addressed by the
+ * id the upload handed out, never by a path.
  */
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session?.user.globalAdmin) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!(await requireGlobal())) return denied();
 
   const body = await readBody(request, {
     path: 'string',
+    uploadId: 'string',
     serverId: 'number',
     dryRun: 'boolean',
     days: 'number',
+    userMap: 'object',
+    resume: 'boolean',
+    backup: 'boolean',
   });
   if (!body) return badBody();
 
-  const path = body.path?.trim();
-  const serverId = Number(body.serverId);
-  if (!path) return NextResponse.json({ error: 'A database path is required' }, { status: 400 });
-  if (!Number.isInteger(serverId) || !(await getServer(serverId))) {
-    return NextResponse.json({ error: 'Unknown server' }, { status: 400 });
+  const userMap: Record<string, number | null> = {};
+  for (const [name, id] of Object.entries(body.userMap ?? {})) {
+    if (id !== null && !Number.isInteger(id)) return badBody();
+    userMap[name] = id as number | null;
   }
-
   const days = Number(body.days);
-  const sinceMs = Number.isFinite(days) && days > 0 ? Date.now() - days * 86_400_000 : 0;
+  const params: JobParams = {
+    path: body.path?.trim() || undefined,
+    uploadId: body.uploadId || undefined,
+    serverId: Number(body.serverId),
+    dryRun: body.dryRun === true,
+    days: Number.isFinite(days) && days > 0 ? days : undefined,
+    userMap,
+    backup: body.backup !== false,
+  };
+  if (!params.path === !params.uploadId) {
+    return NextResponse.json({ error: 'Give either a database path or an uploaded file' }, { status: 400 });
+  }
 
   try {
-    const summary = await importFromTautulli(path, serverId, {
-      dryRun: body.dryRun === true,
-      sinceMs,
-    });
-    return NextResponse.json({ ok: true, ...summary });
+    const previous = body.resume ? await getJob() : null;
+    if (body.resume && (!previous || previous.status === 'running' || previous.status === 'done')) {
+      return NextResponse.json({ error: 'There is no interrupted import to continue' }, { status: 409 });
+    }
+    // A resumed run keeps the parameters it started with; the request only says "go on".
+    const job = previous
+      ? await startJob(previous.params, previous)
+      : await startJob(params);
+    return NextResponse.json({ ok: true, job }, { status: 202 });
   } catch (error) {
-    // The message names the file the admin typed, which they already know — no path from
-    // anywhere else can reach this, so there is nothing here they could not see anyway.
+    const status = error instanceof UploadError ? error.status : 400;
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Import failed' },
-      { status: 400 },
+      { status },
     );
   }
+}
+
+/** Stops the running import after its current batch. What was written stays written. */
+export async function DELETE() {
+  if (!(await requireGlobal())) return denied();
+  return NextResponse.json({ ok: stopJob() });
 }

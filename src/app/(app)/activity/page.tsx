@@ -30,7 +30,7 @@ export default async function ActivityPage() {
 
   return (
     <>
-      <AutoRefresh seconds={10} />
+      <AutoRefresh seconds={4} />
       <p className="eyebrow">{t('activity.eyebrow')}</p>
       <h1>{t('activity.title')}</h1>
       <p className="subtitle">{t('activity.subtitle')}</p>

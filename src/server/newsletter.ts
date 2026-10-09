@@ -99,13 +99,21 @@ async function collectForServer(
     .sort((a, b) => (b.addedAt?.getTime() ?? 0) - (a.addedAt?.getTime() ?? 0));
 }
 
+/** Unsaved form values the admin preview renders with instead of the stored settings. */
+export interface NewsletterDraft {
+  days?: number;
+  libraries?: string[];
+  subject?: string;
+  intro?: string;
+}
+
 /** What arrived in the configured window, grouped per server. */
-export async function collectNewsletter(): Promise<NewsletterEntry[]> {
+export async function collectNewsletter(draft: NewsletterDraft = {}): Promise<NewsletterEntry[]> {
   const settings = await getSettings();
-  const since = new Date(Date.now() - settings.newsletterDays * 86_400_000);
+  const since = new Date(Date.now() - (draft.days ?? settings.newsletterDays) * 86_400_000);
   const servers = await listServers();
   const selection = normalizeLibraries(
-    settings.newsletterLibraries,
+    draft.libraries ?? settings.newsletterLibraries,
     servers.map((server) => server.id),
   );
 
@@ -129,10 +137,13 @@ export async function collectNewsletter(): Promise<NewsletterEntry[]> {
 export async function renderNewsletter(
   entries: NewsletterEntry[],
   locale: Locale = DEFAULT_LOCALE,
+  draft: NewsletterDraft = {},
 ): Promise<string> {
   const settings = await getSettings();
   const t = translator(locale);
-  const intro = settings.newsletterIntro.trim();
+  const intro = (draft.intro ?? settings.newsletterIntro).trim();
+  const subject = draft.subject ?? settings.newsletterSubject;
+  const days = draft.days ?? settings.newsletterDays;
 
   const sections = entries
     .map((entry) => {
@@ -169,9 +180,9 @@ export async function renderNewsletter(
   return `<!doctype html>
 <html><body style="margin:0;padding:24px;background:#131211;font-family:system-ui,-apple-system,'Segoe UI',sans-serif">
   <div style="max-width:640px;margin:0 auto">
-    <h1 style="font-size:20px;color:#ffb020;margin:0 0 4px">${escapeHtml(settings.newsletterSubject)}</h1>
+    <h1 style="font-size:20px;color:#ffb020;margin:0 0 4px">${escapeHtml(subject)}</h1>
     <p style="font-size:12px;color:#9b958c;margin:0">
-      ${escapeHtml(t('newsletterMail.period', { days: settings.newsletterDays }))}
+      ${escapeHtml(t('newsletterMail.period', { days }))}
     </p>
     ${intro ? `<p style="font-size:13px;color:#e9e6e1;margin:16px 0 0">${escapeHtml(intro)}</p>` : ''}
     ${sections || `<p style="color:#9b958c;font-size:13px;margin-top:20px">${escapeHtml(t('newsletterMail.nothing'))}</p>`}
@@ -195,6 +206,17 @@ export async function listSubscribers(): Promise<
     })
     .from(newsletterSubscriptions)
     .innerJoin(users, eq(users.id, newsletterSubscriptions.userId));
+}
+
+/** How many subscribers each language would get — what the preview offers to switch between. */
+export async function subscriberLocales(): Promise<Record<string, number>> {
+  const fallback = await getDefaultLocale();
+  const counts: Record<string, number> = {};
+  for (const s of await listSubscribers()) {
+    const locale = isLocale(s.locale) ? s.locale : fallback;
+    counts[locale] = (counts[locale] ?? 0) + 1;
+  }
+  return counts;
 }
 
 export async function getSubscription(userId: number): Promise<{ email: string } | null> {

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { TranslationKey } from '@/i18n';
+import { LOCALES, LOCALE_NAMES, type TranslationKey } from '@/i18n';
 import { useT } from '@/i18n/client';
 
 // Indexed by getDay(), so the order is the JavaScript one and not a display choice.
@@ -33,6 +33,7 @@ export default function NewsletterForm({
   uniqueId,
   subscriberCount,
   hasEmailChannel,
+  adminEmail,
 }: {
   enabled: boolean;
   dayOfWeek: number;
@@ -46,12 +47,71 @@ export default function NewsletterForm({
   subscriberCount: number;
   /** Without an email channel there is no SMTP transport, so sending cannot work. */
   hasEmailChannel: boolean;
+  /** Default recipient of the test mail. */
+  adminEmail: string | null;
 }) {
   const router = useRouter();
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [preview, setPreview] = useState<{ html: string; items: number; locales: Record<string, number> } | null>(null);
+  const [previewLocale, setPreviewLocale] = useState<string>('');
+
+  // The unsaved values of the form: the preview shows what Save would send, not what is stored.
+  function draft(form: HTMLFormElement) {
+    const data = new FormData(form);
+    return {
+      days: Number(data.get('days')),
+      libraries: libraries.filter((l) => data.get(`library.${l.id}`) === 'on').map((l) => l.id),
+      subject: String(data.get('subject') ?? ''),
+      intro: String(data.get('intro') ?? ''),
+      locale: previewLocale || undefined,
+    };
+  }
+
+  async function post(url: string, payload: unknown) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown> & { error?: string };
+    return { ok: res.ok && !body.error, body };
+  }
+
+  async function showPreview(form: HTMLFormElement, locale = previewLocale) {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const { ok, body } = await post('/api/admin/newsletter/preview', { ...draft(form), locale: locale || undefined });
+      if (!ok) setError(body.error ?? t('adminNewsletter.previewFailed'));
+      else setPreview(body as unknown as NonNullable<typeof preview>);
+    } catch {
+      setError(t('adminNewsletter.previewFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendTest() {
+    const to = window.prompt(t('adminNewsletter.testPrompt'), adminEmail ?? '');
+    if (!to) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const { ok, body } = await post('/api/admin/newsletter/test', { email: to, locale: previewLocale || undefined });
+      if (ok) setMessage(t('adminNewsletter.testSent', { email: to }));
+      else setError(body.error ?? t('adminNewsletter.saveFailed'));
+    } catch {
+      setError(t('adminNewsletter.saveFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // The path is spliced into the translated sentence so the hint stays one key.
   const [hintBefore, hintAfter = ''] = t('adminNewsletter.uniqueIdHint').split('{path}');
@@ -192,7 +252,57 @@ export default function NewsletterForm({
         >
           {t('adminNewsletter.saveAndSend')}
         </button>
+        <button
+          type="button"
+          className="tonal"
+          disabled={busy}
+          onClick={(e) => void showPreview(e.currentTarget.form!)}
+        >
+          {t('adminNewsletter.preview')}
+        </button>
+        {hasEmailChannel && (
+          <button
+            type="button"
+            className="outlined"
+            disabled={busy}
+            onClick={() => void sendTest()}
+          >
+            {t('adminNewsletter.sendTest')}
+          </button>
+        )}
       </div>
+
+      {preview && (
+        <div style={{ marginTop: 20 }}>
+          <div className="row" style={{ gap: 10, alignItems: 'center' }}>
+            <p className="stat-label" style={{ margin: 0 }}>
+              {t('adminNewsletter.previewTitle', { count: preview.items })}
+            </p>
+            <select
+              aria-label={t('adminNewsletter.previewLanguage')}
+              value={previewLocale || Object.keys(preview.locales)[0] || ''}
+              onChange={(e) => {
+                setPreviewLocale(e.target.value);
+                void showPreview(e.currentTarget.form!, e.target.value);
+              }}
+            >
+              {LOCALES.map((locale) => (
+                <option key={locale} value={locale}>
+                  {LOCALE_NAMES[locale]}
+                  {preview.locales[locale] ? ` · ${t('adminNewsletter.previewSubscribers', { count: preview.locales[locale] })}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          {/* Empty sandbox: no scripts, no forms, no same-origin — titles come from a media server. */}
+          <iframe
+            title={t('adminNewsletter.previewTitle', { count: preview.items })}
+            sandbox=""
+            srcDoc={preview.html}
+            style={{ width: '100%', height: 560, marginTop: 10, border: '1px solid var(--line-strong)', borderRadius: 8, background: '#131211' }}
+          />
+        </div>
+      )}
 
       <p className="muted" style={{ marginTop: 12 }}>
         {t('adminNewsletter.subscriberCount', { count: subscriberCount })}

@@ -9,7 +9,7 @@ import { globalState } from './state';
 // as the digest and the monitoring thresholds: checked from the one existing sync tick
 // instead of a separate scheduler or an OS-level cron entry the container would need to own.
 
-const BACKUP_DIR = join(dirname(DB_PATH), 'backups');
+export const BACKUP_DIR = join(dirname(DB_PATH), 'backups');
 const PREFIX = 'watcharr-';
 
 // Without the guard, every sync pass that lands while a large snapshot is still being written

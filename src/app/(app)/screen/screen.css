@@ -756,12 +756,165 @@ html:has(.scr) {
   }
 }
 
+/* --- Motion: entrances, the equalizer, dust in the beam, slide dots ------------------------------ */
+
+/* Lights come up on a new hero: the info block rises line by line, the poster slides out of
+   the dark. Keyed on the hero, so a refresh with the same stream never replays it. */
+.scr-hero .scr-poster-box {
+  animation: scr-rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.scr-hero .scr-info > * {
+  animation: scr-rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.scr-hero .scr-info > :nth-child(1) { animation-delay: 0.15s; }
+.scr-hero .scr-info > :nth-child(2) { animation-delay: 0.28s; }
+.scr-hero .scr-info > :nth-child(3) { animation-delay: 0.4s; }
+.scr-hero .scr-info > :nth-child(4) { animation-delay: 0.52s; }
+.scr-hero .scr-info > :nth-child(5) { animation-delay: 0.64s; }
+
+.scr-mini {
+  animation: scr-rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes scr-rise {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--u) * 2.2));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A paused film holds its timecode, but the screen should not look frozen. */
+.scr-hero[data-state='paused'] .scr-timecode {
+  animation: scr-breathe 2.6s ease-in-out infinite;
+}
+
+@keyframes scr-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Three bars next to the badge: amber, so only while something plays. */
+.scr-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: calc(var(--u) * 0.45);
+  height: calc(var(--u) * 2.2);
+}
+
+.scr-eq i {
+  width: calc(var(--u) * 0.5);
+  height: 100%;
+  border-radius: 1px;
+  background: var(--beam);
+  transform-origin: bottom;
+  animation: scr-eq 1.1s ease-in-out infinite;
+}
+
+.scr-eq i:nth-child(2) { animation-duration: 0.8s; animation-delay: -0.3s; }
+.scr-eq i:nth-child(3) { animation-duration: 1.4s; animation-delay: -0.6s; }
+
+@keyframes scr-eq {
+  0%, 100% { transform: scaleY(0.25); }
+  50% { transform: scaleY(1); }
+}
+
+/* Motes drifting up through the projector beam. Pure decoration: behind the stage, no layout. */
+.scr-dust {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.scr-dust i {
+  position: absolute;
+  bottom: -2%;
+  left: var(--x);
+  width: calc(var(--u) * 0.35 * var(--s));
+  height: calc(var(--u) * 0.35 * var(--s));
+  border-radius: 50%;
+  background: var(--beam-wash);
+  box-shadow: 0 0 calc(var(--u) * 1.2) var(--beam-wash);
+  opacity: 0;
+  animation: scr-mote var(--d) linear var(--o) infinite;
+}
+
+@keyframes scr-mote {
+  0% { transform: translate(0, 0); opacity: 0; }
+  12% { opacity: 0.9; }
+  85% { opacity: 0.7; }
+  100% { transform: translate(calc(var(--u) * 4), -110vh); opacity: 0; }
+}
+
+/* One dot per slide; the current one fills over exactly the time the slide stays up. */
+.scr-dots {
+  /* Out of the stage grid on purpose: the dots are a margin note, not a row. */
+  position: absolute;
+  bottom: calc(var(--u) * 1.6);
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  gap: calc(var(--u) * 1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  justify-content: center;
+}
+
+.scr-dots li {
+  position: relative;
+  width: calc(var(--u) * 3.2);
+  height: calc(var(--u) * 0.5);
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--line-strong);
+}
+
+.scr-dots li::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--text-dim);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.scr-dots li[data-on='1']::after {
+  animation: scr-dot var(--slide-ms) linear both;
+}
+
+@keyframes scr-dot {
+  to { transform: scaleX(1); }
+}
+
 /* --- Reduced motion: no zoom, no drift, no breathing glow, instant cross-fades --------- */
 
 @media (prefers-reduced-motion: reduce) {
   .scr-kb,
-  .scr[data-playing='1'] .scr-shade::after {
+  .scr[data-playing='1'] .scr-shade::after,
+  .scr-hero .scr-poster-box,
+  .scr-hero .scr-info > *,
+  .scr-mini,
+  .scr-eq i,
+  .scr-dust i,
+  .scr-hero[data-state='paused'] .scr-timecode {
     animation: none !important;
+  }
+
+  .scr-dust {
+    display: none;
+  }
+
+  .scr-dots li[data-on='1']::after {
+    animation: none;
+    transform: scaleX(1);
   }
 
   .scr .scr-slide,

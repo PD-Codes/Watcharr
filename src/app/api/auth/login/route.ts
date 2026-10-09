@@ -4,10 +4,11 @@ import { clearRateLimit, clientIp, isRateLimited, rateLimit } from '@/server/rat
 import type { HttpError } from '@/server/adapters/http';
 import { getAdapter, getServer, listServers } from '@/server/config';
 import { createSession, recordLogin } from '@/server/session';
+import { checkSetupToken } from '@/server/setuptoken';
 
 /** Username/password login for Jellyfin and Emby. Plex uses the PIN routes instead. */
 export async function POST(request: Request) {
-  const body = await readBody(request, { username: 'string', password: 'string', serverId: 'number' });
+  const body = await readBody(request, { username: 'string', password: 'string', serverId: 'number', setupToken: 'string' });
   if (!body) return badBody();
   const { username, password, serverId } = body;
   if (!username || !password) {
@@ -33,7 +34,15 @@ export async function POST(request: Request) {
   const adapter = await getAdapter(server.id);
   try {
     const { user, token } = await adapter.login({ kind: 'password', username, password });
-    await createSession(server.id, user, token, meta);
+    // Checked after the password: the token only ever upgrades an account that exists.
+    const setup = await checkSetupToken(body.setupToken, ip);
+    if (setup === 'invalid' || setup === 'limited') {
+      return NextResponse.json(
+        { error: setup === 'limited' ? 'Too many attempts, try again later' : 'Invalid setup token', code: 'setup-token' },
+        { status: setup === 'limited' ? 429 : 401 },
+      );
+    }
+    await createSession(server.id, user, token, meta, { claimAdmin: setup === 'valid' });
     clearRateLimit(account);
     return NextResponse.json({ ok: true, isAdmin: user.isAdmin });
   } catch (error) {

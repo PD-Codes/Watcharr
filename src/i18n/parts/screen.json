@@ -14,5 +14,6 @@
   "screen.hintAwake": { "en": "The screen stays awake.", "de": "Der Bildschirm bleibt an." },
   "screen.enterFullscreen": { "en": "Enter fullscreen", "de": "Vollbild" },
   "screen.exitFullscreen": { "en": "Exit fullscreen", "de": "Vollbild beenden" },
+  "screen.started": { "en": "Started", "de": "Gestartet" },
   "screen.leave": { "en": "Leave the display", "de": "Anzeige verlassen" }
 }

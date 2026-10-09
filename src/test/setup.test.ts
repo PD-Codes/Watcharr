@@ -25,6 +25,25 @@ async function main() {
   assert.equal(createFirstServer({ ...input, label: 'Other' }), null);
   assert.equal((await listServers()).length, 1);
 
+  // The setup token: printed once while no admin exists, wrong guesses are throttled per
+  // address, a correct one (any case, dash optional) is accepted, and it is inert afterwards.
+  const { announceSetupToken, checkSetupToken, setupTokenPending } = await import('../server/setuptoken');
+  assert.equal(await setupTokenPending(), true);
+  const logged: string[] = [];
+  const realLog = console.log;
+  console.log = (...args: unknown[]) => void logged.push(args.join(' '));
+  await announceSetupToken();
+  await announceSetupToken();
+  console.log = realLog;
+  assert.equal(logged.length, 1, 'the token is announced once');
+  const token = logged[0].match(/\b([A-Z2-9]{4}-[A-Z2-9]{4})\b/)?.[1];
+  assert.ok(token, 'and shown in the console');
+  assert.equal(await checkSetupToken('', 'ip-a'), 'none');
+  assert.equal(await checkSetupToken('WRONG-TOKEN', 'ip-a'), 'invalid');
+  assert.equal(await checkSetupToken(token.toLowerCase().replace('-', ' '), 'ip-b'), 'valid');
+  for (let i = 0; i < 8; i += 1) await checkSetupToken('NOPE-NOPE', 'ip-c');
+  assert.equal(await checkSetupToken(token, 'ip-c'), 'limited', 'guessing is throttled even for the right token');
+
   // Two admins signing in at once: exactly one becomes the global admin.
   const rows = await db
     .insert(users)
@@ -37,6 +56,9 @@ async function main() {
   assert.deepEqual(claims.filter(Boolean).length, 1, 'one claim wins');
   assert.equal((await db.select().from(users)).filter((u) => u.globalAdmin).length, 1);
   assert.equal(await claimGlobalAdmin(rows[0].id), false, 'and nobody can claim it afterwards');
+
+  assert.equal(await setupTokenPending(), false);
+  assert.equal(await checkSetupToken(token, 'ip-d'), 'none', 'the token is inert once an admin exists');
 
   console.log('ok - first setup and the global admin claim are single-winner');
 }

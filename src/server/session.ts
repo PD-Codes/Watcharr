@@ -10,9 +10,13 @@ import { decryptSecret, encryptSecret } from './crypto';
 import type { MediaServerUser } from './adapters';
 import { getServer } from './config';
 import { lookupCountry } from './geoip';
+import { retireSetupToken } from './setuptoken';
 import type { Scope } from './stats';
 
 const COOKIE = 'watcharr_session';
+// Admin "view as": a signed pointer from the real session to the user being looked at.
+// proxy.ts matches the name too — keep both in step.
+export const VIEW_AS_COOKIE = 'watcharr_view_as';
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 function secret(): string {
@@ -125,6 +129,7 @@ export async function createSession(
   user: MediaServerUser,
   serverToken: string,
   meta: LoginMeta = {},
+  options: { claimAdmin?: boolean } = {},
 ) {
   const [row] = await db
     .insert(users)
@@ -153,8 +158,11 @@ export async function createSession(
   // Bootstrapping the global admin. The person who ran setup owns the server token, so
   // they are an admin on that server — and only a server admin can claim the role, which
   // is why "whoever signs in first" cannot be hijacked by an ordinary user.
-  if (row.isAdmin && !row.globalAdmin && (await claimGlobalAdmin(row.id))) {
+  // A valid setup token (checked by the caller) claims the role even for an account the media
+  // server does not call an admin; the claim itself stays the single atomic statement.
+  if ((row.isAdmin || options.claimAdmin) && !row.globalAdmin && (await claimGlobalAdmin(row.id))) {
     row.globalAdmin = true;
+    if (options.claimAdmin) retireSetupToken();
   }
 
   // Expired rows are cleaned up here instead of by a cron job.
@@ -184,9 +192,16 @@ export interface Session {
   id: string;
   user: SessionUser;
   serverToken: string;
+  /**
+   * Set while an admin looks at the app as another user. `user` is then the person being
+   * viewed, `serverToken` is empty (the admin's token must never act on their behalf), and
+   * everything that writes must stand down: sync skips, proxy.ts refuses non-GET API calls.
+   */
+  preview?: { admin: SessionUser };
 }
 
-export async function getSession(): Promise<Session | null> {
+/** The signed-in person, ignoring any "view as". Use where the real identity matters. */
+export async function getRealSession(): Promise<Session | null> {
   const raw = (await cookies()).get(COOKIE)?.value;
   if (!raw) return null;
   const id = unsign(raw);
@@ -198,6 +213,36 @@ export async function getSession(): Promise<Session | null> {
     .innerJoin(users, eq(users.id, authSessions.userId))
     .where(and(eq(authSessions.id, id), gt(authSessions.expiresAt, new Date())));
   return row ? { id, user: row.user, serverToken: decryptSecret(row.serverToken) } : null;
+}
+
+/** The effective session: the real one, or the viewed user's when an admin is previewing. */
+export async function getSession(): Promise<Session | null> {
+  const real = await getRealSession();
+  if (!real) return null;
+  const raw = (await cookies()).get(VIEW_AS_COOKIE)?.value;
+  const payload = raw ? unsign(raw) : null;
+  // Bound to this very session: a cookie copied from another admin's browser means nothing.
+  const [boundTo, target] = payload?.split(':') ?? [];
+  if (boundTo !== real.id || !isAdmin(real.user)) return real;
+  const [viewed] = await db.select().from(users).where(eq(users.id, Number(target)));
+  if (!viewed || viewed.id === real.user.id || !canSee(real.user, viewed)) return real;
+  return { id: real.id, user: viewed, serverToken: '', preview: { admin: real.user } };
+}
+
+/** Starts (or, with null, ends) the preview. The caller has already checked `canSee`. */
+export async function setViewAs(sessionId: string, userId: number | null): Promise<void> {
+  const jar = await cookies();
+  if (userId === null) {
+    jar.delete(VIEW_AS_COOKIE);
+    return;
+  }
+  jar.set(VIEW_AS_COOKIE, sign(`${sessionId}:${userId}`), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: await useSecureCookie(),
+    path: '/',
+    // Session cookie on purpose: closing the browser ends the preview.
+  });
 }
 
 /**
@@ -282,4 +327,5 @@ export async function destroySession() {
   const id = raw ? unsign(raw) : null;
   if (id) await db.delete(authSessions).where(eq(authSessions.id, id));
   jar.delete(COOKIE);
+  jar.delete(VIEW_AS_COOKIE);
 }

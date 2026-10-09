@@ -192,7 +192,7 @@ export default async function DashboardPage({
 
   return (
     <>
-      <AutoRefresh seconds={30} />
+      <AutoRefresh seconds={10} />
 
       <header className="dash-head">
         <div>

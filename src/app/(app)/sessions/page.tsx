@@ -70,7 +70,7 @@ export default async function SessionsPage() {
 
   return (
     <>
-      <AutoRefresh seconds={15} />
+      <AutoRefresh seconds={5} />
       <p className="eyebrow">{t('nav.sessions')}</p>
       <h1>{greeting(t)}, {session.user.username}</h1>
       <p className="subtitle">

@@ -14,6 +14,7 @@ import {
   nextSlide,
   positionAt,
   reconcileClock,
+  relativeAge,
   type ScreenSlide,
   type ScreenStats,
   type ScreenStream,
@@ -37,6 +38,31 @@ function useNow(intervalMs: number): number | null {
     return () => clearInterval(timer);
   }, [intervalMs]);
   return now;
+}
+
+/** Eases a number up to its target; a value that stays the same does not restart. */
+function useCountUp(target: number, ms = 1400): number {
+  const [value, setValue] = useState(target);
+  const shown = useRef(target);
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      shown.current = target;
+      setValue(target);
+      return;
+    }
+    const from = shown.current;
+    const started = performance.now();
+    let frame = 0;
+    const step = (at: number) => {
+      const k = Math.min(1, (at - started) / ms);
+      shown.current = from + (target - from) * (1 - Math.pow(1 - k, 3));
+      setValue(shown.current);
+      if (k < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [target, ms]);
+  return Math.round(value);
 }
 
 /**
@@ -127,6 +153,7 @@ function Hero({
 
   const facts = [
     stream.user ? { label: t('screen.watching'), value: stream.user } : null,
+    now !== null ? { label: t('screen.started'), value: relativeAge(stream.startedAt, now, locale) } : null,
     stream.device ? { label: t('common.device'), value: stream.device } : null,
     stream.client ? { label: t('screen.player'), value: stream.client } : null,
   ].filter((fact): fact is { label: string; value: string } => fact !== null);
@@ -148,6 +175,13 @@ function Hero({
           <span className={`badge ${playing ? 'live' : ''}`}>
             {stream.state === 'paused' ? t('beam.paused') : t('beam.nowPlaying')}
           </span>
+          {playing && (
+            <span className="scr-eq" aria-hidden>
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
         </p>
         <h2 className="scr-title">{stream.title}</h2>
         {stream.episode && <p className="scr-episode">{stream.episode}</p>}
@@ -235,6 +269,29 @@ function useSlideshow(count: number) {
   return (i: number) => (i === index ? 'on' : i === prev ? 'prev' : '');
 }
 
+function Stats({ stats }: { stats: ScreenStats }) {
+  const t = useT();
+  const plays = useCountUp(stats.plays);
+  const watchMs = useCountUp(stats.watchMs);
+  const streak = useCountUp(stats.streak);
+  return (
+    <dl className="scr-stats">
+      <div>
+        <dt>{t('screen.statPlays')}</dt>
+        <dd className="num">{plays}</dd>
+      </div>
+      <div>
+        <dt>{t('screen.statTime')}</dt>
+        <dd className="num">{formatDuration(watchMs)}</dd>
+      </div>
+      <div>
+        <dt>{t('dash.kpiStreak')}</dt>
+        <dd className="num">{streak}</dd>
+      </div>
+    </dl>
+  );
+}
+
 function Intermission({
   slides,
   stats,
@@ -285,22 +342,15 @@ function Intermission({
         })}
       </div>
 
-      {stats && (
-        <dl className="scr-stats">
-          <div>
-            <dt>{t('screen.statPlays')}</dt>
-            <dd className="num">{stats.plays}</dd>
-          </div>
-          <div>
-            <dt>{t('screen.statTime')}</dt>
-            <dd className="num">{formatDuration(stats.watchMs)}</dd>
-          </div>
-          <div>
-            <dt>{t('dash.kpiStreak')}</dt>
-            <dd className="num">{stats.streak}</dd>
-          </div>
-        </dl>
+      {slides.length > 1 && (
+        <ol className="scr-dots" aria-hidden style={{ '--slide-ms': `${SLIDE_MS}ms` } as CSSProperties}>
+          {slides.map((slide, i) => (
+            <li key={slide.key} data-on={slideClass(i) === 'on' ? '1' : undefined} />
+          ))}
+        </ol>
       )}
+
+      {stats && <Stats stats={stats} />}
     </>
   );
 }
@@ -450,6 +500,23 @@ export default function ScreenClient({
         )}
       </div>
       <div className="scr-shade" aria-hidden />
+      {hero?.state === 'playing' && (
+        <div className="scr-dust" aria-hidden>
+          {Array.from({ length: 14 }, (_, i) => (
+            <i
+              key={i}
+              style={
+                {
+                  '--x': `${(i * 37) % 58 + 4}%`,
+                  '--s': `${1 + (i % 3)}`,
+                  '--d': `${14 + ((i * 5) % 11)}s`,
+                  '--o': `${-((i * 7) % 17)}s`,
+                } as CSSProperties
+              }
+            />
+          ))}
+        </div>
+      )}
 
       <div
         className="scr-stage"

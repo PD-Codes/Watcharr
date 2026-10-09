@@ -10,7 +10,7 @@ import NewsletterForm, { type LibraryOption } from './NewsletterForm';
 export const dynamic = 'force-dynamic';
 
 export default async function AdminNewsletterPage() {
-  await requireGlobalAdmin();
+  const { user } = await requireGlobalAdmin();
   const t = await getT();
   const [settings, subscribers, channels, servers] = await Promise.all([
     getSettings(),
@@ -54,6 +54,7 @@ export default async function AdminNewsletterPage() {
         uniqueId={settings.newsletterUniqueId}
         subscriberCount={subscribers.length}
         hasEmailChannel={channels.some((c) => c.type === 'email' && c.enabled)}
+        adminEmail={user.email}
       />
 
       <h2 className="section">{t('adminNewsletter.subscribers')}</h2>

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { listServers } from '@/server/config';
 import { getSession } from '@/server/session';
+import { announceSetupToken, setupTokenPending } from '@/server/setuptoken';
 import { getT } from '@/i18n/server';
 import LoginForm from './LoginForm';
 import PlexLogin from './PlexLogin';
@@ -18,6 +19,9 @@ export default async function LoginPage({
   if (await getSession()) redirect('/watchlist');
 
   const t = await getT();
+  // No admin yet: the console shows a one-time token and the form offers a field for it.
+  const askSetupToken = await setupTokenPending();
+  if (askSetupToken) await announceSetupToken();
   const slug = (await searchParams).server;
   // A single-server deployment never sees a picker: the one server is the only answer.
   const selected = servers.length === 1 ? servers[0] : servers.find((s) => s.slug === slug);
@@ -48,9 +52,9 @@ export default async function LoginPage({
         </p>
       )}
       {selected.serverType === 'plex' ? (
-        <PlexLogin serverId={selected.id} />
+        <PlexLogin serverId={selected.id} askSetupToken={askSetupToken} />
       ) : (
-        <LoginForm serverId={selected.id} />
+        <LoginForm serverId={selected.id} askSetupToken={askSetupToken} />
       )}
     </div>
   );

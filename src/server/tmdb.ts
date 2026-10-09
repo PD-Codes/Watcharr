@@ -23,8 +23,8 @@ const PROFILE = `${IMAGE_BASE}/w185`;
 const image = (base: string, path?: string | null) => (path ? `${base}${path}` : undefined);
 
 /** A hit is good for a month; a miss is remembered too, for a week. See tmdbCache. */
-const HIT_TTL_MS = 30 * 86_400_000;
-const MISS_TTL_MS = 7 * 86_400_000;
+export const HIT_TTL_MS = 30 * 86_400_000;
+export const MISS_TTL_MS = 7 * 86_400_000;
 
 export interface TmdbTitle {
   title: string;
@@ -244,17 +244,47 @@ export async function getTopCast(
     .slice(0, limit);
 }
 
+/**
+ * How many of these library titles already have an answer in the cache (a "TMDB does not know
+ * it" answer counts: it is an answer). The fresh-install progress bar is this against the
+ * library size — nothing else tells an admin that the posters are still on their way.
+ */
+export async function artworkCoverage(items: TitleRef[]): Promise<{ total: number; cached: number }> {
+  const keys = [...new Set(items.filter((i) => i.title.trim()).map((i) => metaKey(i.title, i.mediaType, i.year)))];
+  let cached = 0;
+  for (let i = 0; i < keys.length; i += 500) {
+    const rows = await db
+      .select({ key: tmdbCache.key })
+      .from(tmdbCache)
+      .where(inArray(tmdbCache.key, keys.slice(i, i + 500)));
+    cached += rows.length;
+  }
+  return { total: keys.length, cached };
+}
+
 /** How many titles one prefetch pass looks up. Two TMDB requests each. */
 const PREFETCH_BATCH = 25;
 
+/** Whether a stored answer has outlived its TTL — the same rule cached() applies per read. */
+export function isStale(payloadIsNull: boolean, fetchedAt: Date, now = Date.now()): boolean {
+  return now - fetchedAt.getTime() >= (payloadIsNull ? MISS_TTL_MS : HIT_TTL_MS);
+}
+
 /**
  * Fills the cache for titles nothing has asked about yet, so the grids have something to
- * fall back on. Sequential on purpose: this runs in the background, nobody is waiting for
- * it, and a burst of parallel requests is the way to get rate limited.
+ * fall back on, and renews the ones whose answer has expired — before this a library title
+ * nobody opened simply aged out and was only fetched again by the next visitor, who paid the
+ * latency. Missing titles go first, then the stalest. Sequential on purpose: this runs in the
+ * background, nobody is waiting for it, and a burst of parallel requests is the way to get
+ * rate limited.
  *
  * Returns how many were looked up, so the caller can tell a no-op from real work.
  */
-export async function prefetchTitleMeta(apiKey: string | null, items: TitleRef[]): Promise<number> {
+export async function prefetchTitleMeta(
+  apiKey: string | null,
+  items: TitleRef[],
+  limit = PREFETCH_BATCH,
+): Promise<number> {
   if (!apiKey || !items.length) return 0;
 
   // Deduplicated by cache key, not by item id: two servers can hold the same film.
@@ -263,15 +293,26 @@ export async function prefetchTitleMeta(apiKey: string | null, items: TitleRef[]
     if (item.title.trim()) wanted.set(metaKey(item.title, item.mediaType, item.year), item);
   }
 
-  const known = await db
-    .select({ key: tmdbCache.key })
-    .from(tmdbCache)
-    .where(inArray(tmdbCache.key, [...wanted.keys()]))
-    .catch(() => []);
-  for (const row of known) wanted.delete(row.key);
+  // In chunks: a library of several thousand titles would blow past SQLite's bound-variable limit.
+  const keys = [...wanted.keys()];
+  const stale: { key: string; at: number }[] = [];
+  for (let i = 0; i < keys.length; i += 500) {
+    const known = await db
+      .select({ key: tmdbCache.key, payload: tmdbCache.payload, fetchedAt: tmdbCache.fetchedAt })
+      .from(tmdbCache)
+      .where(inArray(tmdbCache.key, keys.slice(i, i + 500)))
+      .catch(() => []);
+    for (const row of known) {
+      if (isStale(row.payload === null, row.fetchedAt)) stale.push({ key: row.key, at: row.fetchedAt.getTime() });
+      else wanted.delete(row.key);
+    }
+  }
+  // Map order: never-asked titles stay where they are, expired ones move to the back, oldest last.
+  const order = new Map(stale.sort((a, b) => a.at - b.at).map((s, i) => [s.key, i + 1]));
+  const queue = [...wanted.entries()].sort(([a], [b]) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
 
   let done = 0;
-  for (const item of [...wanted.values()].slice(0, PREFETCH_BATCH)) {
+  for (const [, item] of queue.slice(0, limit)) {
     await getTitleMeta(apiKey, item.title, item.mediaType, item.year);
     done += 1;
   }

@@ -122,7 +122,7 @@ export default async function ScreenPage() {
   return (
     <>
       <h1 className="scr-sr">{t('screen.title')}</h1>
-      <AutoRefresh seconds={10} />
+      <AutoRefresh seconds={4} />
       <ScreenClient
         locale={locale}
         serverSlug={session.server.slug}

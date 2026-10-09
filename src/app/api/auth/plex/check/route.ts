@@ -5,10 +5,11 @@ import { isUnauthorized } from '@/server/adapters/http';
 import { getAdapter, getServer, listServers } from '@/server/config';
 import { clientIp, rateLimit } from '@/server/ratelimit';
 import { createSession } from '@/server/session';
+import { checkSetupToken } from '@/server/setuptoken';
 
 /** Polled by the login page until the user has approved the PIN on plex.tv. */
 export async function POST(request: Request) {
-  const body = await readBody(request, { serverId: 'number' });
+  const body = await readBody(request, { serverId: 'number', setupToken: 'string' });
   if (!body) return badBody();
   const pinId = String((body as { pinId?: unknown }).pinId ?? '');
   const serverId = body.serverId;
@@ -22,6 +23,16 @@ export async function POST(request: Request) {
 
   if (!rateLimit(`plexpin:${server.id}:${clientIp(request)}`, 120, 60_000)) {
     return NextResponse.json({ error: 'Too many attempts, try again later' }, { status: 429 });
+  }
+
+  // Before the PIN is polled: a wrong token ends the flow instead of burning an approval.
+  const ip = clientIp(request);
+  const setup = await checkSetupToken(body.setupToken, ip);
+  if (setup === 'invalid' || setup === 'limited') {
+    return NextResponse.json(
+      { error: setup === 'limited' ? 'Too many attempts, try again later' : 'Invalid setup token', code: 'setup-token' },
+      { status: setup === 'limited' ? 429 : 401 },
+    );
   }
 
   const adapter = await getAdapter(server.id);
@@ -41,9 +52,12 @@ export async function POST(request: Request) {
   }
   if (!result) return NextResponse.json({ pending: true });
 
-  await createSession(server.id, result.user, result.token, {
-    ip: clientIp(request),
-    userAgent: request.headers.get('user-agent') ?? undefined,
-  });
+  await createSession(
+    server.id,
+    result.user,
+    result.token,
+    { ip, userAgent: request.headers.get('user-agent') ?? undefined },
+    { claimAdmin: setup === 'valid' },
+  );
   return NextResponse.json({ ok: true, isAdmin: result.user.isAdmin });
 }

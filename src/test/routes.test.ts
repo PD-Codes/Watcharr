@@ -226,6 +226,15 @@ async function main() {
     console.log(`${rerun.status === 409 ? 'ok  ' : 'FAIL'} - setup cannot be run twice → ${rerun.status}`);
     if (rerun.status !== 409) failures += 1;
 
+    // No admin exists yet, so a wrong setup token must stop the sign-in.
+    const badToken = await fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'secret', setupToken: 'ZZZZ-ZZZZ' }),
+    });
+    console.log(`${badToken.status === 401 && !badToken.headers.get('set-cookie') ? 'ok  ' : 'FAIL'} - a wrong setup token refuses the sign-in → ${badToken.status}`);
+    if (badToken.status !== 401) failures += 1;
+
     const login = await fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -417,6 +426,9 @@ async function main() {
       '/admin/notifications',
       '/admin/newsletter',
       '/admin/import',
+      '/admin/backups',
+      '/admin/caches',
+      '/admin/doctor',
       '/admin/security',
       '/profile',
       '/profile?tab=sessions',
@@ -474,6 +486,57 @@ async function main() {
         bytes.subarray(0, 15).toString() === 'SQLite format 3' &&
         Number(res.headers.get('content-length')) === bytes.length;
       console.log(`${ok ? 'ok  ' : 'FAIL'} - GET /api/admin/backup streams a SQLite file → ${res.status}, ${bytes.length} bytes`);
+      if (!ok) failures += 1;
+    }
+
+    // Ops endpoints: stored backups download whole, names cannot leave the folder, and an
+    // admin can preview another user read-only and leave again.
+    {
+      const make = await fetch(`${base}/api/admin/backups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ action: 'create' }),
+      });
+      const created = (await make.json()) as { backup?: { name: string } };
+      const stored = created.backup
+        ? await fetch(`${base}/api/admin/backup?name=${encodeURIComponent(created.backup.name)}`, { headers: { Cookie: cookie } })
+        : null;
+      const stolen = await fetch(`${base}/api/admin/backup?name=..%2Froutes.db`, { headers: { Cookie: cookie } });
+      const anonymousCaches = await fetch(`${base}/api/admin/caches`);
+      const caches = await fetch(`${base}/api/admin/caches`, { headers: { Cookie: cookie } });
+      const ok =
+        make.status === 200 &&
+        stored?.status === 200 &&
+        Buffer.from(await stored.arrayBuffer()).subarray(0, 15).toString() === 'SQLite format 3' &&
+        stolen.status === 404 &&
+        anonymousCaches.status === 403 &&
+        caches.status === 200;
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - backups: create, download by name, no path escape, caches are admin-only`);
+      if (!ok) failures += 1;
+    }
+
+    {
+      const { db } = await import('../db');
+      const { users } = await import('../db/schema');
+      const [viewee] = await db.insert(users).values({ serverId: 1, serverUserId: 'viewee', username: 'viewee' }).returning();
+      const json = { 'Content-Type': 'application/json', Cookie: cookie };
+      const start = await fetch(`${base}/api/admin/view-as`, { method: 'POST', headers: json, body: JSON.stringify({ userId: viewee.id }) });
+      const viewCookie = `${cookie}; ${(start.headers.get('set-cookie') ?? '').split(';')[0]}`;
+      const page = await fetch(`${base}/`, { headers: { Cookie: viewCookie } }).then((r) => r.text());
+      const write = await fetch(`${base}/api/watchlist`, { method: 'POST', headers: { ...json, Cookie: viewCookie }, body: '{}' });
+      const adminPage = await fetch(`${base}/admin/users`, { headers: { Cookie: viewCookie }, redirect: 'manual' });
+      const self = await fetch(`${base}/api/admin/view-as`, { method: 'POST', headers: json, body: JSON.stringify({ userId: 0 }) });
+      const leave = await fetch(`${base}/api/admin/view-as`, { method: 'DELETE', headers: { ...json, Cookie: viewCookie } });
+      const after = await fetch(`${base}/`, { headers: { Cookie: cookie } }).then((r) => r.text());
+      const ok =
+        start.status === 200 &&
+        page.includes('preview-pill') && page.includes('viewee') &&
+        write.status === 403 &&
+        adminPage.status >= 300 && adminPage.status < 400 && // viewee is no admin: the admin pages are gone
+        self.status === 404 &&
+        leave.status === 200 &&
+        !after.includes('preview-pill');
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - admin preview: banner, read-only, no admin pages, exit (${start.status}/${write.status}/${adminPage.status}/${self.status})`);
       if (!ok) failures += 1;
     }
 

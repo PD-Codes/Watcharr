@@ -1,6 +1,6 @@
 {
   "name": "watcharr",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "license": "GPL-3.0-or-later",
   "author": "PD-Codes",
@@ -21,7 +21,7 @@
     "i18n:build": "node scripts/build-i18n.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/test/adapters.test.ts && tsx src/test/http.test.ts && tsx src/test/suggestions.test.ts && tsx src/test/net.test.ts && tsx src/test/sameorigin.test.ts && tsx src/test/body.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/ratelimit.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/setup.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/update.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/db.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/notifications.test.ts && tsx src/test/insights.test.ts && tsx src/test/pick.test.ts && tsx src/test/shortcuts.test.ts && tsx src/test/story.test.ts && tsx src/test/screen.test.ts",
+    "test": "tsx src/test/adapters.test.ts && tsx src/test/http.test.ts && tsx src/test/suggestions.test.ts && tsx src/test/net.test.ts && tsx src/test/sameorigin.test.ts && tsx src/test/body.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/ratelimit.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/setup.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/update.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/db.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/notifications.test.ts && tsx src/test/insights.test.ts && tsx src/test/pick.test.ts && tsx src/test/shortcuts.test.ts && tsx src/test/story.test.ts && tsx src/test/screen.test.ts && tsx --expose-gc --require ./src/test/server-only-shim.cjs src/test/ops.test.ts",
     "test:routes": "next build && tsx --require ./src/test/server-only-shim.cjs src/test/routes.test.ts",
     "preview": "next build && tsx --require ./src/test/server-only-shim.cjs src/test/preview.ts"
   },

@@ -92,7 +92,7 @@ export default async function AdminActivityPage({
 
   return (
     <>
-      <AutoRefresh seconds={10} />
+      <AutoRefresh seconds={4} />
       <p className="eyebrow">{t('nav.admin')}</p>
       <h1>{t('nav.adminActivity')}</h1>
       <p className="subtitle">{t('adminActivity.subtitle')}</p>

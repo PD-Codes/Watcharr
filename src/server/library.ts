@@ -130,6 +130,21 @@ export async function warmLibraryCache(serverId: number): Promise<void> {
   await Promise.all([getLibrary(serverId), getSections(serverId)]);
 }
 
+/** The listing if it is already in memory; never fetches (status polls must stay cheap). */
+export function cachedLibrary(serverId: number): LibraryItem[] | null {
+  return cache.get(serverId)?.items ?? null;
+}
+
+/** What the caches page shows: how much is held per server and how old it is. */
+export function libraryCacheInfo(): { serverId: number; items: number; sections: number; ageMs: number }[] {
+  return [...cache].map(([serverId, hit]) => ({
+    serverId,
+    items: hit.items.length,
+    sections: sectionCache.get(serverId)?.sections.length ?? 0,
+    ageMs: Date.now() - hit.at,
+  }));
+}
+
 export async function searchLibrary(
   serverId: number,
   query: string,

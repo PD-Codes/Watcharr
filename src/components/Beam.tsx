@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { playbackSessions } from '@/db/schema';
-import { artUrl, formatDuration, formatTimeAgo, formatTimecode, percent } from './format';
+import { artUrl, formatDuration, formatTimeAgo, percent } from './format';
+import { LiveScrub, LiveTimecode } from './LiveProgress';
 import { getT } from '@/i18n/server';
 
 type Session = typeof playbackSessions.$inferSelect & { username?: string | null };
@@ -41,6 +42,14 @@ export default async function Beam({
   const label = session.grandparentTitle ?? session.title;
   const remaining = Math.max(0, session.durationMs - session.progressMs);
   const paused = session.state === 'paused';
+  const live = {
+    progressMs: session.progressMs,
+    durationMs: session.durationMs,
+    playing: session.state === 'playing',
+    // The position is as old as the last sync that saw this stream; capped so a stalled row
+    // cannot run a bar far ahead of the truth.
+    ageMs: Math.min(15_000, Math.max(0, Date.now() - session.lastSeenAt.getTime())),
+  };
 
   const stream = [
     PLAY_METHOD_KEYS[session.playMethod as keyof typeof PLAY_METHOD_KEYS]
@@ -80,15 +89,10 @@ export default async function Beam({
           )}
         </p>
 
-        <div className="scrub" data-tip={t('beam.scrub', { percent: progress, duration: formatDuration(remaining) })}>
-          <span className="scrub-fill" style={{ width: `${progress}%` }} />
-          <span className="scrub-head" style={{ left: `${progress}%` }} />
-        </div>
+        <LiveScrub {...live} tip={t('beam.scrub', { percent: progress, duration: formatDuration(remaining) })} />
 
         <div className="beam-meta">
-          <span className="timecode num">
-            {formatTimecode(session.progressMs)} / {formatTimecode(session.durationMs)}
-          </span>
+          <LiveTimecode {...live} />
           <span className="muted">{t('beam.remaining', { duration: formatDuration(remaining) })}</span>
           <span data-tip={t('beam.player')}>{session.clientName ?? t('stream.unknownClient')}</span>
           <span data-tip={t('common.device')}>{session.deviceName ?? '—'}</span>

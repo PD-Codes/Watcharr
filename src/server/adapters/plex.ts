@@ -37,6 +37,7 @@ type PlexMeta = {
   key?: string;
   title: string;
   grandparentTitle?: string;
+  grandparentRatingKey?: string;
   type?: string;
   year?: number;
   duration?: number;
@@ -82,8 +83,31 @@ type PlexContainer = {
     friendlyName?: string;
     machineIdentifier?: string;
     version?: string;
+    Account?: { id: number | string; name?: string }[];
   };
 };
+
+type PlexDetails = { durationMs: number; year?: number; genres: string[] };
+
+// Process-wide on purpose: adapters are rebuilt on every call, these answers are not.
+const ACCOUNT_TTL_MS = 10 * 60_000;
+const accountCache = new Map<string, { at: number; accounts: { id: string; name: string }[] }>();
+const MAX_DETAILS = 5_000;
+const detailCache = new Map<string, PlexDetails>();
+const DETAIL_CONCURRENCY = 6;
+
+/** Plex hands out XML for its v1 endpoints whatever Accept says; read the few attributes needed. */
+function parseUsersXml(xml: string) {
+  const users: { id: string; title: string; email?: string; thumb?: string }[] = [];
+  for (const tag of xml.match(/<User\b[^>]*>/g) ?? []) {
+    const attr = (name: string) =>
+      tag.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1]?.replace(/&amp;/g, '&').replace(/&quot;/g, '"');
+    const id = attr('id');
+    const title = attr('title') ?? attr('username');
+    if (id && title) users.push({ id, title, email: attr('email') || undefined, thumb: attr('thumb') || undefined });
+  }
+  return users;
+}
 
 export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
   readonly type: ServerType = 'plex';
@@ -154,13 +178,13 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
   }
 
   async getUser(token: string): Promise<MediaServerUser> {
-    const me = await apiFetch<{ id: number; username: string; email?: string; thumb?: string }>(
+    const me = await apiFetch<{ id: number; username: string; title?: string; email?: string; thumb?: string }>(
       `${PLEX_TV}/user`,
       { headers: this.plexHeaders(token) },
     );
     const [root, resources] = await Promise.all([
       this.server<PlexContainer>('/'),
-      apiFetch<{ clientIdentifier?: string }[]>(`${PLEX_TV}/resources?includeHttps=1&includeRelay=1`, {
+      apiFetch<{ clientIdentifier?: string; owned?: boolean }[]>(`${PLEX_TV}/resources?includeHttps=1&includeRelay=1`, {
         headers: this.plexHeaders(token),
       }),
     ]);
@@ -171,29 +195,94 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     if (!machineId || !Array.isArray(resources) || !resources.some((r) => r.clientIdentifier === machineId)) {
       throw Object.assign(new Error('This Plex account has no access to the server'), { status: 403 });
     }
-    // ponytail: server ownership is derived from the root endpoint's myPlexUsername.
-    // Swap for /api/v2/resources ownership check if shared-admin setups need it.
+    // Ownership comes from plex.tv itself: the resource entry of this very server carries
+    // `owned: true` for the account the server is claimed by. The name comparison that used to
+    // be the only test fails whenever the two spellings differ (case, an email instead of a
+    // username, an account whose `username` is empty), so it is kept as a fallback, loosely.
+    const entry = resources.find((r) => r.clientIdentifier === machineId);
+    const owner = root.MediaContainer.myPlexUsername?.trim().toLowerCase();
+    const names = [me.username, me.email, me.title].map((n) => n?.trim().toLowerCase());
     return {
       serverUserId: String(me.id),
       username: me.username,
       email: me.email,
       avatarUrl: me.thumb,
-      isAdmin: root.MediaContainer.myPlexUsername === me.username,
+      isAdmin: entry?.owned === true || (!!owner && names.includes(owner)),
     };
   }
 
   async listUsers(): Promise<MediaServerUser[]> {
-    const res = await apiFetch<{ MediaContainer: { User?: { id: number; title: string; email?: string; thumb?: string }[] } }>(
-      'https://plex.tv/api/users?X-Plex-Token=' + encodeURIComponent(this.adminToken),
+    // Friends come from plex.tv. The endpoint answers XML (JSON when a future version learns
+    // it), so the body is read as text and either shape is accepted.
+    const friends = await fetch(`https://plex.tv/api/users?X-Plex-Token=${encodeURIComponent(this.adminToken)}`, {
+      headers: this.plexHeaders(this.adminToken),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8_000),
+    })
+      .then(async (res) => {
+        if (!res.ok) return [];
+        const text = await res.text();
+        if (text.trimStart().startsWith('{')) {
+          const json = JSON.parse(text) as { MediaContainer?: { User?: { id: number; title: string; email?: string; thumb?: string }[] } };
+          return (json.MediaContainer?.User ?? []).map((u) => ({ ...u, id: String(u.id) }));
+        }
+        return parseUsersXml(text);
+      })
+      .catch(() => []);
+
+    // No friends list (token without plex.tv rights, plex.tv down): the server's own account
+    // table still names everybody who has used it. Id 1 is the owner and 0 the system account.
+    const named = friends.length
+      ? friends
+      : (await this.accounts()).filter((a) => a.id !== '0' && a.id !== '1').map((a) => ({ id: a.id, title: a.name }));
+
+    // The owner is not part of their own friends list, and without them a "sync users" would
+    // never contain the one account that is an admin.
+    const owner = await apiFetch<{ id: number; username?: string; title?: string; email?: string; thumb?: string }>(
+      `${PLEX_TV}/user`,
       { headers: this.plexHeaders(this.adminToken) },
-    ).catch(() => ({ MediaContainer: { User: [] } }));
-    return (res.MediaContainer.User ?? []).map((u) => ({
+    ).catch(() => null);
+
+    const list: MediaServerUser[] = named.map((u) => ({
       serverUserId: String(u.id),
       username: u.title,
-      email: u.email,
-      avatarUrl: u.thumb,
+      email: (u as { email?: string }).email,
+      avatarUrl: (u as { thumb?: string }).thumb,
       isAdmin: false,
     }));
+    if (owner && !list.some((u) => u.serverUserId === String(owner.id))) {
+      list.unshift({
+        serverUserId: String(owner.id),
+        username: owner.username || owner.title || 'owner',
+        email: owner.email,
+        avatarUrl: owner.thumb,
+        isAdmin: true,
+      });
+    }
+    return list;
+  }
+
+  /** The server's own account table: id 1 is the owner, the rest carry their plex.tv ids. */
+  private async accounts(): Promise<{ id: string; name: string }[]> {
+    const hit = accountCache.get(this.baseUrl);
+    if (hit && Date.now() - hit.at < ACCOUNT_TTL_MS) return hit.accounts;
+    const res = await this.server<PlexContainer>('/accounts').catch(() => null);
+    const accounts = (res?.MediaContainer.Account ?? []).map((a) => ({ id: String(a.id), name: a.name ?? '' }));
+    // An empty answer is not cached, so a hiccup does not hide everybody for ten minutes.
+    if (accounts.length) accountCache.set(this.baseUrl, { at: Date.now(), accounts });
+    return accounts;
+  }
+
+  /**
+   * The id the server itself uses for this person. Sessions and history speak the local
+   * account id, which only equals the plex.tv id for shared users — the owner is 1 — so the
+   * plex.tv id alone would find no history for exactly the person who set the server up.
+   */
+  private async localAccountId(serverUserId: string, username?: string): Promise<string> {
+    const accounts = await this.accounts();
+    if (accounts.some((a) => a.id === serverUserId)) return serverUserId;
+    const wanted = username?.trim().toLowerCase();
+    return (wanted && accounts.find((a) => a.name.trim().toLowerCase() === wanted)?.id) || serverUserId;
   }
 
   async getSessions(): Promise<PlaybackSession[]> {
@@ -260,11 +349,22 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
    * socket. None of them are parsed — the arrival is the signal, and the session list is
    * then read the normal way. No hello frame: Plex starts sending on connect.
    */
-  liveSocket(): { url: string; hello?: string } | null {
+  liveSocket(): { url: string; hello?: string; relevant: (frame: string) => boolean } | null {
     const url = new URL(joinUrl(this.baseUrl, '/:/websockets/notifications'));
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     url.searchParams.set('X-Plex-Token', this.adminToken);
-    return { url: url.toString() };
+    // Playback frames only ("playing", and transcode updates, which move bandwidth and
+    // decisions). Library scans, timeline and activity frames arrive in bursts that would
+    // each trigger a full session read for nothing. An unreadable frame counts as relevant.
+    const relevant = (frame: string) => {
+      try {
+        const type = (JSON.parse(frame) as { NotificationContainer?: { type?: string } }).NotificationContainer?.type;
+        return !type || type === 'playing' || type.startsWith('transcodeSession');
+      } catch {
+        return true;
+      }
+    };
+    return { url: url.toString(), relevant };
   }
 
   async terminateSession(terminateKey: string, reason?: string): Promise<void> {
@@ -376,25 +476,72 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     return joinUrl(this.baseUrl, `/library/metadata/${itemId}/thumb?X-Plex-Token=${this.adminToken}`);
   }
 
-  async getHistory(_token: string, serverUserId: string, since?: Date): Promise<HistoryEntry[]> {
+  async getHistory(_token: string, serverUserId: string, since?: Date, username?: string): Promise<HistoryEntry[]> {
     const params = new URLSearchParams({
-      accountID: serverUserId,
+      accountID: await this.localAccountId(serverUserId, username),
       sort: 'viewedAt:desc',
       'X-Plex-Container-Size': '500',
     });
     if (since) params.set('viewedAt>', String(Math.floor(since.getTime() / 1000)));
     // History is only exposed to the server owner token, not to individual user tokens.
     const res = await this.server<PlexContainer>(`/status/sessions/history/all?${params}`);
-    return (res.MediaContainer.Metadata ?? []).map((m) => ({
-      itemId: m.ratingKey,
-      title: m.title,
-      grandparentTitle: m.grandparentTitle,
-      mediaType: m.type ?? 'unknown',
-      year: m.year,
-      genres: (m.Genre ?? []).map((g) => g.tag),
-      watchedAt: new Date((m.viewedAt ?? 0) * 1000),
-      durationMs: m.duration ?? 0,
-    }));
+    const rows = (res.MediaContainer.Metadata ?? []).filter((m) => m.viewedAt);
+    const details = await this.details(rows);
+    return rows.map((m) => {
+      const own = details.get(m.ratingKey);
+      // Episodes carry their genres on the show, not on themselves.
+      const show = m.grandparentRatingKey ? details.get(m.grandparentRatingKey) : undefined;
+      return {
+        itemId: m.ratingKey,
+        title: m.title,
+        grandparentTitle: m.grandparentTitle,
+        mediaType: m.type ?? 'unknown',
+        year: m.year ?? own?.year,
+        genres: (m.Genre ?? []).map((g) => g.tag).concat(show?.genres ?? own?.genres ?? []).filter((g, i, all) => all.indexOf(g) === i),
+        watchedAt: new Date((m.viewedAt ?? 0) * 1000),
+        durationMs: m.duration ?? own?.durationMs ?? 0,
+      };
+    });
+  }
+
+  /**
+   * The history listing names what was watched but not how long it is or what genre it
+   * belongs to, and watch time is computed from exactly that. One metadata read per distinct
+   * title, cached, a few at a time; a title the library no longer has is simply left bare.
+   */
+  private async details(rows: PlexMeta[]): Promise<Map<string, PlexDetails>> {
+    const keys = new Set<string>();
+    for (const m of rows) {
+      keys.add(m.ratingKey);
+      if (m.grandparentRatingKey) keys.add(m.grandparentRatingKey);
+    }
+    const found = new Map<string, PlexDetails>();
+    const todo: string[] = [];
+    for (const key of keys) {
+      const cached = detailCache.get(`${this.baseUrl}|${key}`);
+      if (cached) found.set(key, cached);
+      else todo.push(key);
+    }
+    const work = async () => {
+      for (let key = todo.pop(); key; key = todo.pop()) {
+        const res = await apiFetch<PlexContainer>(joinUrl(this.baseUrl, `/library/metadata/${encodeURIComponent(key)}`), {
+          headers: this.plexHeaders(this.adminToken),
+          timeoutMs: 4_000,
+        }).catch(() => null);
+        const meta = res?.MediaContainer.Metadata?.[0];
+        if (!meta) continue;
+        const entry = {
+          durationMs: meta.duration ?? meta.Media?.[0]?.duration ?? 0,
+          year: meta.year,
+          genres: (meta.Genre ?? []).map((g) => g.tag),
+        };
+        if (detailCache.size >= MAX_DETAILS) detailCache.clear();
+        detailCache.set(`${this.baseUrl}|${key}`, entry);
+        found.set(key, entry);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(DETAIL_CONCURRENCY, todo.length) }, work));
+    return found;
   }
 
   async getWatchlist(token: string): Promise<WatchlistEntry[]> {

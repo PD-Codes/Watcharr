@@ -27,6 +27,7 @@ import {
   listSessionHistory,
 } from '@/server/playback';
 import { canSee, listUserSessions, requireAdmin } from '@/server/session';
+import ViewAsButton from '../../../ViewAsButton';
 import type { TranslationKey } from '@/i18n';
 import { getT } from '@/i18n/server';
 
@@ -80,6 +81,7 @@ export default async function AdminUserDetailPage({
           ? t('users.lastSeen', { date: formatDate(user.lastSeenAt) })
           : t('users.neverSignedIn')}
       </p>
+      {user.id !== session.user.id && <ViewAsButton userId={user.id} />}
       <Tabs tabs={TABS} current={tab} hrefFor={(key) => `/admin/users/${userId}?tab=${key}`} />
     </>
   );

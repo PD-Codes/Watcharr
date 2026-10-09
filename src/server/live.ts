@@ -1,9 +1,12 @@
 import 'server-only';
+import { count } from 'drizzle-orm';
+import { db } from '@/db';
+import { playbackSessions } from '@/db/schema';
 import { createAdapter, supportsLiveSocket, type ServerType } from './adapters';
 import { getSettings, listServers } from './config';
 import { isEnabled } from './features';
 import { globalState } from './state';
-import { syncActivity } from './sync';
+import { liveSessionFilter, syncActivity } from './sync';
 
 /**
  * Live event sockets to the configured media servers.
@@ -31,6 +34,9 @@ import { syncActivity } from './sync';
 // whose servers do not speak websockets still behaves like it did before.
 const FALLBACK_MS = 30_000;
 const RECONNECT_MS = 15_000;
+// While a stream is running (or no socket is up to announce one) the session list is also read
+// on this clock, so a progress bar never trails by more than a few seconds.
+const ACTIVE_POLL_MS = 5_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
 
 type Listener = { socket: WebSocket; serverId: number };
@@ -47,20 +53,45 @@ const live = globalState('live', () => ({
   // collected more and more retry chains (thousands of attempts in a couple of hours).
   retryTimers: new Map<number, NodeJS.Timeout>(),
   timer: null as NodeJS.Timeout | null,
+  fastTimer: null as NodeJS.Timeout | null,
   started: false,
+  // One forced sync at a time; frames that arrive meanwhile collapse into a single re-run.
+  running: false,
+  again: false,
 }));
 const { listeners, backoff, retryTimers } = live;
 
 function onEvent(label: string) {
+  // Plex sends a burst of frames per state change; without this each one started its own
+  // full pass over every server.
+  if (live.running) {
+    live.again = true;
+    return;
+  }
+  live.running = true;
   // Errors are swallowed on purpose: this runs outside any request, so an unhandled
   // rejection here would take the whole process down over a media server hiccup.
-  void syncActivity(true).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[watcharr] live sync from ${label} failed: ${message}`);
-  });
+  void syncActivity(true)
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[watcharr] live sync from ${label} failed: ${message}`);
+    })
+    .finally(() => {
+      live.running = false;
+      if (live.again) {
+        live.again = false;
+        onEvent(label);
+      }
+    });
 }
 
-function connect(serverId: number, label: string, url: string, hello?: string) {
+function connect(
+  serverId: number,
+  label: string,
+  url: string,
+  hello?: string,
+  relevant?: (frame: string) => boolean,
+) {
   let socket: WebSocket;
   try {
     // Global WebSocket, no dependency: Node has shipped one since 22.
@@ -77,8 +108,11 @@ function connect(serverId: number, label: string, url: string, hello?: string) {
     console.log(`[watcharr] live events connected: ${label}`);
     onEvent(label);
   };
-  // Every frame means the same thing here: something changed, go and look.
-  socket.onmessage = () => onEvent(label);
+  // Every relevant frame means the same thing here: something changed, go and look.
+  socket.onmessage = (event) => {
+    if (relevant && typeof event.data === 'string' && !relevant(event.data)) return;
+    onEvent(label);
+  };
   // Both handlers, because a failed connection fires error and close, and only close is
   // guaranteed. Without onerror the failure would surface as an unhandled event instead.
   socket.onerror = () => {};
@@ -153,7 +187,7 @@ export async function refreshListeners(): Promise<void> {
     if (!supportsLiveSocket(adapter)) continue;
     const socket = adapter.liveSocket();
     if (!socket) continue;
-    connect(server.id, server.label, socket.url, socket.hello);
+    connect(server.id, server.label, socket.url, socket.hello, socket.relevant);
   }
 }
 
@@ -178,6 +212,16 @@ export function startLive(): void {
   live.timer = setInterval(tick, FALLBACK_MS);
   // Never the reason the process stays alive; Next.js owns the event loop.
   live.timer.unref?.();
+
+  // syncActivity() throttles itself to five seconds, so this only decides whether to ask.
+  live.fastTimer = setInterval(() => {
+    void (async () => {
+      if (listeners.size === 0) return syncActivity();
+      const [row] = await db.select({ n: count() }).from(playbackSessions).where(liveSessionFilter());
+      if ((row?.n ?? 0) > 0) await syncActivity();
+    })().catch(() => {});
+  }, ACTIVE_POLL_MS);
+  live.fastTimer.unref?.();
   tick();
 }
 
@@ -195,6 +239,8 @@ export function stopLive(): void {
   live.started = false;
   if (live.timer) clearInterval(live.timer);
   live.timer = null;
+  if (live.fastTimer) clearInterval(live.fastTimer);
+  live.fastTimer = null;
   closeSockets();
 }
 

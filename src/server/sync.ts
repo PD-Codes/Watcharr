@@ -13,8 +13,8 @@ import { checkThresholds } from './monitor';
 import { checkNewsletter } from './newsletter';
 import { checkRetention } from './retention';
 import { lastServerPlayAt, recordPlays, type PlayInput } from './plays';
-import { cachedSectionName, getLibrary, resolveSectionKey, warmLibraryCache } from './library';
-import { prefetchTitleMeta } from './tmdb';
+import { cachedLibrary, cachedSectionName, getLibrary, resolveSectionKey, warmLibraryCache } from './library';
+import { artworkCoverage, prefetchTitleMeta } from './tmdb';
 import { revokeSession, type Session } from './session';
 import { notify } from './notifications';
 import { globalState } from './state';
@@ -27,6 +27,7 @@ interface SyncState {
   lastRun: Map<string, number>;
   reachable: Map<number, boolean>;
   downUntil: Map<number, number>;
+  artwork?: { at: number; value: { cached: number; total: number } | null };
 }
 const state = globalState<SyncState>('sync', () => ({
   reported: new Map(),
@@ -71,13 +72,14 @@ function throttled(key: string, everyMs: number): boolean {
 
 /** Pulls new history entries for one user. Duplicates are dropped by the unique index. */
 export async function syncHistory(session: Session) {
+  if (session.preview) return; // an admin's preview never pulls on the viewed user's behalf
   const user = session.user;
   const userId = user.id;
   if (throttled(`history:${userId}`, 60_000)) return;
 
   const adapter = await getAdapter(user.serverId);
   const entries = await adapter
-    .getHistory(session.serverToken, user.serverUserId, await lastServerPlayAt(userId))
+    .getHistory(session.serverToken, user.serverUserId, await lastServerPlayAt(userId), user.username)
     .catch(async (error: unknown) => {
       // A 401 for a user token is not transient: the media server dropped it (a restart,
       // a password change, a purged device) and it will never work again. The token lives
@@ -160,7 +162,10 @@ export async function syncActivity(force = false) {
   // Artwork for the poster grids is filled here rather than while a page renders: a grid
   // of two dozen tiles would otherwise fire two dozen TMDB searches on its first view.
   if (!throttled('tmdb', 10 * 60_000)) {
-    await prefetchArtwork().catch(reportSyncError('TMDB prefetch'));
+    const looked = await prefetchArtwork().catch((e: unknown) => (reportSyncError('TMDB prefetch')(e), 0));
+    // While there is a backlog (a fresh install has the whole library to fetch), come back in
+    // a minute instead of ten: 25 titles per ten minutes would take a day for a large library.
+    if (looked > 0) lastRun.set('tmdb', Date.now() - 9 * 60_000);
   }
   await checkThresholds().catch(reportSyncError('threshold check'));
   await checkDigest().catch(reportSyncError('digest'));
@@ -170,19 +175,36 @@ export async function syncActivity(force = false) {
 }
 
 /**
- * Looks up a batch of library titles TMDB has not been asked about yet. Only the library
+ * Looks up a batch of library titles TMDB has not been asked about yet (or whose answer has
+ * expired; the caches page runs it with a bigger `limit`). Only the library
  * is used as the source: history titles already get looked up when their detail page is
  * opened, while a never-started film has no other occasion to be fetched — and that is
  * exactly the grid that looks emptiest without a poster.
  */
-async function prefetchArtwork() {
+export async function prefetchArtwork(limit?: number): Promise<number> {
   const { tmdbApiKey } = await getSettings();
-  if (!tmdbApiKey) return;
+  if (!tmdbApiKey) return 0;
 
+  let done = 0;
   for (const server of await listServers()) {
     const items = await getLibrary(server.id).catch(() => []);
-    if (items.length) await prefetchTitleMeta(tmdbApiKey, items);
+    if (items.length) {
+      done += await prefetchTitleMeta(tmdbApiKey, items, limit === undefined ? undefined : limit - done);
+    }
+    if (limit !== undefined && done >= limit) break;
   }
+  return done;
+}
+
+/** Library titles with a TMDB answer vs. all of them, or null when nothing is being fetched. */
+export async function artworkProgress(): Promise<{ cached: number; total: number } | null> {
+  if (!(await getSettings()).tmdbApiKey) return null;
+  const memo = state.artwork;
+  if (memo && Date.now() - memo.at < 10_000) return memo.value;
+  const items = (await listServers()).flatMap((s) => cachedLibrary(s.id) ?? []);
+  const value = items.length ? await artworkCoverage(items) : null;
+  state.artwork = { at: Date.now(), value };
+  return value;
 }
 
 /** Last known reachability per server, so server.down fires on the edge, not every poll. */
@@ -268,10 +290,14 @@ async function syncServerActivity(server: ServerRow) {
   reachable.set(server.id, true);
   downUntil.delete(server.id);
   const known = await db
-    .select({ id: users.id, serverUserId: users.serverUserId })
+    .select({ id: users.id, serverUserId: users.serverUserId, username: users.username })
     .from(users)
     .where(eq(users.serverId, server.id));
   const byServerId = new Map(known.map((u) => [u.serverUserId, u.id]));
+  // Plex reports the owner under a local id (1) that never matches the plex.tv id they signed
+  // in with, so a stream would stay unattributed and vanish from "my sessions". The name is
+  // the fallback; ids stay authoritative.
+  const byName = new Map(known.map((u) => [u.username.trim().toLowerCase(), u.id]));
   const now = new Date();
 
   const ownRows = like(playbackSessions.sessionKey, `${server.id}:%`);
@@ -330,7 +356,7 @@ async function syncServerActivity(server: ServerRow) {
     const moved = previousProgress.get(rowKey) !== session.progressMs;
     const row = {
       sessionKey: rowKey,
-      userId: byServerId.get(session.serverUserId) ?? null,
+      userId: byServerId.get(session.serverUserId) ?? byName.get(session.username.trim().toLowerCase()) ?? null,
       itemId: session.itemId,
       title: session.title,
       grandparentTitle: session.grandparentTitle,
@@ -516,6 +542,7 @@ async function recordFinishedPlays(
 
 /** Mirrors the server-side watchlist (Plex only) into the local watchlist. */
 export async function syncWatchlist(session: Session) {
+  if (session.preview) return;
   const user = session.user;
   const userId = user.id;
   const settings = await getSettings();

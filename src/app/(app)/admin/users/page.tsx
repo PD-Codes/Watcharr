@@ -7,6 +7,7 @@ import { requireAdmin } from '@/server/session';
 import { getT } from '@/i18n/server';
 import SyncUsersButton from './SyncUsersButton';
 import RoleToggle from './RoleToggle';
+import ViewAsButton from '../../ViewAsButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,7 @@ export default async function AdminUsersPage() {
               <th scope="col" className="secondary-col">{t('users.colPlays')}</th>
               <th scope="col">{t('common.watchTime')}</th>
               <th scope="col">{t('users.colLastSeen')}</th>
+              <th scope="col">{t('viewAs.column')}</th>
               {global && <th scope="col">{t('users.colGlobalAdmin')}</th>}
             </tr>
           </thead>
@@ -76,6 +78,7 @@ export default async function AdminUsersPage() {
                 <td className="when-cell">
                   {row.lastSeenAt ? formatDate(row.lastSeenAt) : t('common.never')}
                 </td>
+                <td>{row.id !== session.user.id && <ViewAsButton userId={row.id} />}</td>
                 {global && (
                   <td>
                     <RoleToggle
