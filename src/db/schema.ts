@@ -317,7 +317,20 @@ export const watchHistory = sqliteTable(
     source: text('source').notNull().default('server'),
   },
   (t) => ({
-    userWatchedIdx: index('watch_history_user_watched_idx').on(t.userId, t.watchedAt),
+    // Carries duration and type as well, so the per-user sums and counts (and the server-wide
+    // ones, which scan it instead of the much wider table) are answered from the index alone.
+    userWatchedIdx: index('watch_history_user_watched_idx').on(
+      t.userId,
+      t.watchedAt,
+      t.durationMs,
+      t.mediaType,
+    ),
+    // Server-wide windows ("the last 30 days", "the latest plays") have no user to lead the
+    // index above with; without this they read every row of every user.
+    watchedIdx: index('watch_history_watched_idx').on(t.watchedAt),
+    // Title pages look a show or a film up by name; see getTitleDetail().
+    grandparentIdx: index('watch_history_grandparent_idx').on(t.grandparentTitle),
+    titleIdx: index('watch_history_title_idx').on(t.title),
     dedupeIdx: uniqueIndex('watch_history_dedupe_idx').on(t.userId, t.itemId, t.watchedAt),
   }),
 );
@@ -374,6 +387,9 @@ export const playbackSessions = sqliteTable(
   },
   (t) => ({
     userIdx: index('playback_sessions_user_idx').on(t.userId),
+    // The time axis of every stream chart and list: bucket joins, "last N days", newest first.
+    startedIdx: index('playback_sessions_started_idx').on(t.startedAt),
+    userStartedIdx: index('playback_sessions_user_started_idx').on(t.userId, t.startedAt),
     lastSeenIdx: index('playback_sessions_last_seen_idx').on(t.lastSeenAt),
   }),
 );

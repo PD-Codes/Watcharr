@@ -1,6 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
-import { db } from '@/db';
+import { readDb as db } from './readcache';
 import { scopeFilter, type LabelledValue, type Scope } from './stats';
 
 export interface TitleDetail {
@@ -33,7 +33,9 @@ export interface TitleDetail {
  * lookup key is the display label rather than an item id.
  */
 export async function getTitleDetail(label: string, scope: Scope): Promise<TitleDetail | null> {
-  const matches = sql`coalesce(grandparent_title, title) = ${label}`;
+  // Spelled out instead of coalesce(...) = ?, which no index can serve: this form lets SQLite
+  // seek both plain indexes (watch_history_grandparent_idx, watch_history_title_idx).
+  const matches = sql`(grandparent_title = ${label} OR (grandparent_title IS NULL AND title = ${label}))`;
   // scopeFilter() is the one place a scope becomes SQL. The inline userId check this
   // replaced ignored scope.serverId, so a server admin saw the plays, devices and viewers
   // of every other server for any title the two servers had in common.
@@ -82,7 +84,8 @@ export async function getTitleDetail(label: string, scope: Scope): Promise<Title
     SELECT u.username AS label, sum(h.duration_ms) / 60000 AS minutes
     FROM watch_history h
     JOIN users u ON u.id = h.user_id
-    WHERE coalesce(h.grandparent_title, h.title) = ${label} AND ${scopeFilter(scope, 'h.')}
+    WHERE (h.grandparent_title = ${label} OR (h.grandparent_title IS NULL AND h.title = ${label}))
+      AND ${scopeFilter(scope, 'h.')}
     GROUP BY u.id
     ORDER BY minutes DESC
   `);

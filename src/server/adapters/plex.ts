@@ -95,6 +95,7 @@ const accountCache = new Map<string, { at: number; accounts: { id: string; name:
 const MAX_DETAILS = 5_000;
 const detailCache = new Map<string, PlexDetails>();
 const DETAIL_CONCURRENCY = 6;
+const HISTORY_LIMIT = 500;
 
 /** Plex hands out XML for its v1 endpoints whatever Accept says; read the few attributes needed. */
 function parseUsersXml(xml: string) {
@@ -480,12 +481,15 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     const params = new URLSearchParams({
       accountID: await this.localAccountId(serverUserId, username),
       sort: 'viewedAt:desc',
-      'X-Plex-Container-Size': '500',
+      'X-Plex-Container-Start': '0',
+      'X-Plex-Container-Size': String(HISTORY_LIMIT),
     });
     if (since) params.set('viewedAt>', String(Math.floor(since.getTime() / 1000)));
     // History is only exposed to the server owner token, not to individual user tokens.
     const res = await this.server<PlexContainer>(`/status/sessions/history/all?${params}`);
-    const rows = (res.MediaContainer.Metadata ?? []).filter((m) => m.viewedAt);
+    // Newest first. Cut here as well as in the request: an answer that ignores the page size
+    // would otherwise bring the whole history through the metadata lookups below.
+    const rows = (res.MediaContainer.Metadata ?? []).filter((m) => m.viewedAt).slice(0, HISTORY_LIMIT);
     const details = await this.details(rows);
     return rows.map((m) => {
       const own = details.get(m.ratingKey);

@@ -1,6 +1,6 @@
 import 'server-only';
 import { sql, type SQL } from 'drizzle-orm';
-import { db } from '@/db';
+import { readDb as db } from './readcache';
 import { scopeFilter, type LabelledValue, type Scope } from './stats';
 
 // Statistics derived from playback_sessions: how content was delivered, not what was watched.
@@ -63,6 +63,12 @@ export async function getCompletionSplit(
  * are built as local calendar days and converted: a fixed 24 h step drifts off midnight
  * after every DST change and would file the same evening under the wrong day.
  */
+// A stream that overlaps a bucket started at most this long before it. With the lower bound the
+// bucket join reads a few days of sessions through playback_sessions_started_idx instead of
+// every session ever recorded once per bucket (half a minute on a million rows). Streams
+// longer than this are zombies the live check already refuses to believe in.
+const LOOKBACK = sql`((SELECT min(ts) FROM bucket) - 172800000)`;
+
 function bucketsCte(days: number): SQL {
   if (days <= 7) {
     return sql`
@@ -120,6 +126,7 @@ export async function getConcurrencyOverTime(
     LEFT JOIN playback_sessions s
       ON s.started_at < next_ts
      AND max(s.last_seen_at, s.started_at) >= ts
+     AND s.started_at >= ${LOOKBACK}
      AND ${scoped(scope, 's.')}
     GROUP BY ts
     ORDER BY ts
@@ -154,6 +161,7 @@ export async function getBandwidthOverTime(days = 7, scope?: Scope): Promise<Ban
     LEFT JOIN playback_sessions s
       ON s.started_at < next_ts
      AND max(s.last_seen_at, s.started_at) >= ts
+     AND s.started_at >= ${LOOKBACK}
      AND ${scoped(scope, 's.')}
     GROUP BY ts
     ORDER BY ts
@@ -500,8 +508,11 @@ export interface ConcurrencyPeak {
 
 /**
  * The busiest moment on record: the most streams that ever overlapped, plus what they were
- * doing. Every session start is a candidate peak — counting overlaps at those instants is
- * enough, because concurrency can only rise when a session begins.
+ * doing. Concurrency can only rise when a session begins, so it is enough to walk the starts
+ * and ends in time order with a running count — one sort, instead of the self-join this used
+ * to be, which compared every session with every other and did not finish on a million rows.
+ * A stream that ends at the very instant another starts still counts as overlapping it, so
+ * starts sort before ends at the same instant.
  */
 export async function getConcurrencyPeak(days?: number, scope?: Scope): Promise<ConcurrencyPeak> {
   const [row] = await db.all<{
@@ -510,27 +521,24 @@ export async function getConcurrencyPeak(days?: number, scope?: Scope): Promise<
     direct_streams: number;
     direct_plays: number;
   }>(sql`
-    SELECT max(overlap.streams) AS streams,
-           max(overlap.transcodes) AS transcodes,
-           max(overlap.direct_streams) AS direct_streams,
-           max(overlap.direct_plays) AS direct_plays
-    FROM (
-      SELECT count(*) AS streams,
-             count(*) FILTER (WHERE b.play_method = 'transcode') AS transcodes,
-             count(*) FILTER (WHERE b.play_method = 'directstream') AS direct_streams,
-             count(*) FILTER (WHERE b.play_method = 'directplay') AS direct_plays
-      -- Distinct start instants: sessions first seen in the same poll share one started_at,
-      -- and joining each of them to the overlap set multiplied every count.
-      FROM (
-        SELECT DISTINCT started_at FROM playback_sessions a
-        WHERE ${since(days, 'a.')} AND ${scoped(scope, 'a.')}
-      ) AS a
-      JOIN playback_sessions b
-        ON b.started_at <= a.started_at
-       AND max(b.last_seen_at, b.started_at) >= a.started_at
-       AND ${scoped(scope, 'b.')}
-      GROUP BY a.started_at
-    ) AS overlap
+    WITH ev(t, k, m, d) AS (
+      SELECT started_at, 0, play_method, 1 FROM playback_sessions
+      WHERE ${since(days)} AND ${scoped(scope)}
+      UNION ALL
+      SELECT max(last_seen_at, started_at), 1, play_method, -1 FROM playback_sessions
+      WHERE ${since(days)} AND ${scoped(scope)}
+    ),
+    running AS (
+      SELECT sum(d) OVER w AS streams,
+             sum(CASE WHEN m = 'transcode' THEN d ELSE 0 END) OVER w AS transcodes,
+             sum(CASE WHEN m = 'directstream' THEN d ELSE 0 END) OVER w AS direct_streams,
+             sum(CASE WHEN m = 'directplay' THEN d ELSE 0 END) OVER w AS direct_plays
+      FROM ev
+      WINDOW w AS (ORDER BY t, k ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+    )
+    SELECT max(streams) AS streams, max(transcodes) AS transcodes,
+           max(direct_streams) AS direct_streams, max(direct_plays) AS direct_plays
+    FROM running
   `);
 
   return {

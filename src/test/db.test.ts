@@ -694,6 +694,18 @@ async function main() {
       'server',
     );
     assert.equal(third, 1, 'a rewatch is its own play');
+
+    // A server that answers with its whole history: spreading 200k entries into Math.min()
+    // overflowed the stack ("Maximum call stack size exceeded"). Same film, same minute, so
+    // the answer is one row however many slices it takes.
+    const flood = Array.from({ length: 200_000 }, () => ({
+      itemId: 'flood-1',
+      title: 'Flood',
+      mediaType: 'movie',
+      watchedAt: new Date('2023-01-01T20:00:00Z'),
+      durationMs: 1,
+    }));
+    assert.equal(await recordPlays(viewer.id, flood, 'server'), 1, 'a huge list is recorded in slices');
     console.log('ok - one play stays one row across all three writers');
   }
 

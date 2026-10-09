@@ -1,7 +1,8 @@
 import 'server-only';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { DB_PATH } from '@/db';
+import { sql } from 'drizzle-orm';
+import { DB_PATH, db } from '@/db';
 import { createManualBackup } from './backups';
 import { getServer } from './config';
 import { completedPath } from './importupload';
@@ -35,6 +36,9 @@ export interface JobParams {
   dryRun: boolean;
   days?: number;
   userMap?: Record<string, number | null>;
+  /** Create accounts for Tautulli users nobody matches (default on) and import their logins. */
+  createUsers?: boolean;
+  logins?: boolean;
   /** Snapshot the database before a real import (default on). Resumed runs skip it. */
   backup?: boolean;
 }
@@ -124,12 +128,16 @@ export async function startJob(params: JobParams, resumeFrom?: Job): Promise<Job
         dryRun: params.dryRun,
         sinceMs: params.days ? Date.now() - params.days * 86_400_000 : 0,
         userMap: params.userMap,
+        createUsers: params.createUsers !== false,
+        logins: params.logins !== false,
         resume: prior ? {
           lastId: prior.lastId,
           scanned: prior.scanned,
           candidates: prior.candidates,
           plays: prior.plays,
           streams: prior.streams,
+          createdUsers: prior.createdUsers,
+          logins: prior.logins,
           unmatched: Object.fromEntries(prior.unmatched.map((u) => [u.name, u.rows])),
         } : undefined,
         shouldStop: () => state.stop,
@@ -140,6 +148,8 @@ export async function startJob(params: JobParams, resumeFrom?: Job): Promise<Job
       });
       job.summary = summary;
       job.status = summary.stopped ? 'stopped' : 'done';
+      // An import can double a table; refresh the planner's statistics while it is fresh news.
+      if (!params.dryRun) db.run(sql`ANALYZE`);
     } catch (error) {
       job.status = 'failed';
       job.error = error instanceof Error ? error.message : 'Import failed';

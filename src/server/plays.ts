@@ -57,11 +57,24 @@ export async function lastServerPlayAt(userId: number): Promise<Date | undefined
  * Inserts the plays this user does not already have. Returns how many were written, so an
  * import can report a number instead of "done".
  */
+// A media server may hand over its whole history at once (Plex ignores a page size on some
+// endpoints). Spreading that into Math.min() overflows the stack past ~120k entries, and one
+// IN (...) or multi-row INSERT past SQLite's 32k-variable limit — so work in slices, each of
+// which reads the rows the previous one wrote.
+const BATCH = 1000;
+
 export async function recordPlays(
   userId: number,
   entries: PlayInput[],
   source: PlaySource,
 ): Promise<number> {
+  if (entries.length > BATCH) {
+    let written = 0;
+    for (let i = 0; i < entries.length; i += BATCH) {
+      written += await recordPlays(userId, entries.slice(i, i + BATCH), source);
+    }
+    return written;
+  }
   if (!entries.length) return 0;
 
   const itemIds = [...new Set(entries.map((e) => e.itemId))];
@@ -89,7 +102,15 @@ export async function recordPlays(
       ),
     );
 
-  type Known = { id: number | null; at: number; source: string; hasGenres: boolean; hasYear: boolean };
+  type Known = {
+    id: number | null;
+    at: number;
+    source: string;
+    hasGenres: boolean;
+    hasYear: boolean;
+    /** Only for a row this call is about to insert: where merged watch time is collected. */
+    pending?: PlayInput;
+  };
   const known = new Map<string, Known[]>();
   for (const row of existing) {
     const list = known.get(row.itemId) ?? [];
@@ -104,11 +125,20 @@ export async function recordPlays(
   }
 
   const enrich: { id: number; genres: string[]; year: number | null }[] = [];
+  // Watch time of a Tautulli play folded into an earlier play of the same item, keyed by that
+  // earlier entry. Tautulli writes one row per resumed segment (same reference_id); counting
+  // them as one play is right, but dropping their time cost a real import 12 % of its hours.
+  // Only entries of this call are merged into: a row already stored never grows, so running
+  // the same import twice cannot count a segment twice.
+  const extra = new Map<PlayInput, number>();
   const fresh = entries.filter((entry) => {
     const at = entry.watchedAt.getTime();
     const seen = known.get(entry.itemId) ?? [];
     const duplicate = seen.find((other) => Math.abs(other.at - at) < SAME_PLAY_WINDOW_MS);
     if (duplicate) {
+      if (source === 'tautulli' && duplicate.pending) {
+        extra.set(duplicate.pending, (extra.get(duplicate.pending) ?? 0) + entry.durationMs);
+      }
       // A session knows exactly when a stream ran but nothing about its genres; the media
       // server's played list knows the metadata but reports a rounded timestamp. Whichever
       // arrives second would otherwise be dropped whole, and the genre charts would lose
@@ -134,6 +164,7 @@ export async function recordPlays(
       source,
       hasGenres: Boolean(entry.genres?.length),
       hasYear: entry.year != null,
+      pending: entry,
     });
     known.set(entry.itemId, seen);
     return true;
@@ -161,7 +192,7 @@ export async function recordPlays(
         year: entry.year ?? null,
         genres: entry.genres ?? [],
         watchedAt: entry.watchedAt,
-        durationMs: entry.durationMs,
+        durationMs: entry.durationMs + (extra.get(entry) ?? 0),
         deviceName: entry.deviceName ?? null,
         source,
       })),

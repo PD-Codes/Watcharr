@@ -1,6 +1,6 @@
 import 'server-only';
 import { sql, type SQL } from 'drizzle-orm';
-import { db } from '@/db';
+import { readDb as db } from './readcache';
 
 export interface Totals {
   plays: number;

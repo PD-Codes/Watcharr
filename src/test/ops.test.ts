@@ -161,6 +161,119 @@ async function main() {
   assert.equal((await db.select({ n: count() }).from(watchHistory))[0].n, ROWS);
   console.log('ok - the import reads in batches, maps users, stops and resumes without loss');
 
+  /* ---------- people, stream detail and logins ---------- */
+  {
+    const { loginHistory } = await import('../db/schema');
+    // Session keys are `<server>:tautulli-<id>`: the stress rows above would collide with these.
+    await db.delete(watchHistory);
+    await db.delete(playbackSessions);
+    const file = join(dir, 'modern-tautulli.db');
+    const t = new Database(file);
+    t.exec(`
+      CREATE TABLE session_history (id INTEGER PRIMARY KEY, started INTEGER, stopped INTEGER,
+        paused_counter INTEGER, user_id INTEGER, user TEXT, rating_key INTEGER, media_type TEXT,
+        product TEXT, platform TEXT, player TEXT, ip_address TEXT, location TEXT, bandwidth INTEGER);
+      CREATE TABLE session_history_metadata (id INTEGER PRIMARY KEY, title TEXT,
+        grandparent_title TEXT, year INTEGER, genres TEXT, duration INTEGER);
+      CREATE TABLE session_history_media_info (id INTEGER PRIMARY KEY, transcode_decision TEXT,
+        container TEXT, video_codec TEXT, audio_codec TEXT, height INTEGER, bitrate INTEGER,
+        audio_channels INTEGER, stream_container TEXT, stream_video_codec TEXT,
+        stream_video_height INTEGER, stream_video_width INTEGER, stream_audio_codec TEXT,
+        stream_audio_channels INTEGER, stream_subtitle_codec TEXT, stream_bitrate INTEGER);
+      CREATE TABLE users (id INTEGER PRIMARY KEY, user_id INTEGER, username TEXT,
+        friendly_name TEXT, email TEXT, thumb TEXT);
+      CREATE TABLE user_login (id INTEGER PRIMARY KEY, timestamp INTEGER, user_id INTEGER,
+        user TEXT, ip_address TEXT, user_agent TEXT, success INTEGER);
+    `);
+    const base = Math.floor(Date.now() / 1000) - 30 * 86_400;
+    const h = t.prepare('INSERT INTO session_history VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    const m = t.prepare('INSERT INTO session_history_metadata VALUES (?,?,?,?,?,?)');
+    const i = t.prepare('INSERT INTO session_history_media_info VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    // 1: the owner under a name the account here no longer has. 2+3: two resumed segments of one
+    // film by a person nobody has an account for. 4: somebody the admin leaves out.
+    h.run(1, base, base + 600, 0, 100, 'old-owner-name', 11, 'movie', 'Plex Web', 'Chrome', 'Laptop', '10.0.0.8', 'wan', 8000);
+    h.run(2, base + 1000, base + 2800, 0, 200, 'newbie', 22, 'movie', 'Plex for Android', 'Android', 'Pixel', '192.168.1.5', 'lan', 0);
+    h.run(3, base + 3600, base + 4500, 0, 200, 'newbie', 22, 'movie', 'Plex for Android', 'Android', 'Pixel', '192.168.1.5', 'lan', 0);
+    h.run(4, base + 100, base + 200, 0, 300, 'skipme', 33, 'track', 'Plexamp', 'Android', 'Pixel', '1.2.3.4', 'wan', 0);
+    for (const n of [1, 2, 3, 4]) m.run(n, `Title ${n}`, null, 2020, 'Drama', 7_000_000);
+    i.run(1, 'copy', 'mkv', 'hevc', 'eac3', 2160, 40_000, 6, 'mp4', 'hevc', 1600, 3840, 'aac', 2, 'srt', 7000);
+    i.run(2, 'direct play', 'mkv', 'h264', 'aac', 1080, 5000, 2, 'mkv', 'h264', 1080, 1920, 'aac', 2, null, 0);
+    i.run(3, 'direct play', 'mkv', 'h264', 'aac', 1080, 5000, 2, 'mkv', 'h264', 1080, 1920, 'aac', 2, null, 0);
+    i.run(4, 'transcode', 'flac', null, 'flac', null, 900, 2, 'mp3', null, null, null, 'mp3', 2, null, 320);
+    t.prepare('INSERT INTO users VALUES (?,?,?,?,?,?)').run(1, 200, 'newbie', 'Newbie F.', 'newbie@example.com', 'https://plex.tv/users/x/avatar');
+    const l = t.prepare('INSERT INTO user_login VALUES (?,?,?,?,?,?,?)');
+    l.run(1, base, 100, 'old-owner-name', '203.0.113.9', 'Firefox', 1);
+    l.run(2, base + 10, 100, 'old-owner-name', '203.0.113.9', 'Firefox', 0);
+    l.run(3, base + 20, 999, 'stranger', '198.51.100.7', 'curl', 0);
+    t.close();
+    await db.insert(users).values({ serverId: 1, serverUserId: '100', username: 'renamed-owner' });
+    const userCount = async () => (await db.select({ n: count() }).from(users))[0].n;
+    const before = await userCount();
+    const opts = { createUsers: true, userMap: { skipme: null } };
+
+    // Without createUsers nobody is invented: the strangers are reported, as before.
+    const plain = await importFromTautulli(file, 1, { dryRun: true });
+    assert.deepEqual(plain.unmatched.map((u) => u.name).sort(), ['newbie', 'skipme']);
+    assert.equal(plain.plays, 1, 'only the owner, matched by plex.tv id despite the rename');
+
+    const preview = await importFromTautulli(file, 1, { ...opts, dryRun: true });
+    assert.equal(preview.createdUsers, 1);
+    assert.equal(preview.logins, 3);
+    assert.equal(await userCount(), before, 'a preview creates no account');
+
+    const run = await importFromTautulli(file, 1, opts);
+    assert.equal(run.createdUsers, 1, 'one account for newbie; skipme was left out');
+    assert.equal(await userCount(), before + 1);
+    const [newbie] = await db.select().from(users).where(eq(users.serverUserId, '200'));
+    assert.equal(newbie.username, 'newbie');
+    assert.equal(newbie.email, 'newbie@example.com');
+    assert.equal(newbie.lastSeenAt, null, 'never signed in here');
+    assert.equal(run.plays, 2, 'owner + one film; the two segments are one play');
+    const [film] = await db.select().from(watchHistory).where(eq(watchHistory.userId, newbie.id));
+    assert.equal(film.durationMs, (1800 + 900) * 1000, 'the resumed segment adds its time to the play');
+    assert.equal(run.streams, 3, 'every segment stays a stream row');
+
+    const [owner] = await db.select().from(playbackSessions).where(eq(playbackSessions.sessionKey, '1:tautulli-1'));
+    assert.equal(owner.playMethod, 'directstream', "Tautulli's 'copy' is a direct stream");
+    assert.equal(owner.clientName, 'Plex Web', 'the app, not the OS');
+    assert.equal(owner.deviceName, 'Laptop');
+    assert.equal(owner.isLocal, false, "Plex's own location beats the address guess");
+    assert.equal(owner.bitrateKbps, 8000);
+    assert.equal(owner.width, 3840);
+    assert.equal(owner.height, 1600);
+    assert.equal(owner.audioChannels, 2);
+    assert.equal(owner.subtitleCodec, 'srt');
+    assert.equal(owner.sourceVideoCodec, 'hevc');
+    const [lan] = await db.select().from(playbackSessions).where(eq(playbackSessions.sessionKey, '1:tautulli-2'));
+    assert.equal(lan.isLocal, true);
+    assert.equal(lan.bitrateKbps, 5000, 'falls back to the file bitrate when no bandwidth was recorded');
+    assert.equal(
+      (await db.select().from(playbackSessions).where(eq(playbackSessions.sessionKey, '1:tautulli-4'))).length,
+      0,
+      'a person who was left out has no streams either',
+    );
+
+    assert.equal(run.logins, 3);
+    const logins = await db.select().from(loginHistory);
+    assert.equal(logins.length, 3);
+    const failed = logins.filter((r) => !r.success).length;
+    assert.equal(failed, 2);
+    const stranger = logins.find((r) => r.username === 'stranger');
+    assert.equal(stranger?.userId, null, 'a login by nobody we know is kept by name');
+    assert.equal(logins.find((r) => r.username === 'old-owner-name' && r.success)?.userId !== null, true);
+
+    const rerun = await importFromTautulli(file, 1, opts);
+    assert.deepEqual([rerun.plays, rerun.streams, rerun.logins, rerun.createdUsers], [0, 0, 0, 0], 'a second run adds nothing');
+    assert.equal((await db.select({ n: count() }).from(loginHistory))[0].n, 3);
+    console.log('ok - the import matches by plex.tv id, creates missing people, keeps stream detail and logins');
+
+    await db.delete(loginHistory);
+    await db.delete(playbackSessions);
+    await db.delete(watchHistory);
+    await db.delete(users).where(eq(users.serverUserId, '200'));
+    await db.delete(users).where(eq(users.serverUserId, '100'));
+  }
+
   /* ---------- background job ---------- */
   {
     const { createServer } = await import('../server/config');
@@ -311,6 +424,31 @@ async function main() {
     assert.equal(call('DELETE', '/api/admin/view-as', view), 200, 'the way out stays open');
     assert.equal(call('POST', '/api/watchlist'), 200, 'no preview cookie, no change');
     console.log('ok - the proxy blocks writes while an admin previews another user');
+  }
+
+  /* ---------- read cache ---------- */
+  {
+    const { readDb, clearReadCache } = await import('../server/readcache');
+    const { sql } = await import('drizzle-orm');
+    clearReadCache();
+    // A query that takes a noticeable time is kept for a moment: the second ask is instant.
+    const slow = sql`WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 4000000) SELECT count(*) AS n FROM c`;
+    let t = performance.now();
+    const first = await readDb.all<{ n: number }>(slow);
+    const cold = performance.now() - t;
+    t = performance.now();
+    const second = await readDb.all<{ n: number }>(slow);
+    const warm = performance.now() - t;
+    assert.deepEqual(second, first);
+    assert.ok(cold > 150, `the probe query must be slow enough to count (${cold.toFixed(0)} ms)`);
+    assert.ok(warm < cold / 5, `a repeat is served from memory (${warm.toFixed(1)} ms vs ${cold.toFixed(0)} ms)`);
+    // A cheap query is never kept, so small databases stay exactly as live as before.
+    const people = sql`SELECT count(*) AS n FROM users`;
+    const before = (await readDb.all<{ n: number }>(people))[0].n;
+    await db.insert(users).values({ serverId: 1, serverUserId: 'cache-probe', username: 'cache-probe' });
+    assert.equal((await readDb.all<{ n: number }>(people))[0].n, before + 1, 'cheap answers are always fresh');
+    await db.delete(users).where(eq(users.serverUserId, 'cache-probe'));
+    console.log('ok - slow statistics are kept briefly, cheap ones stay live');
   }
 
   console.log('all ops tests passed');

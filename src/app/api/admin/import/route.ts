@@ -41,6 +41,8 @@ export async function POST(request: Request) {
     userMap: 'object',
     resume: 'boolean',
     backup: 'boolean',
+    createUsers: 'boolean',
+    logins: 'boolean',
   });
   if (!body) return badBody();
 
@@ -58,6 +60,8 @@ export async function POST(request: Request) {
     days: Number.isFinite(days) && days > 0 ? days : undefined,
     userMap,
     backup: body.backup !== false,
+    createUsers: body.createUsers !== false,
+    logins: body.logins !== false,
   };
   if (!params.path === !params.uploadId) {
     return NextResponse.json({ error: 'Give either a database path or an uploaded file' }, { status: 400 });

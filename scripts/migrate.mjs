@@ -76,6 +76,7 @@ db.exec('CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_
 
 const applied = new Set(db.prepare('SELECT name FROM _migrations').all().map((r) => r.name));
 const dir = join(process.cwd(), 'drizzle');
+let changed = false;
 
 for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
   if (applied.has(file)) continue;
@@ -89,6 +90,12 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
     db.prepare('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)').run(file, Date.now());
   })();
   console.log(`applied ${file}`);
+  changed = true;
 }
+
+// New indexes have no statistics yet, and a planner without them picks plans for a small
+// database (a title page went from 5 ms to 450 ms on a million plays). Analyzes only what
+// lacks them, so it is quick on an install that is already tuned.
+if (changed) db.pragma('optimize(0x10002)');
 
 db.close();

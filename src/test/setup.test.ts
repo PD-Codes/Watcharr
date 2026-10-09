@@ -57,6 +57,22 @@ async function main() {
   assert.equal((await db.select().from(users)).filter((u) => u.globalAdmin).length, 1);
   assert.equal(await claimGlobalAdmin(rows[0].id), false, 'and nobody can claim it afterwards');
 
+  // Users who never signed in get rows from the media server's lists, matched by id or name.
+  const { ensureUsers } = await import('../server/userroster');
+  const before = (await db.select().from(users)).length;
+  assert.equal(
+    await ensureUsers(first.id, [
+      { serverUserId: 'a', username: 'renamed' }, // known id
+      { serverUserId: '1', username: 'B' }, // known by name (Plex owner: local id 1)
+      { serverUserId: 'c', username: 'Carol' },
+      { serverUserId: 'c', username: 'Carol' }, // duplicate in the same list
+      { serverUserId: 'd', username: 'unknown' }, // placeholder name
+    ]),
+    1,
+  );
+  assert.equal((await db.select().from(users)).length, before + 1);
+  assert.equal(await ensureUsers(first.id, [{ serverUserId: 'c', username: 'carol' }]), 0, 'and not twice');
+
   assert.equal(await setupTokenPending(), false);
   assert.equal(await checkSetupToken(token, 'ip-d'), 'none', 'the token is inert once an admin exists');
 

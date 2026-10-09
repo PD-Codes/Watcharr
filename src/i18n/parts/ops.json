@@ -116,8 +116,8 @@
     "de": "Nicht zugeordnete Benutzer"
   },
   "import.mapHint": {
-    "en": "These Tautulli names have no account of the same name. Pick the account their history belongs to, or leave them out.",
-    "de": "Zu diesen Tautulli-Namen gibt es kein gleichnamiges Konto. Wähle das Konto, zu dem der Verlauf gehört, oder lass sie weg."
+    "en": "These Tautulli users match no account here, neither by id nor by name. Pick the account their history belongs to, or leave them out; the default is shown in the list.",
+    "de": "Diese Tautulli-Benutzer passen weder per ID noch per Name zu einem Konto. Wähle das Konto, zu dem der Verlauf gehört, oder lass sie weg; die Vorgabe steht in der Liste."
   },
   "import.mapRows": {
     "en": "{rows} rows",

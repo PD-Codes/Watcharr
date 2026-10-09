@@ -2,7 +2,7 @@ import 'server-only';
 import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { and, desc, eq, gt, lt, notExists, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, lt, ne, notExists, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { authSessions, loginHistory, users } from '@/db/schema';
 import { isLocale } from '@/i18n';
@@ -131,6 +131,30 @@ export async function createSession(
   meta: LoginMeta = {},
   options: { claimAdmin?: boolean } = {},
 ) {
+  // An account created from the user list or a stream (never signed in, so no last-seen)
+  // may carry another id for the same person — Plex's local id for its owner. Taking that
+  // row over keeps their history in one place instead of leaving a stranded twin.
+  const [twin] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(
+      and(
+        eq(users.serverId, serverId),
+        sql`lower(${users.username}) = ${user.username.trim().toLowerCase()}`,
+        sql`${users.lastSeenAt} IS NULL`,
+        ne(users.serverUserId, user.serverUserId),
+      ),
+    )
+    .limit(1);
+  if (twin) {
+    const [taken] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.serverId, serverId), eq(users.serverUserId, user.serverUserId)))
+      .limit(1);
+    if (!taken) await db.update(users).set({ serverUserId: user.serverUserId }).where(eq(users.id, twin.id));
+  }
+
   const [row] = await db
     .insert(users)
     .values({

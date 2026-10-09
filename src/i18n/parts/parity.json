@@ -84,8 +84,8 @@
   "nav.adminImport": { "en": "Import", "de": "Import" },
   "import.title": { "en": "Import from Tautulli", "de": "Import aus Tautulli" },
   "import.subtitle": {
-    "en": "Brings years of plays, clients and transcode decisions across. Everything else can be pulled from the media server; this cannot.",
-    "de": "Holt jahrelange Wiedergaben, Clients und Transkodier-Entscheidungen herüber. Alles andere lässt sich vom Media-Server nachziehen, das hier nicht."
+    "en": "Brings years of plays, clients, transcode decisions, people and logins across. Libraries and recently-added come from the media server; this cannot.",
+    "de": "Holt jahrelange Wiedergaben, Clients, Transkodier-Entscheidungen, Personen und Logins herüber. Bibliotheken und Neuzugänge kommen vom Media-Server, das hier nicht."
   },
   "import.server": { "en": "Import into", "de": "Importieren nach" },
   "import.path": { "en": "Path to tautulli.db", "de": "Pfad zu tautulli.db" },
@@ -108,6 +108,19 @@
     "en": "{rows} matching rows in the file.",
     "de": "{rows} passende Zeilen in der Datei."
   },
+  "import.createUsers": {
+    "en": "Create accounts for people who have none yet",
+    "de": "Konten für Personen anlegen, die noch keins haben"
+  },
+  "import.logins": {
+    "en": "Import the login history",
+    "de": "Login-Verlauf mit importieren"
+  },
+  "import.resultExtra": {
+    "en": "{users} accounts, {logins} login entries.",
+    "de": "{users} Konten, {logins} Login-Einträge."
+  },
+  "import.mapCreate": { "en": "Create an account", "de": "Konto anlegen" },
   "import.unmatched": {
     "en": "No account on this server for: {users}",
     "de": "Kein Konto auf diesem Server für: {users}"

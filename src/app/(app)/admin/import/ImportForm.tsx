@@ -9,6 +9,8 @@ interface Summary {
   candidates: number;
   plays: number;
   streams: number;
+  createdUsers: number;
+  logins: number;
   unmatched: { name: string; rows: number }[];
   scanned: number;
   total: number;
@@ -68,6 +70,8 @@ export default function ImportForm({
   const [busy, setBusy] = useState(false);
   // Set when a form field changes after the preview: its numbers no longer describe the form.
   const [stale, setStale] = useState(false);
+  const [createUsers, setCreateUsers] = useState(true);
+  const [logins, setLogins] = useState(true);
   const formRef = useRef<HTMLFormElement>(null);
   const abort = useRef(false);
 
@@ -147,7 +151,10 @@ export default function ImportForm({
     setBusy(true);
     setError(null);
     const userMap: Record<string, number | null> = {};
-    for (const [name, value] of Object.entries(map)) userMap[name] = value ? Number(value) : null;
+    // '' is the default (create, or report when creating is off); 'skip' is an explicit no.
+    for (const [name, value] of Object.entries(map)) {
+      if (value) userMap[name] = value === 'skip' ? null : Number(value);
+    }
     try {
       const res = await fetch('/api/admin/import', {
         method: 'POST',
@@ -160,6 +167,8 @@ export default function ImportForm({
           path: source === 'path' ? String(form.get('path') ?? '') : undefined,
           days: form.get('days') ? Number(form.get('days')) : undefined,
           backup: form.get('backup') === 'on',
+          createUsers,
+          logins,
           // The mapping only exists after a preview, and only applies to the real run.
           userMap: dryRun ? undefined : userMap,
         }),
@@ -304,6 +313,14 @@ export default function ImportForm({
           <input type="checkbox" name="backup" defaultChecked />
           {t('import.safetyBackup')}
         </label>
+        <label className="row">
+          <input type="checkbox" checked={createUsers} onChange={(e) => setCreateUsers(e.target.checked)} />
+          {t('import.createUsers')}
+        </label>
+        <label className="row">
+          <input type="checkbox" checked={logins} onChange={(e) => setLogins(e.target.checked)} />
+          {t('import.logins')}
+        </label>
 
         <div className="row" style={{ gap: 10, marginTop: 12 }}>
           <button type="button" className="outlined" disabled={!canStart || busy} onClick={() => void start(true)}>
@@ -332,6 +349,7 @@ export default function ImportForm({
                 {t('import.resultPlays', { plays: summary.plays, streams: summary.streams })}{' '}
                 <span className="muted">{t('import.resultRows', { rows: summary.candidates })}</span>
               </p>
+              <p>{t('import.resultExtra', { users: summary.createdUsers ?? 0, logins: summary.logins ?? 0 })}</p>
             </>
           )}
           {running && (
@@ -363,7 +381,8 @@ export default function ImportForm({
                           value={map[u.name] ?? ''}
                           onChange={(e) => setMap({ ...map, [u.name]: e.target.value })}
                         >
-                          <option value="">{t('import.mapSkip')}</option>
+                          <option value="">{t(createUsers ? 'import.mapCreate' : 'import.mapSkip')}</option>
+                          {createUsers && <option value="skip">{t('import.mapSkip')}</option>}
                           {choices.map((a) => (
                             <option key={a.id} value={a.id}>
                               {a.username}

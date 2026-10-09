@@ -1,6 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
-import { db } from '@/db';
+import { readDb as db } from './readcache';
 import { getLibrary } from './library';
 import { scopeFilter, type LabelledValue, type Scope } from './stats';
 

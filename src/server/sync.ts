@@ -17,6 +17,7 @@ import { cachedLibrary, cachedSectionName, getLibrary, resolveSectionKey, warmLi
 import { artworkCoverage, prefetchTitleMeta } from './tmdb';
 import { revokeSession, type Session } from './session';
 import { notify } from './notifications';
+import { ensureUsers } from './userroster';
 import { globalState } from './state';
 
 // Shared across Next's module graphs (see state.ts): the throttles and the failed-server memory
@@ -148,6 +149,11 @@ export async function syncActivity(force = false) {
       await warmLibraryCache(server.id).catch(reportSyncError(`library cache for ${server.label}`));
       await syncRecentlyAdded(server).catch(reportSyncError(`recently added on ${server.label}`));
     }
+    // The roster rarely changes; every few hours is plenty, and the first pass fills a fresh
+    // install. Streams add anybody missed in between (see syncServerActivity).
+    if (!throttled(`roster:${server.id}`, 6 * 3_600_000)) {
+      await syncRoster(server).catch(reportSyncError(`user list of ${server.label}`));
+    }
     // One unreachable server must not stop the others from being polled.
     await syncServerActivity(server).catch(() => {
       downUntil.set(server.id, Date.now() + DOWN_BACKOFF_MS);
@@ -167,11 +173,26 @@ export async function syncActivity(force = false) {
     // a minute instead of ten: 25 titles per ten minutes would take a day for a large library.
     if (looked > 0) lastRun.set('tmdb', Date.now() - 9 * 60_000);
   }
+  // The planner's statistics follow the tables as they grow. Without them it plans for a small
+  // database: one title page went from 5 ms to 450 ms on a million plays. Cheap when current.
+  if (!throttled('optimize', 6 * 3_600_000)) {
+    try {
+      db.run(sql`PRAGMA optimize(0x10002)`);
+    } catch (e: unknown) {
+      reportSyncError('database optimize')(e);
+    }
+  }
   await checkThresholds().catch(reportSyncError('threshold check'));
   await checkDigest().catch(reportSyncError('digest'));
   await checkNewsletter().catch(reportSyncError('newsletter'));
   await checkAutoBackup().catch(reportSyncError('automatic backup'));
   await checkRetention().catch(reportSyncError('retention'));
+}
+
+/** Pulls the media server's user list and creates the accounts that are missing. */
+async function syncRoster(server: ServerRow) {
+  const adapter = createAdapter(server.serverType as ServerType, server.serverUrl, server.serverToken);
+  await ensureUsers(server.id, await adapter.listUsers());
 }
 
 /**
@@ -289,6 +310,12 @@ async function syncServerActivity(server: ServerRow) {
   const sessions = await adapter.getSessions();
   reachable.set(server.id, true);
   downUntil.delete(server.id);
+  // Somebody streaming who never signed in here still gets an account row, or the stream
+  // would be listed under "unknown" and missing from their own pages.
+  await ensureUsers(
+    server.id,
+    sessions.map((s) => ({ serverUserId: s.serverUserId, username: s.username })),
+  );
   const known = await db
     .select({ id: users.id, serverUserId: users.serverUserId, username: users.username })
     .from(users)
@@ -424,6 +451,8 @@ async function syncServerActivity(server: ServerRow) {
           sourceBitrateKbps: row.sourceBitrateKbps,
           remoteAddress: row.remoteAddress,
           isLocal: row.isLocal,
+          // An open row created before the person had an account gets claimed on the next pass.
+          ...(row.userId !== null ? { userId: row.userId } : {}),
           lastSeenAt: now,
           ...(previousProgress.has(rowKey) ? {} : { startedAt: now, progressAt: now }),
           ...(moved ? { progressAt: now } : {}),

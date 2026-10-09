@@ -21,6 +21,12 @@ function parseGenres(raw: string | null): string[] {
   }
 }
 
+// shortcut: the newest plays only. Reading a whole server's history into memory took 9 s and
+// a gigabyte on a million rows, once a minute per open dashboard; the observations and badges
+// are about habits and milestones that these rows carry. Upgrade to SQL aggregates if an
+// achievement ever needs a lifetime total past this many plays.
+const MAX_PLAYS = 60_000;
+
 /**
  * One scan for everything. The strip and the shelf both need the same rows, so cache() keeps
  * a page that mounts both from reading the history twice. The arguments are primitives on
@@ -48,6 +54,8 @@ const loadPlays = cache(async (userId: number | null, serverId: number | null): 
     WHERE ${scopeFilter(scope)}
       -- strftime answers NULL beyond year 9999 (a bad import); one such row must not take the page down.
       AND watched_at / 1000 BETWEEN 0 AND 253402300799
+    ORDER BY watched_at DESC
+    LIMIT ${MAX_PLAYS}
   `);
   return rows.map((row) => ({
     userId: Number(row.user_id),
@@ -68,7 +76,6 @@ const rowsFor = (scope: Scope) =>
 
 // The scan reads every play in scope, and the dashboard refreshes itself every 30 seconds in
 // every open tab. A minute of memory keeps that from being a full-table read per tab.
-// shortcut: per-process cache keyed by scope, upgrade to a SQL aggregate if histories pass ~100k rows.
 const MEMO_MS = 60_000;
 const MEMO_MAX = 200;
 const memo = globalState('insights.memo', () => new Map<string, { at: number; value: unknown }>());
