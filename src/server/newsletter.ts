@@ -8,7 +8,9 @@ import { createAdapter, type ServerType } from './adapters';
 import { getSettings, listServers, updateSettings, type ServerRow } from './config';
 import { DEFAULT_LOCALE, isLocale, translator, type Locale } from '@/i18n';
 import { getDefaultLocale } from '@/i18n/server';
+import { sectionKey } from './library';
 import { sendMail } from './notifications';
+import { globalState } from './state';
 
 // The recently-added newsletter. Two owners on purpose: a global admin decides the
 // schedule, the time frame, the covered libraries and the wording, while every user
@@ -30,6 +32,37 @@ function escapeHtml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * The saved library selection as `<serverId>:<sectionId>` keys, the shape the notification
+ * conditions store. Section ids are only unique within one server (Plex hands out "1", "2"),
+ * so a bare id cannot say which server's library it meant. Values saved before keys carried
+ * the server are bare ids; they were handed to every server, so they expand to every server
+ * and the first save from the admin page replaces them. Nothing is rewritten in place.
+ */
+export function normalizeLibraries(saved: string[], serverIds: number[]): string[] {
+  const keys = new Set<string>();
+  for (const value of saved) {
+    if (!value) continue;
+    if (/^\d+:./.test(value)) keys.add(value);
+    else for (const serverId of serverIds) keys.add(sectionKey(serverId, value));
+  }
+  return [...keys];
+}
+
+/**
+ * What to ask one server for. An empty selection means every library everywhere; otherwise
+ * only the ids that belong to this server, and none of them means the admin left this
+ * server out entirely (null) rather than "everything" — an empty list passed on would do
+ * exactly that.
+ */
+export function sectionsForServer(selection: string[], serverId: number): string[] | null {
+  if (selection.length === 0) return [];
+  const own = selection
+    .filter((key) => key.startsWith(`${serverId}:`))
+    .map((key) => key.slice(String(serverId).length + 1));
+  return own.length ? own : null;
 }
 
 async function collectForServer(
@@ -71,13 +104,20 @@ export async function collectNewsletter(): Promise<NewsletterEntry[]> {
   const settings = await getSettings();
   const since = new Date(Date.now() - settings.newsletterDays * 86_400_000);
   const servers = await listServers();
+  const selection = normalizeLibraries(
+    settings.newsletterLibraries,
+    servers.map((server) => server.id),
+  );
 
   const entries = await Promise.all(
-    servers.map(async (server) => ({
-      serverLabel: server.label,
-      serverSlug: server.slug,
-      items: await collectForServer(server, settings.newsletterLibraries, since),
-    })),
+    servers.map(async (server) => {
+      const sectionIds = sectionsForServer(selection, server.id);
+      return {
+        serverLabel: server.label,
+        serverSlug: server.slug,
+        items: sectionIds ? await collectForServer(server, sectionIds, since) : [],
+      };
+    }),
   );
   return entries.filter((entry) => entry.items.length > 0);
 }
@@ -212,6 +252,8 @@ export async function sendNewsletter(): Promise<{ ok: boolean; sent: number; err
   return error ? { ok: false, sent: 0, error } : { ok: true, sent: subscribers.length };
 }
 
+const sending = globalState('newsletter', () => ({ busy: false }));
+
 /** Weekly-or-daily schedule check, run from the activity sync tick like every other timer. */
 export async function checkNewsletter() {
   const settings = await getSettings();
@@ -226,5 +268,18 @@ export async function checkNewsletter() {
   const last = settings.newsletterLastSentAt?.getTime() ?? 0;
   if (Date.now() - last < 6 * 86_400_000) return;
 
-  await sendNewsletter();
+  // The stamp above is only written after the library fetch inside sendNewsletter(), and
+  // sync passes overlap (page renders, the 30 s tick, socket frames) — each would pass the
+  // check while the first is still collecting and mail the issue again. Process-wide (see
+  // state.ts), not per module graph.
+  if (sending.busy) return;
+  sending.busy = true;
+  try {
+    const result = await sendNewsletter();
+    // The 6-day lock is already set at this point, so a failed delivery would otherwise vanish
+    // until the next scheduled slot with nothing in the log.
+    if (!result.ok) console.warn(`[watcharr] scheduled newsletter failed: ${result.error}`);
+  } finally {
+    sending.busy = false;
+  }
 }

@@ -1,0 +1,772 @@
+/*
+ * /screen: the lobby display.
+ *
+ * A fixed layer over the whole viewport, meant to be read from across a room. Every size
+ * below is a multiple of --u, one fiftieth-ish of the screen, so the same layout reads on a
+ * 1080p TV, a tablet and a phone without a breakpoint per element. Colors are tokens only;
+ * the amber (glow, badge, scrub, bulb) exists while the hero is playing and nowhere else.
+ */
+
+/* --- Taking over the viewport ---------------------------------------------------------
+   The shell's chrome is still in the DOM under the layer: out of the tab order and the
+   reading order while the display is up. */
+.shell:has(.scr) :is(.sidebar, .topbar, .appbar, .bottomnav) {
+  visibility: hidden;
+}
+
+/* .main is a size container, and layout containment makes it the containing block of
+   fixed descendants: without this the layer would be "fixed" to the page column. */
+.main:has(> .scr) {
+  container-type: normal;
+}
+
+/* No page scroll behind a display, and no reserved scrollbar strip at its edge. */
+html:has(.scr) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+.scr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- The layer -------------------------------------------------------------------------- */
+
+/* Beats the page-enter motion of `.main > *`: a display does not rise in, it is just there. */
+.main > section.scr {
+  animation: none;
+}
+
+.scr {
+  /* A display is read in a dim lobby from across a room: always the dark scheme, whatever
+     the person's own theme is. The derived tokens are redeclared here because they were
+     mixed on :root and would otherwise keep the light values. */
+  color-scheme: dark;
+  --ink: #08090b;
+  --surface: #101216;
+  --surface-container: #161a20;
+  --surface-container-highest: #232935;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --text: #e9ebef;
+  --text-dim: #8a919f;
+  --text-faint: #7d8494;
+  --beam: #ffb020;
+  --beam-wash: rgba(255, 176, 32, 0.16);
+  --beam-glow: rgba(255, 176, 32, 0.35);
+  --beam-soft: rgba(255, 176, 32, 0.28);
+  --elev-4: 0 8px 24px 6px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.5);
+  --glass-strong: color-mix(in srgb, var(--surface-container) 92%, transparent);
+  --glass-line: color-mix(in srgb, var(--text) 11%, transparent);
+
+  --u: max(4px, min(0.52vw, 0.92vh));
+  /* Small text keeps a floor: on a phone 1.6 u would be 7 px, unreadable. */
+  --fs-xs: max(11px, calc(var(--u) * 1.6));
+  --fs-sm: max(12.5px, calc(var(--u) * 1.9));
+  --pad-x: calc(var(--u) * 6);
+
+  position: fixed;
+  inset: 0;
+  /* Above the shell's own chrome (up to 46), below the command palette and tooltips (70+). */
+  z-index: 60;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font-body-stack);
+  font-size: calc(var(--u) * 2.2);
+  line-height: 1.3;
+}
+
+@supports (height: 1dvh) {
+  .scr {
+    --u: max(4px, min(0.52vw, 0.92dvh));
+  }
+}
+
+/* A wall display has no business showing a mouse pointer. Moving the pointer wakes it. */
+.scr:not([data-controls]) {
+  cursor: none;
+}
+
+/* --- Backdrop: the poster, blurred and washed out ------------------------------------ */
+
+.scr-bg,
+.scr-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.scr-bg {
+  overflow: hidden;
+  /* Contains the slides' z-index: without it the incoming backdrop would paint over the stage. */
+  isolation: isolate;
+}
+
+.scr-bg-img {
+  position: absolute;
+  inset: calc(var(--u) * -10);
+  width: calc(100% + var(--u) * 20);
+  height: calc(100% + var(--u) * 20);
+  object-fit: cover;
+  filter: blur(calc(var(--u) * 4)) saturate(1.4);
+}
+
+/* A missing poster leaves the plain ink background, not an initials tile. */
+.scr-bg .poster-blank {
+  display: none;
+}
+
+.scr-bg-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 1.4s ease;
+}
+
+/* The incoming slide fades in over the outgoing one, which stays put underneath. */
+.scr-bg-slide.prev {
+  opacity: 1;
+  z-index: 1;
+}
+
+.scr-bg-slide.on {
+  opacity: 1;
+  z-index: 2;
+}
+
+/* The wash: ink over the blurred poster (so the same rule is dark in dark and pale in
+   light), with the top and the bottom grounded for the clock and the footer. */
+.scr-shade {
+  background:
+    linear-gradient(to top, var(--ink) 0%, transparent 34%),
+    linear-gradient(to bottom, color-mix(in srgb, var(--ink) 70%, transparent), transparent 26%),
+    color-mix(in srgb, var(--ink) 66%, transparent);
+}
+
+/* The projector wash: only while the hero is actually playing. */
+.scr[data-playing='1'] .scr-shade::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(54% 62% at 22% 50%, var(--beam-wash), transparent 70%);
+  animation: spill 7s ease-in-out infinite alternate;
+}
+
+/* --- Stage: header, main, footer ---------------------------------------------------------- */
+
+.scr-stage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  row-gap: calc(var(--u) * 3);
+  padding: max(calc(var(--u) * 4.5), env(safe-area-inset-top)) max(var(--pad-x), env(safe-area-inset-right))
+    max(calc(var(--u) * 4.5), env(safe-area-inset-bottom)) max(var(--pad-x), env(safe-area-inset-left));
+  /* The burn-in drift moves in small steps once a second; this turns them into a glide. */
+  transition: transform 1s linear;
+}
+
+.scr-stage[data-footer='0'] {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.scr-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: calc(var(--u) * 4);
+}
+
+.scr-brand {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.6);
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 120;
+  font-weight: 700;
+  font-size: calc(var(--u) * 3.6);
+  letter-spacing: -0.01em;
+}
+
+.scr-brand .bulb {
+  width: calc(var(--u) * 1.9);
+  height: calc(var(--u) * 1.9);
+  flex: 0 0 calc(var(--u) * 1.9);
+}
+
+.scr-brand .bulb.on {
+  box-shadow:
+    0 0 0 calc(var(--u) * 0.55) var(--beam-wash),
+    0 0 calc(var(--u) * 2.6) var(--beam-glow);
+}
+
+.scr-clock {
+  display: grid;
+  justify-items: end;
+  line-height: 1;
+  min-width: calc(var(--u) * 12);
+}
+
+.scr-time {
+  font-size: calc(var(--u) * 7.4);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.scr-period {
+  margin-left: calc(var(--u) * 0.8);
+  font-size: max(12px, calc(var(--u) * 2.6));
+  letter-spacing: 0;
+  color: var(--text-dim);
+}
+
+.scr-date {
+  margin-top: calc(var(--u) * 1.2);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+/* --- Hero and intermission share one frame: poster left, words right ------------------- */
+
+.scr-hero,
+.scr-slide {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  column-gap: calc(var(--u) * 6);
+  align-items: center;
+  min-height: 0;
+  margin: 0;
+}
+
+.scr-poster-box {
+  height: calc(var(--u) * 64);
+  max-height: 100%;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: calc(var(--u) * 1.4);
+  background: var(--surface-container);
+  box-shadow: var(--elev-4);
+}
+
+/* The lamp-lit poster: a ring and a wash of amber, only while it plays. */
+.scr[data-playing='1'] .scr-hero .scr-poster-box {
+  box-shadow:
+    0 0 0 1px var(--beam-soft),
+    0 0 calc(var(--u) * 14) calc(var(--u) * 0.5) var(--beam-wash),
+    var(--elev-4);
+}
+
+.scr-poster {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scr .poster-blank {
+  border-radius: 0;
+  border: 0;
+  font-size: calc(var(--u) * 9);
+}
+
+.scr-info {
+  min-width: 0;
+  max-width: calc(var(--u) * 130);
+}
+
+.scr-kicker {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.2);
+  margin: 0 0 calc(var(--u) * 2.2);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.scr .badge {
+  padding: calc(var(--u) * 0.6) calc(var(--u) * 1.5);
+  border-radius: calc(var(--u) * 0.9);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.scr-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  margin: 0;
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 112;
+  font-weight: 700;
+  font-size: calc(var(--u) * 10);
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.scr-episode {
+  margin: calc(var(--u) * 1.6) 0 0;
+  font-size: max(14px, calc(var(--u) * 3.6));
+  line-height: 1.2;
+  color: var(--text-dim);
+}
+
+.scr-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 1.4) calc(var(--u) * 5);
+  margin: calc(var(--u) * 4) 0 0;
+}
+
+.scr-facts > div {
+  min-width: 0;
+}
+
+.scr-facts dt,
+.scr-stats dt {
+  font-size: var(--fs-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.scr-facts dd {
+  max-width: calc(var(--u) * 36);
+  margin: calc(var(--u) * 0.4) 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: max(14px, calc(var(--u) * 2.8));
+  font-weight: 500;
+}
+
+/* --- Scrub line: wide, with a head that glides between refreshes ------------------------ */
+
+.scr-progress {
+  margin-top: calc(var(--u) * 5);
+}
+
+.scr-scrub {
+  position: relative;
+  height: calc(var(--u) * 0.8);
+  border-radius: calc(var(--u) * 0.8);
+  background: var(--line-strong);
+}
+
+.scr-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--text-faint);
+  transform-origin: left center;
+  /* Transform, not width/left: a once-a-second nudge then costs the compositor, not a layout. */
+  transform: scaleX(var(--p));
+  transition: transform 0.26s linear;
+}
+
+/* As wide as the track, so translating it by p * 100% of itself lands the head at p of the track. */
+.scr-rail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform: translateX(calc(var(--p) * 100%));
+  transition: transform 0.26s linear;
+}
+
+.scr-head {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: calc(var(--u) * 2.2);
+  height: calc(var(--u) * 2.2);
+  margin: calc(var(--u) * -1.1) 0 0 calc(var(--u) * -1.1);
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+/* Lit only while the stream runs; a pause brings the room lights up. */
+.scr-scrub[data-running] .scr-fill {
+  background: var(--beam);
+}
+
+.scr-scrub[data-running] .scr-head {
+  background: var(--beam);
+  box-shadow: 0 0 calc(var(--u) * 2.6) var(--beam-glow);
+}
+
+.scr-readout {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 0.8) calc(var(--u) * 4);
+  margin-top: calc(var(--u) * 2.4);
+}
+
+.scr-timecode {
+  font-size: max(15px, calc(var(--u) * 3.6));
+  letter-spacing: 0.01em;
+}
+
+.scr-total {
+  color: var(--text-dim);
+}
+
+.scr-left {
+  font-size: max(13px, calc(var(--u) * 3));
+  color: var(--text-dim);
+}
+
+.scr-ends {
+  color: var(--text);
+}
+
+/* --- More streams ----------------------------------------------------------------------------- */
+
+.scr-others {
+  display: flex;
+  align-items: stretch;
+  gap: calc(var(--u) * 2.4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* More cards than fit scroll inside their own row, never the page. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.scr-others::-webkit-scrollbar {
+  display: none;
+}
+
+.scr-mini {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: calc(var(--u) * 2);
+  width: min(calc(var(--u) * 54), 86%);
+  padding: calc(var(--u) * 1.6);
+  border: 1px solid var(--glass-line);
+  border-radius: calc(var(--u) * 2);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.scr-mini-art {
+  display: block;
+  width: calc(var(--u) * 9.4);
+  height: calc(var(--u) * 14);
+  object-fit: cover;
+  border-radius: calc(var(--u) * 0.9);
+}
+
+.scr-mini .poster-blank {
+  width: calc(var(--u) * 9.4);
+  height: calc(var(--u) * 14);
+  border-radius: calc(var(--u) * 0.9);
+  font-size: calc(var(--u) * 3.4);
+}
+
+.scr-mini-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.scr-mini-title,
+.scr-mini-sub {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scr-mini-title {
+  font-size: max(14px, calc(var(--u) * 2.6));
+  font-weight: 600;
+}
+
+.scr-mini-sub {
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.scr-mini .scr-scrub {
+  height: calc(var(--u) * 0.5);
+  margin-top: calc(var(--u) * 1.4);
+}
+
+.scr-mini .scr-head {
+  width: calc(var(--u) * 1.5);
+  height: calc(var(--u) * 1.5);
+  margin: calc(var(--u) * -0.75) 0 0 calc(var(--u) * -0.75);
+}
+
+.scr-mini-meta {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.4);
+  margin: calc(var(--u) * 1.2) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.scr-mini .badge {
+  font-size: var(--fs-xs);
+}
+
+.scr-more {
+  align-self: center;
+  flex: 0 0 auto;
+  padding: 0 calc(var(--u) * 2);
+  font-size: max(13px, calc(var(--u) * 2.4));
+  color: var(--text-dim);
+}
+
+/* --- Intermission --------------------------------------------------------------------------------- */
+
+.scr-slides {
+  display: grid;
+  min-height: 0;
+}
+
+.scr-slides > * {
+  grid-area: 1 / 1;
+}
+
+.scr-slide {
+  opacity: 0;
+  transition: opacity 0.9s ease;
+}
+
+/* The outgoing slide leaves first; the incoming one starts a beat later. */
+.scr-slide.on {
+  opacity: 1;
+  transition-delay: 0.5s;
+}
+
+.scr-slide .scr-kicker {
+  margin-bottom: calc(var(--u) * 2.6);
+}
+
+.scr-slide .scr-title {
+  font-size: calc(var(--u) * 9);
+}
+
+/* Slow zoom, and it keeps going while the slide fades out so it never snaps back. */
+.scr-slide.on .scr-kb,
+.scr-slide.prev .scr-kb {
+  animation: scr-kb 18s ease-out both;
+}
+
+@keyframes scr-kb {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.08);
+  }
+}
+
+.scr-empty {
+  display: grid;
+  justify-items: center;
+  gap: calc(var(--u) * 2.4);
+  place-self: center;
+  color: var(--text-dim);
+  font-size: calc(var(--u) * 3.4);
+}
+
+.scr-empty p {
+  margin: 0;
+}
+
+.scr-empty .bulb {
+  width: calc(var(--u) * 3);
+  height: calc(var(--u) * 3);
+}
+
+.scr-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(var(--u) * 2.4);
+  margin: 0;
+}
+
+.scr-stats > div {
+  padding: calc(var(--u) * 2) calc(var(--u) * 3);
+  border: 1px solid var(--glass-line);
+  border-radius: calc(var(--u) * 2);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.scr-stats dd {
+  margin: calc(var(--u) * 0.6) 0 0;
+  font-size: calc(var(--u) * 5.6);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+/* --- Dimmer, controls, hint ------------------------------------------------------------------- */
+
+/* A dimmer is black in both schemes: the point is less light, not a different color. */
+.scr-dim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: rgb(0 0 0);
+  opacity: 0;
+  transition: opacity 2s linear;
+}
+
+.scr-controls {
+  position: absolute;
+  z-index: 3;
+  right: max(calc(var(--u) * 2.4), env(safe-area-inset-right));
+  bottom: max(calc(var(--u) * 2.4), env(safe-area-inset-bottom));
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-medium) var(--ease-standard);
+}
+
+/* Tabbing to a control shows the bar even when the pointer never moved. */
+.scr[data-controls] .scr-controls,
+.scr-controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scr-controls .icon-btn {
+  border: 1px solid var(--glass-line);
+  background: var(--glass-strong);
+  color: var(--text);
+}
+
+.scr-controls .icon-btn:hover {
+  background: var(--surface-container-highest);
+}
+
+.scr-hint {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: max(calc(var(--u) * 1.2), env(safe-area-inset-bottom));
+  margin: 0;
+  width: max-content;
+  max-width: 90%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.2s ease;
+}
+
+.scr-hint[data-show] {
+  opacity: 1;
+}
+
+/* --- Portrait and small screens: poster over words ------------------------------------------ */
+
+@media (max-aspect-ratio: 1 / 1) {
+  .scr {
+    --u: max(4.4px, min(1.2vw, 0.56vh));
+    --pad-x: calc(var(--u) * 4);
+  }
+
+  .scr-hero,
+  .scr-slide {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: center;
+    justify-items: start;
+    row-gap: calc(var(--u) * 4);
+  }
+
+  .scr-poster-box {
+    height: calc(var(--u) * 56);
+    justify-self: center;
+  }
+
+  .scr-title,
+  .scr-slide .scr-title {
+    font-size: calc(var(--u) * 8.6);
+  }
+
+  .scr-facts {
+    margin-top: calc(var(--u) * 3);
+  }
+
+  .scr-progress {
+    margin-top: calc(var(--u) * 4);
+  }
+
+  .scr-info {
+    justify-self: stretch;
+  }
+
+  .scr-stats {
+    gap: calc(var(--u) * 1.6);
+  }
+
+  .scr-stats > div {
+    padding: calc(var(--u) * 1.8) calc(var(--u) * 2);
+  }
+
+  .scr-stats dd {
+    font-size: calc(var(--u) * 5);
+  }
+
+  .scr-time {
+    font-size: calc(var(--u) * 6.4);
+  }
+}
+
+@supports (height: 1dvh) {
+  @media (max-aspect-ratio: 1 / 1) {
+    .scr {
+      --u: max(4.4px, min(1.2vw, 0.56dvh));
+    }
+  }
+}
+
+/* A phone on its side has height for little more than the poster. */
+@media (max-height: 520px) and (min-aspect-ratio: 1 / 1) {
+  .scr {
+    --u: max(2.6px, min(0.52vw, 0.8vh));
+  }
+}
+
+/* --- Reduced motion: no zoom, no drift, no breathing glow, instant cross-fades --------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .scr-kb,
+  .scr[data-playing='1'] .scr-shade::after {
+    animation: none !important;
+  }
+
+  .scr .scr-slide,
+  .scr .scr-bg-slide,
+  .scr .scr-stage {
+    transition: none !important;
+  }
+}

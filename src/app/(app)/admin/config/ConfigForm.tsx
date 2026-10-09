@@ -99,31 +99,41 @@ export default function ConfigForm({
     setBusy(true);
     setError(null);
     setMessage(null);
-    const res = await fetch('/api/admin/apikey', { method });
-    setBusy(false);
-    const body = (await res.json()) as { key?: string; error?: string };
-    if (!res.ok) {
-      setError(body.error ?? t('config.saveFailed'));
-      return;
+    try {
+      const res = await fetch('/api/admin/apikey', { method });
+      const body = (await res.json().catch(() => ({}))) as { key?: string; error?: string };
+      if (!res.ok) {
+        setError(body.error ?? t('config.saveFailed'));
+        return;
+      }
+      setNewApiKey(body.key ?? null);
+      if (!body.key) setMessage(t('config.apiKeyCleared'));
+      router.refresh();
+    } catch {
+      setError(t('config.saveFailed'));
+    } finally {
+      setBusy(false);
     }
-    setNewApiKey(body.key ?? null);
-    if (!body.key) setMessage(t('config.apiKeyCleared'));
-    router.refresh();
   }
 
   async function onTestWebhook() {
     setBusy(true);
     setError(null);
     setMessage(null);
-    const res = await fetch('/api/admin/notifications/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: 'webhook' }),
-    });
-    setBusy(false);
-    const body = (await res.json()) as { ok?: boolean; error?: string };
-    if (res.ok && body.ok) setMessage(t('config.testSent'));
-    else setError(body.error ?? t('config.testFailed'));
+    try {
+      const res = await fetch('/api/admin/notifications/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'webhook' }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (res.ok && body.ok) setMessage(t('config.testSent'));
+      else setError(body.error ?? t('config.testFailed'));
+    } catch {
+      setError(t('config.testFailed'));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -175,17 +185,23 @@ export default function ConfigForm({
         : null,
     };
 
-    const res = await fetch('/api/admin/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    setBusy(false);
-    if (res.ok) {
-      setMessage(t('action.saved'));
-      router.refresh();
-    } else {
-      setError(((await res.json()) as { error?: string }).error ?? t('config.saveFailed'));
+    try {
+      const res = await fetch('/api/admin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setMessage(t('action.saved'));
+        router.refresh();
+      } else {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(data.error ?? t('config.saveFailed'));
+      }
+    } catch {
+      setError(t('config.saveFailed'));
+    } finally {
+      setBusy(false);
     }
   }
 

@@ -14,9 +14,13 @@ export default function SyncUsersButton() {
       disabled={busy}
       onClick={async () => {
         setBusy(true);
-        await fetch('/api/admin/users/sync', { method: 'POST' });
-        setBusy(false);
-        router.refresh();
+        try {
+          await fetch('/api/admin/users/sync', { method: 'POST' });
+        } finally {
+          // A dropped connection must not leave the button disabled for good.
+          setBusy(false);
+          router.refresh();
+        }
       }}
     >
       {busy ? t('users.importing') : t('users.import')}

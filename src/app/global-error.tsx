@@ -34,7 +34,8 @@ export default function GlobalError({
               fontSize: 10,
               letterSpacing: '0.14em',
               textTransform: 'uppercase',
-              color: '#ffb020',
+              // Neutral, like every eyebrow: amber is reserved for "playing" and for data.
+              color: '#8a919f',
             }}
           >
             Signal lost

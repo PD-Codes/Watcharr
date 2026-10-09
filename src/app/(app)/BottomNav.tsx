@@ -7,7 +7,14 @@ import { isActive, type NavItem } from './nav';
 import { useT } from '@/i18n/client';
 
 /** Material navigation bar: the five destinations a phone gets one tap away. */
-export default function BottomNav({ items, liveCount }: { items: NavItem[]; liveCount: number }) {
+export default function BottomNav({
+  items,
+  playingCount,
+}: {
+  items: NavItem[];
+  /** Streams that are actually running (a paused one does not light the bulb). */
+  playingCount: number;
+}) {
   const pathname = usePathname();
   const t = useT();
 
@@ -28,7 +35,7 @@ export default function BottomNav({ items, liveCount }: { items: NavItem[]; live
                 </span>
                 <span>
                   {item.label}
-                  {item.href === '/activity' && liveCount > 0 && <span className="bulb on" />}
+                  {item.href === '/activity' && playingCount > 0 && <span className="bulb on" />}
                 </span>
               </Link>
             </li>

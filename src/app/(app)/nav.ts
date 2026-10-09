@@ -16,8 +16,10 @@ export function userNav(t: Translate, suggestionsEnabled: boolean): NavItem[] {
     { href: '/', label: t('nav.overview'), icon: 'overview' },
     { href: '/sessions', label: t('nav.sessions'), icon: 'activity' },
     { href: '/watchlist', label: t('nav.watchlist'), icon: 'watchlist' },
+    { href: '/pick', label: t('nav.pick'), icon: 'dice' },
     { href: '/history', label: t('nav.history'), icon: 'history' },
     { href: '/activity', label: t('nav.activity'), icon: 'activity' },
+    { href: '/screen', label: t('screen.title'), icon: 'monitor' },
     { href: '/stats', label: t('nav.stats'), icon: 'stats' },
     { href: '/libraries', label: t('nav.libraries'), icon: 'server' },
     ...(suggestionsEnabled

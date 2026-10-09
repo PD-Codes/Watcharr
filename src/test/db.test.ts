@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { execFileSync } from 'node:child_process';
 import Database from 'better-sqlite3';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -226,6 +226,37 @@ async function main() {
   assert.equal(await getTitleDetail('Does Not Exist', scope), null);
   console.log('ok - getTitleDetail');
 
+  // A server admin's scope is "everything on my server". The title page used to filter only
+  // by the label, so the same title watched on another server leaked its plays and viewer.
+  {
+    const [onServer1] = await db
+      .insert(users)
+      .values({ serverId: 1, serverUserId: 'scope-1', username: 'scope-one' })
+      .returning();
+    const [onServer2] = await db
+      .insert(users)
+      .values({ serverId: 2, serverUserId: 'scope-2', username: 'scope-two' })
+      .returning();
+    for (const user of [onServer1, onServer2]) {
+      await db.insert(watchHistory).values({
+        userId: user.id,
+        itemId: `scope-${user.id}`,
+        title: 'Scoped Title',
+        mediaType: 'movie',
+        genres: [],
+        watchedAt: today,
+        durationMs: 3_600_000,
+      });
+    }
+    const own = await getTitleDetail('Scoped Title', { userId: null, serverId: 1 });
+    assert.equal(own?.plays, 1, 'another server\'s plays stay out of a server-scoped title');
+    assert.deepEqual(own?.viewers.map((v) => v.label), ['scope-one']);
+    assert.equal((await getTitleDetail('Scoped Title', { userId: null }))?.plays, 2);
+    await db.delete(users).where(eq(users.id, onServer1.id));
+    await db.delete(users).where(eq(users.id, onServer2.id));
+    console.log('ok - getTitleDetail respects the server scope');
+  }
+
   const { getMonthlyActivity, getWeekHourGrid, getRewatchSplit, getRecords, getTrend } =
     await import('../server/stats');
 
@@ -313,6 +344,15 @@ async function main() {
     const series = await getConcurrencyOverTime(1);
     assert.ok(series.length >= 24, 'a day of hourly buckets');
     assert.equal(new Set(series.map((p) => p.label)).size, series.length, 'buckets are distinct');
+    // Bucketed in the app timezone like every other aggregate, so the newest bucket is the
+    // current local hour. UTC buckets put a Berlin evening on the wrong hour.
+    const clock = new Date();
+    const two = (n: number) => String(n).padStart(2, '0');
+    assert.equal(
+      series.at(-1)?.label,
+      `${two(clock.getMonth() + 1)}-${two(clock.getDate())} ${two(clock.getHours())}:00`,
+      'bucket labels follow the process timezone',
+    );
     const busiest = series.reduce((best, p) => (p.streams > best.streams ? p : best), series[0]);
     assert.equal(busiest.streams, 2, 'both overlapping sessions fall into one bucket');
     assert.equal(busiest.bandwidthKbps, 8000, 'bandwidth is summed per bucket');
@@ -362,6 +402,29 @@ async function main() {
       { source: ['hevc', 2160], delivered: ['h264', 720] },
     );
     console.log('ok - listSessionHistory keeps both sides of a transcode');
+
+    // Two sessions first seen in one poll share started_at. Each used to be joined to the whole
+    // overlap set, so the peak read four times what was actually playing.
+    const { getConcurrencyPeak } = await import('../server/playback');
+    const sameInstant = minutesAgo(70);
+    await db.insert(sessions).values(
+      ['twin-a', 'twin-b'].map((sessionKey) => ({
+        sessionKey,
+        userId: alice.id,
+        itemId: sessionKey,
+        title: sessionKey,
+        mediaType: 'movie',
+        state: 'ended',
+        playMethod: 'directplay',
+        startedAt: sameInstant,
+        lastSeenAt: minutesAgo(60),
+        progressAt: minutesAgo(60),
+      })),
+    );
+    // At that instant past-a, past-b and both twins are playing: four, not eight.
+    assert.equal((await getConcurrencyPeak(1)).streams, 4);
+    await db.delete(sessions).where(inArray(sessions.sessionKey, ['twin-a', 'twin-b']));
+    console.log('ok - getConcurrencyPeak counts sessions sharing a start once');
   }
 
   // The play-count aggregates, which answer a different question from the watch-time ones:
@@ -472,6 +535,50 @@ async function main() {
     assert.ok(!alerts[0].message.includes('10.0.0.5'), 'a known address stays quiet');
     await updateSettings({ monitorNewAddressAlert: false });
     console.log('ok - a login from an unknown address alerts, a known one does not');
+  }
+
+  // The same name on two servers is two accounts. Counting streams by name added them up and
+  // alerted on a limit neither account had crossed.
+  {
+    const { playbackSessions: live } = await import('../db/schema');
+    const { updateSettings } = await import('../server/config');
+    const { checkThresholds, listAlerts } = await import('../server/monitor');
+
+    const [twinOne] = await db
+      .insert(users)
+      .values({ serverId: 1, serverUserId: 'twin-1', username: 'twin' })
+      .returning();
+    const [twinTwo] = await db
+      .insert(users)
+      .values({ serverId: 2, serverUserId: 'twin-2', username: 'twin' })
+      .returning();
+    const stream = (sessionKey: string, userId: number) => ({
+      sessionKey,
+      userId,
+      itemId: sessionKey,
+      title: sessionKey,
+      mediaType: 'movie',
+      state: 'playing',
+      progressMs: 1000,
+      durationMs: 3_600_000,
+      lastSeenAt: new Date(),
+      progressAt: new Date(),
+    });
+    await updateSettings({ monitorMaxStreamsPerUser: 1 });
+    await db.insert(live).values([stream('twin-a', twinOne.id), stream('twin-b', twinTwo.id)]);
+    const streamAlerts = async () =>
+      (await listAlerts(50)).filter((a) => a.rule === 'max_streams_per_user').length;
+
+    await checkThresholds();
+    assert.equal(await streamAlerts(), 0, 'one stream each is within the limit of one');
+    await db.insert(live).values(stream('twin-c', twinOne.id));
+    await checkThresholds();
+    assert.equal(await streamAlerts(), 1, 'two streams on one account still alert');
+
+    await updateSettings({ monitorMaxStreamsPerUser: 0 });
+    await db.delete(live).where(inArray(live.sessionKey, ['twin-a', 'twin-b', 'twin-c']));
+    await db.delete(users).where(inArray(users.id, [twinOne.id, twinTwo.id]));
+    console.log('ok - stream limits count per account, not per name');
   }
 
   // Liveness: a session frozen for minutes must not count as playing.
@@ -625,6 +732,25 @@ async function main() {
     console.log('ok - retention deletes past the cutoff and nothing that is still running');
   }
 
+  // NaN and Infinity must not reach a NOT NULL column (a clamped setting keeps its value) or
+  // turn a nullable limit into Infinity (it reads as "off").
+  {
+    const { updateSettings, getSettings } = await import('../server/config');
+    await updateSettings({ backupRetention: 7, watchedThreshold: 70 });
+    await updateSettings({
+      backupRetention: Number.NaN,
+      watchedThreshold: Number.POSITIVE_INFINITY,
+      monitorMaxStreamsPerUser: Number.POSITIVE_INFINITY,
+      retentionLogDays: Number.NaN,
+    });
+    const settings = await getSettings();
+    assert.equal(settings.backupRetention, 7);
+    assert.equal(settings.watchedThreshold, 70);
+    assert.equal(settings.monitorMaxStreamsPerUser, null);
+    assert.equal(settings.retentionLogDays, null);
+    console.log('ok - non-finite settings are ignored, not stored');
+  }
+
   // The import reads somebody else's schema, which is the part that cannot be checked by
   // reading this repository — so it runs against a database shaped like Tautulli's.
   {
@@ -683,6 +809,296 @@ async function main() {
     const again = await importFromTautulli(source, 1);
     assert.equal(again.plays, 0, 'a second import adds nothing');
     console.log('ok - a Tautulli database imports once and only once');
+
+    // Newer schemas carry paused_counter (seconds), and a play Tautulli never closed has
+    // stopped = 0: pauses must come off the watch time and 0 must not mean 1970.
+    const pausedSource = join(dir, 'tautulli-paused.db');
+    const modern = new Database(pausedSource);
+    modern.exec(`
+      CREATE TABLE session_history (
+        id INTEGER PRIMARY KEY, started INTEGER, stopped INTEGER, paused_counter INTEGER,
+        user TEXT, rating_key TEXT, media_type TEXT, platform TEXT, player TEXT, ip_address TEXT);
+      CREATE TABLE session_history_metadata (
+        id INTEGER PRIMARY KEY, title TEXT, grandparent_title TEXT, year INTEGER,
+        genres TEXT, duration INTEGER);
+    `);
+    const insertPlay = modern.prepare(
+      'INSERT INTO session_history VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    );
+    insertPlay.run(1, started, started + 3600, 600, 'pauser', 'rk-p1', 'movie', 'Chrome', 'Desktop', '10.0.0.7');
+    insertPlay.run(2, started, 0, 0, 'pauser', 'rk-p2', 'movie', 'Chrome', 'Desktop', '10.0.0.7');
+    modern.close();
+    await db.insert(users).values({ serverId: 1, serverUserId: 'imp-2', username: 'pauser' });
+    await importFromTautulli(pausedSource, 1);
+    const [paused] = await db.select().from(history).where(eq(history.itemId, 'rk-p1'));
+    assert.equal(paused.durationMs, 3_000_000, 'paused time is not watch time');
+    const [unclosed] = await db.select().from(history).where(eq(history.itemId, 'rk-p2'));
+    assert.equal(unclosed.durationMs, 0);
+    assert.equal(unclosed.watchedAt.getTime(), started * 1000, 'stopped = 0 keeps the real start');
+    console.log('ok - Tautulli pauses are subtracted and an unclosed play stays dated');
+  }
+
+  // --- Behaviors added in the second pass ---------------------------------------------------
+
+  // Process-wide state is looked up by key and created once, whatever the value is. A falsy
+  // initial value must not be created again on the next lookup.
+  {
+    const { globalState } = await import('../server/state');
+    let created = 0;
+    const first = globalState('test.flag', () => (created += 1, false));
+    const second = globalState('test.flag', () => (created += 1, true));
+    assert.equal(created, 1, 'init runs once per key');
+    assert.equal(first, false);
+    assert.equal(second, false, 'the first value wins, even a falsy one');
+    const map = globalState('test.map', () => new Map<string, number>());
+    map.set('a', 1);
+    assert.equal(globalState('test.map', () => new Map<string, number>()).get('a'), 1);
+    console.log('ok - globalState hands out one value per key');
+  }
+
+  const two = (n: number) => String(n).padStart(2, '0');
+  const localDay = (offset: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+  };
+  const at = (offset: number, hour: number, minute = 0) => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + offset, hour, minute);
+  };
+
+  // Daily series: one grouped scan joined to the calendar. The late-evening and just-after-
+  // midnight plays must land on different local days, a day without plays is zero, and rows
+  // outside the window (older, or in the future) stay out.
+  const [dayUser] = await db.insert(users).values({ serverId: 7, serverUserId: 'day-1', username: 'day-one' }).returning();
+  const [dayOther] = await db.insert(users).values({ serverId: 8, serverUserId: 'day-2', username: 'day-two' }).returning();
+  await db.insert(watchHistory).values([
+    { userId: dayUser.id, itemId: 'd1', title: 'D1', mediaType: 'movie', genres: [], watchedAt: at(-2, 23, 30), durationMs: 3_600_000 },
+    { userId: dayUser.id, itemId: 'd2', title: 'D2', mediaType: 'movie', genres: [], watchedAt: at(-1, 0, 30), durationMs: 7_200_000 },
+    { userId: dayUser.id, itemId: 'd3', title: 'D3', mediaType: 'movie', genres: [], watchedAt: at(-4, 12), durationMs: 600_000 },
+    { userId: dayUser.id, itemId: 'd4', title: 'D4', mediaType: 'movie', genres: [], watchedAt: at(3, 12), durationMs: 600_000 },
+    { userId: dayOther.id, itemId: 'd5', title: 'D5', mediaType: 'movie', genres: [], watchedAt: at(-1, 12), durationMs: 1_800_000 },
+  ]);
+  {
+    const { getDailyActivity, getDailyPlays } = await import('../server/stats');
+    const labels = [localDay(-2), localDay(-1), localDay(0)];
+    const own = { userId: dayUser.id };
+    assert.deepEqual(await getDailyActivity(own, 3), labels.map((label, i) => ({ label, value: [60, 120, 0][i] })));
+    assert.deepEqual(await getDailyPlays(own, 3), labels.map((label, i) => ({ label, value: [1, 1, 0][i] })));
+    assert.deepEqual((await getDailyPlays({ userId: null, serverId: 7 }, 3)).map((p) => p.value), [1, 1, 0]);
+    assert.deepEqual((await getDailyPlays({ userId: null, serverId: 8 }, 3)).map((p) => p.value), [0, 1, 0]);
+    assert.equal((await getDailyPlays(own, 365)).length, 365);
+    console.log('ok - daily series bucket by local day and respect the scope');
+  }
+
+  // System page counts follow the admin's scope instead of the whole database.
+  {
+    const { playbackSessions: sessionRows } = await import('../db/schema');
+    const { getSystemCounts } = await import('../server/stats');
+    await db.insert(sessionRows).values([
+      { sessionKey: '7:sys-a', userId: dayUser.id, itemId: 'x', title: 'X', mediaType: 'movie', state: 'playing', progressMs: 1000, durationMs: 3_600_000, startedAt: new Date(), lastSeenAt: new Date(), progressAt: new Date() },
+      { sessionKey: '8:sys-b', userId: dayOther.id, itemId: 'y', title: 'Y', mediaType: 'movie', state: 'ended', progressMs: 3_600_000, durationMs: 3_600_000, startedAt: new Date(), lastSeenAt: new Date(), progressAt: new Date() },
+    ]);
+    const seven = await getSystemCounts({ userId: null, serverId: 7 });
+    const eight = await getSystemCounts({ userId: null, serverId: 8 });
+    const all = await getSystemCounts({ userId: null });
+    assert.deepEqual({ ...seven, lastPlay: null }, { history: 4, sessions: 1, activity: 1, lastPlay: null });
+    assert.deepEqual(eight, { history: 1, sessions: 1, activity: 0, lastPlay: at(-1, 12).getTime() });
+    assert.ok(all.history > seven.history + eight.history, 'the unscoped count still sees every server');
+
+    // Completion: the open stream at 0% has neither finished nor been abandoned.
+    const { getCompletionSplit } = await import('../server/playback');
+    const split = await getCompletionSplit(85, undefined, { userId: dayUser.id });
+    assert.deepEqual({ finished: split.finished, abandoned: split.abandoned, rate: split.rate }, { finished: 0, abandoned: 0, rate: null });
+    const done = await getCompletionSplit(85, undefined, { userId: dayOther.id });
+    assert.deepEqual({ finished: done.finished, abandoned: done.abandoned }, { finished: 1, abandoned: 0 });
+    await db.delete(sessionRows).where(inArray(sessionRows.sessionKey, ['7:sys-a', '8:sys-b']));
+    console.log('ok - system counts are scoped and open streams are not abandoned');
+  }
+
+  // The history filters: a value that is not one of the offered periods, or not a real day,
+  // is ignored instead of emptying the list.
+  {
+    const { historyFilters } = await import('../server/history');
+    const [histUser] = await db.insert(users).values({ serverId: 9, serverUserId: 'hist-1', username: 'hist' }).returning();
+    await db.insert(watchHistory).values([
+      { userId: histUser.id, itemId: 'h1', title: 'H1', mediaType: 'movie', genres: [], watchedAt: at(-2, 12), durationMs: 1000 },
+      { userId: histUser.id, itemId: 'h2', title: 'H2', mediaType: 'movie', genres: [], watchedAt: at(-100, 12), durationMs: 1000 },
+    ]);
+    const count = async (params: Parameters<typeof historyFilters>[1]) =>
+      (await db.select().from(watchHistory).where(historyFilters(histUser.id, params))).length;
+    assert.equal(await count({}), 2);
+    for (const days of ['1e9', 'abc', '-5', '0', '14', '']) {
+      assert.equal(await count({ days }), 2, `days=${days} falls back to all time`);
+    }
+    assert.equal(await count({ days: '7' }), 1);
+    assert.equal(await count({ days: '365' }), 2);
+    assert.equal(await count({ date: '2026-02-30' }), 2, 'an impossible day is ignored');
+    assert.equal(await count({ date: localDay(-2) }), 1);
+    console.log('ok - history filters whitelist the period and the day');
+  }
+
+  // The server-list high-water mark only moves with rows the server list wrote.
+  {
+    const { lastServerPlayAt, recordPlays } = await import('../server/plays');
+    const [markUser] = await db.insert(users).values({ serverId: 9, serverUserId: 'mark-1', username: 'mark' }).returning();
+    const play = (itemId: string, watchedAt: Date) => ({ itemId, title: itemId, mediaType: 'movie', watchedAt, durationMs: 1000 });
+    assert.equal(await lastServerPlayAt(markUser.id), undefined);
+    await recordPlays(markUser.id, [play('live', at(0, 1))], 'session');
+    await recordPlays(markUser.id, [play('imported', at(0, 2))], 'tautulli');
+    assert.equal(await lastServerPlayAt(markUser.id), undefined, 'no server row yet: fetch everything');
+    await recordPlays(markUser.id, [play('older', at(-5, 20))], 'server');
+    assert.equal((await lastServerPlayAt(markUser.id))?.getTime(), at(-5, 20).getTime());
+    console.log('ok - the history high-water mark ignores session and import rows');
+  }
+
+  // A streak is not capped: 450 consecutive days read as 450.
+  {
+    const { getStreak } = await import('../server/stats');
+    const [streakUser] = await db.insert(users).values({ serverId: 9, serverUserId: 'long-1', username: 'long' }).returning();
+    const rows = Array.from({ length: 450 }, (_, i) => ({
+      userId: streakUser.id, itemId: `s${i}`, title: `S${i}`, mediaType: 'movie', genres: [] as string[],
+      watchedAt: at(-i, 12), durationMs: 1000,
+    }));
+    for (let i = 0; i < rows.length; i += 150) await db.insert(watchHistory).values(rows.slice(i, i + 150));
+    assert.equal(await getStreak({ userId: streakUser.id }), 450);
+    console.log('ok - getStreak counts past 400 days');
+  }
+
+  // Newsletter libraries are `<serverId>:<sectionId>` keys. Two servers with the same section id
+  // must not be mixed up, and ids saved before the key existed keep their old meaning.
+  {
+    const { normalizeLibraries, sectionsForServer, collectNewsletter } = await import('../server/newsletter');
+    assert.deepEqual(normalizeLibraries(['1:a', '2:b', '1:a', ''], [1, 2]), ['1:a', '2:b']);
+    assert.deepEqual(normalizeLibraries(['abc'], [1, 2]), ['1:abc', '2:abc'], 'a bare id applies to every server, as it did');
+    assert.deepEqual(sectionsForServer([], 1), [], 'nothing selected means everything');
+    assert.deepEqual(sectionsForServer(['1:a', '2:b', '1:c:d'], 1), ['a', 'c:d']);
+    assert.equal(sectionsForServer(['2:b'], 1), null, 'a server without a selected library is left out');
+    assert.equal(sectionsForServer(['12:b'], 1), null, 'server 1 is not server 12');
+
+    const { createServer: createHttp } = await import('node:http');
+    const { createServer: addServer, updateSettings: save } = await import('../server/config');
+    const { appConfig } = await import('../db/schema');
+    const asked: string[] = [];
+    const stub = createHttp((req, res) => {
+      const url = new URL(req.url ?? '/', 'http://stub');
+      asked.push(`${url.pathname.split('/')[1]}:${url.searchParams.get('ParentId') ?? ''}`);
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ Items: [{ Id: 'n1', Name: 'New', Type: 'Movie', DateCreated: new Date().toISOString() }] }));
+    });
+    await new Promise<void>((resolve) => stub.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${(stub.address() as { port: number }).port}`;
+    const one = await addServer({ serverType: 'jellyfin', serverUrl: `${base}/s1`, serverToken: 't', label: 'NL One' });
+    const two2 = await addServer({ serverType: 'jellyfin', serverUrl: `${base}/s2`, serverToken: 't', label: 'NL Two' });
+    const run = async (libraries: string[]) => {
+      asked.length = 0;
+      await save({ newsletterLibraries: libraries, newsletterDays: 7 });
+      const entries = await collectNewsletter();
+      return { asked: [...asked].sort(), servers: entries.map((e) => e.serverLabel).sort() };
+    };
+    assert.deepEqual(await run([]), { asked: ['s1:', 's2:'], servers: ['NL One', 'NL Two'] });
+    assert.deepEqual(await run(['lib']), { asked: ['s1:lib', 's2:lib'], servers: ['NL One', 'NL Two'] }, 'legacy id reaches both servers');
+    assert.deepEqual(await run([`${one.id}:lib`]), { asked: ['s1:lib'], servers: ['NL One'] });
+    assert.deepEqual(
+      await run([`${one.id}:libA`, `${two2.id}:libB`]),
+      { asked: ['s1:libA', 's2:libB'], servers: ['NL One', 'NL Two'] },
+      'each server only gets its own library ids',
+    );
+    await save({ newsletterLibraries: [] });
+    await db.delete(appConfig).where(inArray(appConfig.id, [one.id, two2.id]));
+    await new Promise<void>((resolve) => stub.close(() => resolve()));
+    console.log('ok - newsletter libraries are per server');
+  }
+
+  for (const user of await db.select().from(users).where(inArray(users.serverId, [7, 8, 9]))) {
+    await db.delete(users).where(eq(users.id, user.id));
+  }
+
+  // The scheduled jobs run from every sync pass, and passes overlap. The in-flight guards live in
+  // shared state: a busy flag keeps a second pass out, and a failed backup is not retried at once.
+  {
+    const { existsSync, readdirSync, writeFileSync, rmSync: remove } = await import('node:fs');
+    const { checkAutoBackup } = await import('../server/autobackup');
+    const { checkNewsletter } = await import('../server/newsletter');
+    const { globalState } = await import('../server/state');
+    const { getSettings, updateSettings: save } = await import('../server/config');
+    const backups = join(dir, 'backups');
+    await save({ backupAutoEnabled: true, backupIntervalHours: 24 });
+
+    const backupGuard = globalState('autobackup', () => ({ busy: false, retryAt: 0 }));
+    backupGuard.busy = true;
+    await checkAutoBackup();
+    assert.equal(existsSync(backups), false, 'a pass that finds a backup running does nothing');
+    backupGuard.busy = false;
+    backupGuard.retryAt = Date.now() + 60_000;
+    await checkAutoBackup();
+    assert.equal(existsSync(backups), false, 'a recent failure holds the retry back');
+    backupGuard.retryAt = 0;
+
+    // A path that cannot become a directory: the run fails, throws, and arms the retry delay.
+    writeFileSync(backups, 'not a directory');
+    await assert.rejects(checkAutoBackup());
+    assert.ok(backupGuard.retryAt > Date.now(), 'a failed backup is retried later, not on the next poll');
+    assert.equal(backupGuard.busy, false, 'the flag is released after a failure');
+    await checkAutoBackup(); // inside the delay: returns quietly instead of failing again
+    remove(backups);
+    backupGuard.retryAt = 0;
+    await checkAutoBackup();
+    assert.equal(readdirSync(backups).length, 1, 'once the cause is gone one snapshot is written');
+    assert.equal(backupGuard.busy, false);
+    await save({ backupAutoEnabled: false });
+
+    const mail = globalState('newsletter', () => ({ busy: false }));
+    const clock = new Date();
+    await save({ newsletterEnabled: true, newsletterDayOfWeek: clock.getDay(), newsletterHour: clock.getHours() });
+    mail.busy = true;
+    await checkNewsletter();
+    assert.equal((await getSettings()).newsletterLastSentAt, null, 'a pass that finds a send running does not start another');
+    mail.busy = false;
+    await checkNewsletter();
+    assert.ok((await getSettings()).newsletterLastSentAt, 'the free pass sends and stamps the lock');
+    assert.equal(mail.busy, false, 'the flag is released afterwards');
+    await save({ newsletterEnabled: false });
+    console.log('ok - overlapping passes cannot start a second backup or newsletter');
+  }
+
+  // The streak and the active-day count describe the same days. A play with no duration (an
+  // import that never knew it, or an item under a minute) counts for one and used to break the
+  // other.
+  {
+    const { getWrapped } = await import('../server/wrapped');
+    const [streaker] = await db
+      .insert(users)
+      .values({ serverUserId: 'streaker', username: 'streaker' })
+      .returning();
+    const year = new Date().getFullYear();
+    await db.insert(watchHistory).values(
+      [10, 11, 12].map((day) => ({
+        userId: streaker.id,
+        itemId: `streak-${day}`,
+        title: `Streak ${day}`,
+        mediaType: 'movie',
+        genres: [],
+        watchedAt: new Date(year, 5, day, 12),
+        durationMs: 0,
+      })),
+    );
+    const wrapped = await getWrapped(streaker.id, year);
+    assert.equal(wrapped.activeDays, 3);
+    assert.equal(wrapped.longestStreak, 3, 'zero-minute plays still make the days consecutive');
+    await db.delete(users).where(eq(users.id, streaker.id));
+    console.log('ok - wrapped streak agrees with active days');
+  }
+
+  // Titles, device names and usernames come from outside and open in a spreadsheet: a leading
+  // formula character must not survive, and a real negative number must stay a number.
+  {
+    const { toCsv } = await import('../server/csv');
+    assert.equal(
+      toCsv(['t'], [['=1+1'], ['@SUM(A1)'], ['-5'], [-5], ['plain'], ['a\rb']]),
+      't\n\'=1+1\n\'@SUM(A1)\n\'-5\n-5\nplain\n"a\rb"',
+    );
+    console.log('ok - CSV cells cannot start a formula');
   }
 
   // WAL files stay locked on Windows until the handle is closed.

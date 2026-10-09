@@ -6,7 +6,7 @@
  * 1. Amber is data. It marks something that is playing, or a value read off the
  *    server. Nothing decorative is ever amber — not a button, not a nav pill, not
  *    a heading. Material 3 would normally paint FABs and active navigation in the
- *    primary colour; here those stay neutral, because a lit pixel has to mean
+ *    primary color; here those stay neutral, because a lit pixel has to mean
  *    something.
  *
  * 2. The Material 3 parts are hand-written, not imported. Materialize/MDC ship
@@ -37,11 +37,19 @@
   --line-strong: rgba(255, 255, 255, 0.14);
 
   --text: #e9ebef;
-  --text-dim: #8a919f;
-  /* Meets WCAG AA (4.66:1) on --surface-container; it carries 10px stat labels
-     and table headers, so it cannot be a large-text-only grey. */
-  --text-faint: #7d8494;
+  --text-dim: #a2a9b6;
+  /* Both grays clear WCAG AA (4.5:1) on every surface they sit on, including under the
+     8% hover layer and the 10% pressed layer — checked by a script, not by eye. --text-faint
+     carries 10px stat labels and table headers, so it cannot be a large-text-only gray. */
+  --text-faint: #939aa8;
   --on-accent: #1a1206;
+
+  /* Neutral interaction colors. Amber never marks focus, selection or hover: it means
+     "playing" or "data", and a focus ring that is amber would say neither. */
+  --focus-ring: var(--text);
+  /* The outline of a form field. --line-strong is a decorative hairline; a text field has
+     no other cue that it is one, which WCAG 1.4.11 holds to 3:1. */
+  --outline: #6b7384;
 
   /* The projector bulb. Live state and data, never chrome. */
   --beam: #ffb020;
@@ -53,10 +61,13 @@
   --danger: #ff6b6b;
   --ok: #63d29a;
 
-  /* --- State layers (M3: 8% hover, 10% focus, 12% pressed) --- */
-  --state-hover: rgba(255, 255, 255, 0.08);
-  --state-focus: rgba(255, 255, 255, 0.1);
-  --state-press: rgba(255, 255, 255, 0.12);
+  /* --- State layers (M3: 8% hover, 10% focus, 10% pressed) ---
+     Derived from --text, so a scheme never has to restate them. The rgba fallback for
+     browsers without color-mix() sits in the @supports block after the light scheme. */
+  --state-hover: color-mix(in srgb, var(--text) 8%, transparent);
+  --state-focus: color-mix(in srgb, var(--text) 10%, transparent);
+  --state-press: color-mix(in srgb, var(--text) 10%, transparent);
+  --selection: color-mix(in srgb, var(--text) 28%, transparent);
 
   /* --- Shape scale --- */
   --shape-xs: 4px;
@@ -70,6 +81,9 @@
   --radius-lg: var(--shape-md);
 
   /* --- Elevation --- */
+  /* A resting card in the dark scheme is held up by its hairline alone; a shadow on near
+     black is invisible. The light scheme gets a whisper so white cards lift off paper. */
+  --elev-rest: none;
   --elev-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px 1px rgba(0, 0, 0, 0.22);
   --elev-2: 0 1px 2px rgba(0, 0, 0, 0.45), 0 2px 6px 2px rgba(0, 0, 0, 0.25);
   --elev-3: 0 4px 8px 3px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.45);
@@ -107,22 +121,20 @@
 
   --text: #16181c;
   --text-dim: #565c67;
-  --text-faint: #5c6270;
+  --text-faint: #596070;
   --on-accent: #ffffff;
+  --outline: #80858f;
 
-  --beam: #a35f00;
-  --beam-dim: rgba(163, 95, 0, 0.62);
-  --beam-wash: rgba(163, 95, 0, 0.1);
-  --beam-glow: rgba(163, 95, 0, 0.28);
-  --beam-soft: rgba(163, 95, 0, 0.3);
+  --beam: #9a5800;
+  --beam-dim: rgba(154, 88, 0, 0.8);
+  --beam-wash: rgba(154, 88, 0, 0.1);
+  --beam-glow: rgba(154, 88, 0, 0.28);
+  --beam-soft: rgba(154, 88, 0, 0.3);
 
   --danger: #b3261e;
   --ok: #216e4e;
 
-  --state-hover: rgba(0, 0, 0, 0.06);
-  --state-focus: rgba(0, 0, 0, 0.08);
-  --state-press: rgba(0, 0, 0, 0.1);
-
+  --elev-rest: 0 1px 1px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.04);
   --elev-1: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 3px 1px rgba(0, 0, 0, 0.06);
   --elev-2: 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 6px 2px rgba(0, 0, 0, 0.07);
   --elev-3: 0 4px 8px 3px rgba(0, 0, 0, 0.09), 0 1px 3px rgba(0, 0, 0, 0.12);
@@ -146,26 +158,70 @@
 
     --text: #16181c;
     --text-dim: #565c67;
-    --text-faint: #5c6270;
+    --text-faint: #596070;
     --on-accent: #ffffff;
+    --outline: #80858f;
 
-    --beam: #a35f00;
-    --beam-dim: rgba(163, 95, 0, 0.62);
-    --beam-wash: rgba(163, 95, 0, 0.1);
-    --beam-glow: rgba(163, 95, 0, 0.28);
-    --beam-soft: rgba(163, 95, 0, 0.3);
+    --beam: #9a5800;
+    --beam-dim: rgba(154, 88, 0, 0.8);
+    --beam-wash: rgba(154, 88, 0, 0.1);
+    --beam-glow: rgba(154, 88, 0, 0.28);
+    --beam-soft: rgba(154, 88, 0, 0.3);
 
     --danger: #b3261e;
     --ok: #216e4e;
 
-    --state-hover: rgba(0, 0, 0, 0.06);
-    --state-focus: rgba(0, 0, 0, 0.08);
-    --state-press: rgba(0, 0, 0, 0.1);
-
+    --elev-rest: 0 1px 1px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.04);
     --elev-1: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 3px 1px rgba(0, 0, 0, 0.06);
     --elev-2: 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 6px 2px rgba(0, 0, 0, 0.07);
     --elev-3: 0 4px 8px 3px rgba(0, 0, 0, 0.09), 0 1px 3px rgba(0, 0, 0, 0.12);
     --elev-4: 0 8px 24px 6px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.14);
+  }
+}
+
+/*
+ * Derived tokens. They are mixed from the scheme tokens above and declared on :root
+ * itself, so the light override re-resolves them without a second copy of each value.
+ * Nothing here is amber: glass and lift are neutral by design.
+ */
+:root {
+  --glass: color-mix(in srgb, var(--surface) 70%, transparent);
+  --glass-strong: color-mix(in srgb, var(--surface-container) 92%, transparent);
+  --glass-line: color-mix(in srgb, var(--text) 11%, transparent);
+  /* Top-light on a card: the faint highlight a surface gets from a lamp above it. */
+  --lift: color-mix(in srgb, var(--text) 4.5%, transparent);
+  --lift-strong: color-mix(in srgb, var(--text) 8%, transparent);
+  --backdrop: blur(18px) saturate(1.5);
+  --shape-2xl: 36px;
+  --rail-w: 72px;
+  --sidebar-w: 236px;
+  --topbar-h: 60px;
+  --page-max: 1320px;
+}
+
+/* Browsers without color-mix() get the same layers as plain rgba, per scheme. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  :root {
+    --state-hover: rgba(255, 255, 255, 0.08);
+    --state-focus: rgba(255, 255, 255, 0.1);
+    --state-press: rgba(255, 255, 255, 0.1);
+    --selection: rgba(255, 255, 255, 0.28);
+  }
+
+  :root[data-theme='light'] {
+    --state-hover: rgba(0, 0, 0, 0.06);
+    --state-focus: rgba(0, 0, 0, 0.08);
+    --state-press: rgba(0, 0, 0, 0.1);
+    --selection: rgba(0, 0, 0, 0.2);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme='dark']):not([data-theme='light']) {
+      --state-hover: rgba(0, 0, 0, 0.06);
+      --state-focus: rgba(0, 0, 0, 0.08);
+      --state-press: rgba(0, 0, 0, 0.1);
+      --selection: rgba(0, 0, 0, 0.2);
+    }
   }
 }
 
@@ -177,6 +233,16 @@ html,
 body {
   margin: 0;
   padding: 0;
+}
+
+html {
+  /* Anchors and in-page jumps glide; reduced-motion users get the instant jump below. */
+  scroll-behavior: smooth;
+  /* Reserve the scrollbar's width, so a page that is just long enough to scroll does not
+     shove everything sideways by 15px relative to the one before it. */
+  scrollbar-gutter: stable;
+  /* Native checkboxes, radios and ranges follow the neutral scheme, not the browser blue. */
+  accent-color: var(--text);
 }
 
 body {
@@ -199,15 +265,17 @@ a {
   text-decoration: none;
 }
 
+/* A neutral lift, not amber: selecting text is not "playing" and not "data". */
 ::selection {
-  background: var(--beam);
-  color: var(--on-accent);
+  background: var(--selection);
+  color: var(--text);
 }
 
+/* One ring for every control. Neutral and high-contrast in both schemes (>= 3:1 on every
+   surface); it follows the element's own border-radius, so a pill stays a pill. */
 :focus-visible {
-  outline: 2px solid var(--beam);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
-  border-radius: var(--shape-xs);
 }
 
 /* ============================================================
@@ -225,19 +293,24 @@ h1 {
 }
 
 h1 {
+  /* A title without spaces must wrap instead of pushing the page sideways. */
+  overflow-wrap: anywhere;
   /* Fluid so a long title does not wrap to four lines on a phone. */
-  font-size: clamp(21px, 5vw, 25px);
-  line-height: 1.15;
+  font-size: clamp(23px, 5.4vw, 32px);
+  line-height: 1.12;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
 }
 
 /* Section heading inside a page: the quiet body-font label, not the display face. */
 h2,
 h3 {
   font-family: var(--font-body-stack);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.005em;
   margin: 0 0 12px;
+  text-wrap: balance;
 }
 
 /* Quiet uppercase label that sits under or above a number. */
@@ -273,6 +346,7 @@ td.num {
   color: var(--text-dim);
   margin: 6px 0 26px;
   max-width: 68ch;
+  text-wrap: pretty;
 }
 
 /* ============================================================
@@ -280,25 +354,72 @@ td.num {
    ============================================================ */
 
 .shell {
+  position: relative;
+  /* Own stacking context, so the ambient light below can sit behind every card
+     without ever dropping behind the page background. */
+  isolation: isolate;
   display: flex;
   min-height: 100vh;
   min-height: 100dvh;
 }
 
+/* Ambient room light: two very soft neutral pools, so a flat graphite page has depth. */
+.shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 520px at 76% -10%, color-mix(in srgb, var(--text) 5.5%, transparent), transparent 72%),
+    radial-gradient(760px 460px at 4% 110%, color-mix(in srgb, var(--text) 3.5%, transparent), transparent 72%);
+}
+
+/* The projector spill. Amber because it means "something is playing": the layout stamps
+   data-live only while a stream is running, so the light is information, not decoration. */
+.shell[data-live='1']::after {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 420px;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(620px 300px at 16% -70px, var(--beam-wash), transparent 72%);
+  animation: spill 7s ease-in-out infinite alternate;
+}
+
+@keyframes spill {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* Permanent navigation drawer. On mobile the same element becomes modal. */
 .sidebar {
-  width: 236px;
-  flex: 0 0 236px;
-  background: var(--surface);
+  width: var(--sidebar-w);
+  flex: 0 0 var(--sidebar-w);
+  background: linear-gradient(180deg, var(--lift), transparent 38%), var(--surface);
   border-right: 1px solid var(--line);
-  padding: 18px 12px 24px;
+  padding: 18px 12px 18px;
   position: sticky;
   top: 0;
   height: 100vh;
   height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   z-index: 40;
+  transition: width var(--dur-long) var(--ease-emphasized),
+    flex-basis var(--dur-long) var(--ease-emphasized);
+}
+
+.sidebar > nav {
+  flex: 1;
 }
 
 .wordmark {
@@ -343,7 +464,7 @@ td.num {
   padding: 8px 14px;
   border-radius: var(--shape-full);
   color: var(--text-dim);
-  font-size: 13.5px;
+  font-size: 14px;
   transition: background var(--dur-short) var(--ease-standard),
     color var(--dur-short) var(--ease-standard);
 }
@@ -372,7 +493,7 @@ td.num {
   height: 20px;
   margin-top: -10px;
   border-radius: 0 3px 3px 0;
-  background: var(--beam);
+  background: var(--text); /* neutral: amber means "playing" or "data", never navigation */
 }
 
 .sidebar .group,
@@ -404,11 +525,24 @@ td.num {
 }
 
 .sidebar-foot {
+  position: sticky;
+  /* Chrome insets the sticky edge by the scroll container's padding, so the strip would
+     float 18px above the bottom with the last nav item peeking out beneath it. */
+  bottom: -18px;
   display: flex;
-  justify-content: flex-end;
-  margin-top: 18px;
-  padding-top: 12px;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  /* Bleeds into the sidebar padding so the sticky strip is flush with the bottom edge. */
+  margin: 14px -12px -18px;
+  padding: 10px 12px 14px;
+  background: var(--surface);
   border-top: 1px solid var(--line);
+}
+
+.sidebar-foot nav {
+  flex: 1;
+  min-width: 0;
 }
 
 /* Column that carries the app bar above the page on mobile. */
@@ -422,8 +556,10 @@ td.num {
 .main {
   flex: 1;
   min-width: 0;
-  padding: 30px 34px 64px;
-  max-width: 1180px;
+  width: 100%;
+  padding: 26px 36px 72px;
+  max-width: var(--page-max);
+  margin-inline: auto;
   /* Container queries let cards react to their column, not the viewport — a chart in
      a half-width grid cell on desktop has the same room as a full-width one on a phone. */
   container-type: inline-size;
@@ -440,8 +576,10 @@ td.num {
   gap: 4px;
   height: var(--appbar-h);
   padding: 0 6px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--backdrop);
+  backdrop-filter: var(--backdrop);
+  border-bottom: 1px solid var(--glass-line);
 }
 
 .appbar-title {
@@ -496,34 +634,43 @@ td.num {
 
 /* --- Modal navigation drawer (mobile) --- */
 
+/* A <button>, so it has to shed the pill shape and hover lift every button gets — as a
+   pill the dimming covered an oval and left the screen corners bright. */
 .scrim {
   position: fixed;
   inset: 0;
   z-index: 45;
+  min-height: 0;
   background: rgba(0, 0, 0, 0.55);
   border: 0;
+  border-radius: 0;
   padding: 0;
-  animation: fade-in var(--dur-medium) var(--ease-standard) both;
+  transition: opacity var(--dur-medium) var(--ease-standard);
+}
+
+.scrim:hover,
+.scrim:active {
+  box-shadow: none;
+  filter: none;
 }
 
 .drawer {
   position: fixed;
-  inset: 0 auto 0 0;
+  inset: 0 auto auto 0;
   z-index: 46;
   width: min(300px, 84vw);
+  /* dvh, not the top/bottom pair: on a phone the bottom edge of a fixed box can sit under
+     the browser's own toolbar, taking the last navigation items with it. */
+  height: 100vh;
+  height: 100dvh;
   padding: 14px 12px 24px;
   background: var(--surface-container-low);
   border-right: 1px solid var(--line);
   box-shadow: var(--elev-4);
   overflow-y: auto;
   overscroll-behavior: contain;
-  animation: drawer-in var(--dur-long) var(--ease-emphasized) both;
-}
-
-@keyframes drawer-in {
-  from {
-    transform: translateX(-100%);
-  }
+  transition: transform var(--dur-long) var(--ease-emphasized),
+    opacity var(--dur-medium) var(--ease-standard);
 }
 
 .drawer nav a {
@@ -563,18 +710,25 @@ td.num {
 .bottomnav {
   display: none;
   position: fixed;
-  inset: auto 0 0 0;
+  /* Floats clear of the edges like a dock; the safe-area inset keeps it above the
+     home indicator instead of under it. */
+  inset: auto 10px calc(8px + env(safe-area-inset-bottom)) 10px;
   z-index: 35;
-  height: calc(var(--bottomnav-h) + env(safe-area-inset-bottom));
-  padding-bottom: env(safe-area-inset-bottom);
-  background: var(--surface-container);
-  border-top: 1px solid var(--line);
+  height: calc(var(--bottomnav-h) - 6px);
+  max-width: 520px;
+  margin-inline: auto;
+  border-radius: var(--shape-2xl);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: var(--backdrop);
+  backdrop-filter: var(--backdrop);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--elev-4);
 }
 
 .bottomnav ul {
   display: flex;
   align-items: stretch;
-  height: var(--bottomnav-h);
+  height: 100%;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -593,12 +747,13 @@ td.num {
   gap: 3px;
   height: 100%;
   padding: 6px 2px;
-  color: var(--text-faint);
-  font-size: 10.5px;
+  /* text-dim, not faint: 11px labels over a translucent bar need the stronger contrast. */
+  color: var(--text-dim);
+  font-size: 11px;
   letter-spacing: 0.02em;
 }
 
-/* M3 navigation-bar active indicator: a pill behind the icon, not a colour change. */
+/* M3 navigation-bar active indicator: a pill behind the icon, not a color change. */
 .bottomnav .ind {
   display: grid;
   place-items: center;
@@ -634,10 +789,13 @@ td.num {
    ============================================================ */
 
 .card {
-  background: var(--surface);
+  background: linear-gradient(180deg, var(--lift), transparent 52%), var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--shape-md);
+  border-radius: var(--shape-lg);
+  /* The 1px inner highlight is the lamp-above-the-table edge. */
+  box-shadow: inset 0 1px 0 var(--lift);
   padding: 18px;
+  box-shadow: var(--elev-rest);
 }
 
 .card.elevated {
@@ -770,13 +928,20 @@ td.num {
 .beam {
   position: relative;
   display: grid;
-  grid-template-columns: 82px 1fr;
-  gap: 18px;
-  padding: 18px;
+  /* minmax(0, 1fr): a long unbroken title must shrink the column, not stretch the card. */
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 22px;
+  padding: 22px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--shape-md);
+  box-shadow: var(--elev-1);
   overflow: hidden;
+}
+
+/* The only card with a lit edge: it is the only one that is live. */
+.beam.live {
+  border-color: var(--beam-soft);
 }
 
 /* The projector wash only exists while something is actually playing. */
@@ -794,7 +959,7 @@ td.num {
 }
 
 .beam-art {
-  width: 82px;
+  width: 96px;
   aspect-ratio: 2 / 3;
   object-fit: cover;
   border-radius: var(--shape-sm);
@@ -806,9 +971,11 @@ td.num {
   font-family: var(--font-display-stack);
   font-variation-settings: 'wdth' 108;
   font-weight: 700;
-  font-size: clamp(16px, 4.5vw, 19px);
+  font-size: clamp(17px, 4.8vw, 23px);
   letter-spacing: -0.01em;
   margin: 6px 0 2px;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
 }
 
 .beam-head {
@@ -844,7 +1011,7 @@ td.num {
 }
 
 .timecode {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text);
   letter-spacing: 0.02em;
 }
@@ -852,10 +1019,10 @@ td.num {
 /* Scrub line: a hairline with a lit playhead. */
 .scrub {
   position: relative;
-  height: 2px;
+  height: 3px;
   background: var(--line-strong);
-  border-radius: 2px;
-  margin-top: 14px;
+  border-radius: 3px;
+  margin-top: 16px;
 }
 
 .scrub-fill {
@@ -869,12 +1036,12 @@ td.num {
 .scrub-head {
   position: absolute;
   top: 50%;
-  width: 8px;
-  height: 8px;
-  margin: -4px 0 0 -4px;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
   border-radius: 50%;
   background: var(--beam);
-  box-shadow: 0 0 10px var(--beam-glow);
+  box-shadow: 0 0 12px var(--beam-glow);
   animation: scrub-in 0.7s var(--ease-emphasized) both;
 }
 
@@ -887,6 +1054,8 @@ td.num {
 }
 
 .beam-idle {
+  /* The grid has an art column; an idle beam has no art and must not wrap in it. */
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   min-height: 92px;
@@ -957,6 +1126,40 @@ td.num {
   overflow: visible;
 }
 
+.meter {
+  display: block;
+  height: 6px;
+  margin-top: 14px;
+  border-radius: var(--shape-full);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  overflow: hidden;
+}
+
+.meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--beam);
+}
+
+.dots {
+  display: flex;
+  gap: 3px;
+  margin-top: 14px;
+}
+
+.dots > span {
+  flex: 1;
+  height: 14px;
+  max-width: 14px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.dots > span.on {
+  background: var(--beam);
+}
+
 .trend {
   font-family: var(--font-mono-stack);
   font-size: 11px;
@@ -977,12 +1180,47 @@ td.num {
   display: block;
 }
 
+/* Axis and scale labels. Every number is mono and tabular; the halo keeps a label legible
+   where it sits over a bar. The phone size is computed per chart (--axis-phone), because an
+   SVG label scales with its viewBox: ten units in a 760-wide box is 4px on a 340px screen. */
+.chart .axis {
+  font-family: var(--font-mono-stack);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  fill: var(--text-faint);
+}
+
+.chart .axis-halo {
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.chart .gl {
+  stroke: var(--line-strong);
+  stroke-dasharray: 2 6;
+}
+
+.chart .baseline {
+  stroke: var(--line-strong);
+}
+
+@media (max-width: 600px) {
+  .chart .axis {
+    font-size: var(--axis-phone, 10px);
+  }
+}
+
 .bars {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: 2px;
+  /* The list answers to the card it sits in, not to the window: half a 900px screen is
+     the same cramped column as a whole phone. */
+  container-type: inline-size;
 }
 
 .bar-row {
@@ -1003,10 +1241,30 @@ td.num {
   background: var(--state-hover);
 }
 
+@media (pointer: coarse) {
+  .bar-row {
+    min-height: 44px;
+  }
+}
+
 .bar-rank {
   font-size: 11px;
   color: var(--text-faint);
   text-align: right;
+}
+
+/* Narrow card: the track goes and the value takes its column. Three tracks for the three
+   items still shown — hiding the track used to leave the value in a zero-width column and
+   it ran out of the card. */
+@container (max-width: 380px) {
+  .bar-row {
+    grid-template-columns: 20px minmax(0, 1fr) max-content;
+    gap: 8px;
+  }
+
+  .bar-row .bar-track {
+    display: none;
+  }
 }
 
 .bar-label {
@@ -1016,8 +1274,11 @@ td.num {
   color: var(--text);
 }
 
+/* Neutral: a link hovering is navigation, not data. The underline is the signal. */
 a.bar-label:hover {
-  color: var(--beam);
+  text-decoration: underline;
+  text-decoration-color: var(--text-faint);
+  text-underline-offset: 3px;
 }
 
 .bar-track {
@@ -1120,7 +1381,7 @@ a.bar-label:hover {
 
 .perf {
   display: flex;
-  gap: 9px;
+  gap: 7px;
   height: 4px;
   min-width: max-content;
 }
@@ -1176,7 +1437,9 @@ table {
 th {
   text-align: left;
   padding: 9px 12px;
-  border-bottom: 1px solid var(--line);
+  /* An inset shadow, not a border: in a collapsed table a border stays behind when the
+     header sticks, leaving rows sliding under a header with no edge. */
+  box-shadow: inset 0 -1px 0 var(--line);
   white-space: nowrap;
   /* A horizontally scrolled table on a phone loses its headers otherwise. */
   position: sticky;
@@ -1199,7 +1462,9 @@ tbody tr:hover {
 }
 
 td a:hover {
-  color: var(--beam);
+  text-decoration: underline;
+  text-decoration-color: var(--text-faint);
+  text-underline-offset: 3px;
 }
 
 /*
@@ -1227,6 +1492,21 @@ label {
   margin-bottom: 14px;
   font-size: 12px;
   color: var(--text-dim);
+  transition: color var(--dur-short) var(--ease-standard);
+}
+
+/* The label of the field being edited brightens; one with an invalid value turns to the
+   error color. :has() lets the label react without a class set from script. */
+label:has(:focus-visible) {
+  color: var(--text);
+}
+
+label:has(:user-invalid) {
+  color: var(--danger);
+}
+
+label:has(:disabled) {
+  opacity: 0.6;
 }
 
 input,
@@ -1236,7 +1516,7 @@ textarea {
   margin-top: 5px;
   padding: 11px 12px;
   background: var(--surface-container);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--outline);
   border-radius: var(--shape-sm);
   color: var(--text);
   font-family: inherit;
@@ -1261,8 +1541,7 @@ input[type='radio'] {
   width: auto;
   min-height: 0;
   margin-top: 0;
-  /* Neutral, not amber: a ticked box is a setting, not a running stream. */
-  accent-color: var(--text);
+  /* Neutral, not amber (accent-color on <html>): a ticked box is a setting, not a stream. */
 }
 
 input:hover,
@@ -1270,11 +1549,19 @@ select:hover {
   background: var(--surface-container-high);
 }
 
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: var(--beam-dim);
-  outline: none;
+/* The focus ring thickens the field's own edge instead of floating two pixels off it. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--focus-ring);
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+input:user-invalid,
+select:user-invalid,
+textarea:user-invalid {
+  border-color: var(--danger);
 }
 
 /* --- Buttons (M3: filled, tonal, outlined, text) --- */
@@ -1365,6 +1652,18 @@ button.link:hover {
 
 .filters label {
   margin: 0;
+  /* Label above its field. As blocks they sat side by side, because the field is narrowed
+     to its content here and a narrow block leaves room beside it. */
+  display: grid;
+  gap: 5px;
+}
+
+.filters label input,
+.filters label select {
+  margin-top: 0;
+  /* A select is taller than a text field at the same font size; equal heights keep both
+     labels on one line. */
+  height: 46px;
 }
 
 /* Width shrinks to fit, but the 16px font size stays: anything smaller makes iOS
@@ -1396,7 +1695,7 @@ button.link:hover {
   min-height: 40px;
   display: inline-flex;
   align-items: center;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-dim);
   border-right: 1px solid var(--line);
   white-space: nowrap;
@@ -1499,25 +1798,30 @@ button.badge:hover {
   width: 100%;
   aspect-ratio: 2 / 3;
   object-fit: cover;
-  border-radius: var(--shape-sm);
+  border-radius: var(--shape-md);
   background: var(--surface-container);
   border: 1px solid var(--line);
+  box-shadow: var(--elev-1);
   transition: border-color var(--dur-short) var(--ease-standard),
-    transform var(--dur-medium) var(--ease-emphasized);
+    transform var(--dur-medium) var(--ease-emphasized),
+    box-shadow var(--dur-medium) var(--ease-standard);
 }
 
+/* Neutral on hover: amber would claim "playing" or "data", and a hovered poster is neither. */
 a:hover .poster {
-  border-color: var(--beam-dim);
-  transform: translateY(-2px);
+  border-color: var(--line-strong);
+  box-shadow: var(--elev-3);
+  transform: translateY(-3px);
 }
 
 .poster-title {
   font-size: 13px;
   margin: 9px 0 2px;
+  overflow-wrap: anywhere;
 }
 
 .poster-meta {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-dim);
   margin: 0;
 }
@@ -1543,7 +1847,7 @@ a:hover .poster {
   padding: 4px 10px;
   border: 1px solid var(--line-strong);
   border-radius: var(--shape-full);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-dim);
 }
 
@@ -1569,12 +1873,13 @@ a:hover .poster {
   justify-content: center;
   padding: 12vh 16px 16px;
   background: rgba(0, 0, 0, 0.6);
-  animation: fade-in var(--dur-medium) var(--ease-standard) both;
+  transition: opacity var(--dur-medium) var(--ease-standard);
 }
 
 .palette {
   width: min(560px, 100%);
   max-height: 62vh;
+  max-height: 62dvh;
   display: flex;
   flex-direction: column;
   background: var(--surface-container-low);
@@ -1582,14 +1887,8 @@ a:hover .poster {
   border-radius: var(--shape-xl);
   box-shadow: var(--elev-4);
   overflow: hidden;
-  animation: palette-in var(--dur-long) var(--ease-emphasized) both;
-}
-
-@keyframes palette-in {
-  from {
-    opacity: 0;
-    transform: translateY(-10px) scale(0.98);
-  }
+  transition: opacity var(--dur-medium) var(--ease-standard),
+    transform var(--dur-long) var(--ease-emphasized);
 }
 
 .palette-input {
@@ -1602,12 +1901,18 @@ a:hover .poster {
   font-size: 16px;
 }
 
-.palette-input:focus {
+.palette-input:focus-visible {
   border-color: var(--line);
-  outline: none;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -4px;
+  border-radius: var(--shape-lg);
 }
 
+/* The dialog is a fixed-height box (it stretches to max-height), so the results take the
+   slack and the key hints stay on the bottom edge instead of floating mid-box. */
 .palette-list {
+  flex: 1;
+  min-height: 0;
   list-style: none;
   margin: 0;
   padding: 6px;
@@ -1623,7 +1928,7 @@ a:hover .poster {
   padding: 8px 12px;
   border-radius: var(--shape-sm);
   cursor: pointer;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 
 .palette-item .label {
@@ -1635,7 +1940,7 @@ a:hover .poster {
 }
 
 .palette-item .sub {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-faint);
   white-space: nowrap;
 }
@@ -1647,7 +1952,7 @@ a:hover .poster {
 
 .palette-kind {
   flex: 0 0 auto;
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -1655,6 +1960,7 @@ a:hover .poster {
 }
 
 .palette-empty {
+  flex: 1;
   padding: 22px 18px;
   color: var(--text-dim);
   font-size: 13px;
@@ -1671,7 +1977,7 @@ a:hover .poster {
 
 kbd {
   font-family: var(--font-mono-stack);
-  font-size: 10.5px;
+  font-size: 11px;
   padding: 2px 5px;
   border: 1px solid var(--line-strong);
   border-radius: var(--shape-xs);
@@ -1692,7 +1998,7 @@ kbd {
   border-radius: var(--shape-full);
   color: var(--text-faint);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 400;
   text-align: left;
   box-shadow: none;
@@ -1764,8 +2070,8 @@ kbd {
 }
 
 .info:hover {
-  color: var(--beam);
-  border-color: var(--beam-dim);
+  color: var(--text);
+  border-color: var(--text-dim);
 }
 
 /* ============================================================
@@ -1776,6 +2082,13 @@ kbd {
   max-width: 400px;
   margin: 13vh auto;
   padding: 0 18px;
+}
+
+/* The sign-in and setup panels are cards, but .center (declared after .card) had zeroed the
+   vertical padding, so the heading sat on the top edge and the last control on the bottom. */
+.center.card {
+  padding: 26px 22px 28px;
+  box-shadow: var(--elev-1);
 }
 
 .center h1 {
@@ -1799,6 +2112,13 @@ kbd {
   flex: 0 0 124px;
 }
 
+/* The text block takes what is left of the row. Sized by its content it asked for the width
+   of its widest chip row and wrapped under the poster on a phone. */
+.title-head > :not(.poster) {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
 .back-link {
   display: inline-flex;
   align-items: center;
@@ -1807,10 +2127,17 @@ kbd {
   margin-bottom: 10px;
   font-size: 12px;
   color: var(--text-faint);
+  white-space: nowrap;
 }
 
 .back-link:hover {
-  color: var(--beam);
+  color: var(--text);
+}
+
+.back-link svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
 }
 
 /* One episode: a row that is entirely a link, so it works with a thumb. */
@@ -1843,7 +2170,7 @@ kbd {
 .episode-row .ep-meta {
   font-family: var(--font-mono-stack);
   font-variant-numeric: tabular-nums;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-dim);
   white-space: nowrap;
 }
@@ -1903,8 +2230,9 @@ kbd {
   text-align: right;
 }
 
+/* The leader is brighter, not amber: a rank is a position, not a reading off the server. */
 .wrapped-rank:first-child .rank {
-  color: var(--beam);
+  color: var(--text);
 }
 
 /* ============================================================
@@ -1937,8 +2265,18 @@ kbd {
   }
 
   .main {
-    padding: 18px 16px calc(var(--bottomnav-h) + env(safe-area-inset-bottom) + 28px);
+    padding: 18px 16px calc(var(--bottomnav-h) + env(safe-area-inset-bottom) + 34px);
     max-width: none;
+  }
+
+  /* Keeps a focused control from being scrolled in underneath the floating bottom bar. */
+  html {
+    scroll-padding-bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom) + 16px);
+    scroll-padding-top: calc(var(--appbar-h) + 12px);
+  }
+
+  .seg a {
+    min-height: 44px;
   }
 
   .subtitle {
@@ -1950,26 +2288,13 @@ kbd {
   }
 
   .beam {
-    grid-template-columns: 62px 1fr;
+    grid-template-columns: 62px minmax(0, 1fr);
     gap: 14px;
     padding: 14px;
   }
 
   .beam-art {
     width: 62px;
-  }
-
-  /* max-content, not `auto`: next to a `1fr` label an auto column collapses towards zero
-     and clipped "17 plays" at the card edge, while a fixed width was too narrow for the
-     longer German wording. The label truncates instead — it already has an ellipsis. */
-  .bar-row {
-    grid-template-columns: 20px minmax(0, 1fr) 0 max-content;
-    gap: 8px;
-  }
-
-  /* The track has no room next to a title on a phone; the number carries the value. */
-  .bar-row .bar-track {
-    display: none;
   }
 
   .title-head {
@@ -2075,8 +2400,6 @@ kbd {
   .beam-glow,
   .scrub-head,
   .spark,
-  .drawer,
-  .palette,
   [class*='pulse'],
   [class*='sweep'] {
     animation: none !important;
@@ -2105,12 +2428,12 @@ kbd {
 .weekgrid-hour,
 .weekgrid-day {
   font-family: var(--font-mono-stack);
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-faint);
 }
 
 .weekgrid-day {
-  font-size: 10px;
+  font-size: 11px;
   padding-right: 6px;
 }
 
@@ -2157,10 +2480,6 @@ a.weekgrid-cell {
   text-align: left;
 }
 
-.notice .eyebrow {
-  color: var(--beam);
-}
-
 .notice h1 {
   margin-bottom: 8px;
 }
@@ -2197,7 +2516,7 @@ a.weekgrid-cell {
   border: 1px solid var(--line);
   border-radius: var(--shape-sm);
   font-family: var(--font-mono-stack);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-dim);
   overflow-x: auto;
   white-space: pre-wrap;
@@ -2314,7 +2633,7 @@ a.weekgrid-cell {
 }
 
 .ip-link:hover {
-  color: var(--beam);
+  color: var(--text);
   background: none;
   box-shadow: none;
   filter: none;
@@ -2329,19 +2648,21 @@ a.weekgrid-cell {
   justify-content: center;
   padding: 10vh 16px 16px;
   background: rgba(0, 0, 0, 0.6);
-  animation: fade-in var(--dur-medium) var(--ease-standard) both;
+  transition: opacity var(--dur-medium) var(--ease-standard);
 }
 
 .modal {
   width: min(520px, 100%);
   max-height: 76vh;
+  max-height: 76dvh;
   overflow-y: auto;
   padding: 20px 22px 24px;
   background: var(--surface-container-low);
   border: 1px solid var(--line-strong);
   border-radius: var(--shape-xl);
   box-shadow: var(--elev-4);
-  animation: palette-in var(--dur-long) var(--ease-emphasized) both;
+  transition: opacity var(--dur-medium) var(--ease-standard),
+    transform var(--dur-long) var(--ease-emphasized);
 }
 
 .modal-head {
@@ -2404,12 +2725,19 @@ a.weekgrid-cell {
 
 /* Missing artwork: a flat surface, never a broken-image glyph. */
 .poster-blank {
-  display: block;
+  display: grid;
+  place-items: center;
   width: 100%;
   aspect-ratio: 2 / 3;
-  border-radius: var(--shape-sm);
-  background: var(--surface-container-high);
+  border-radius: var(--shape-md);
+  background: linear-gradient(155deg, var(--surface-container-highest), var(--surface-container) 70%);
   border: 1px solid var(--line);
+  color: var(--text-faint);
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 120;
+  font-weight: 700;
+  font-size: clamp(20px, 4cqw, 34px);
+  letter-spacing: 0.02em;
 }
 
 .cast-strip {
@@ -2441,11 +2769,11 @@ a.weekgrid-cell {
 }
 
 .cast-card:hover .cast-photo {
-  border-color: var(--beam-dim);
+  border-color: var(--text-faint);
 }
 
 .cast-name {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.3;
 }
 
@@ -2492,7 +2820,7 @@ a.weekgrid-cell {
 
 .tabs a.on {
   color: var(--text);
-  border-bottom-color: var(--beam);
+  border-bottom-color: var(--text);
 }
 
 /* The bleed has to track .main's padding at every breakpoint, or the still ends short of
@@ -2526,6 +2854,7 @@ a.weekgrid-cell {
  */
 .added-strip {
   display: flex;
+  align-items: flex-start;
   gap: 16px;
   overflow-x: auto;
   padding-bottom: 10px;
@@ -2534,6 +2863,7 @@ a.weekgrid-cell {
 
 .added-card {
   flex: 0 0 132px;
+  min-width: 0;
   scroll-snap-align: start;
 }
 
@@ -2543,6 +2873,7 @@ a.weekgrid-cell {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 /* ============================================================
@@ -2567,9 +2898,9 @@ a.weekgrid-cell {
   color: var(--text);
 }
 
-/* Amber marks the column carrying the data you asked for — the same rule as the charts. */
+/* The active sort column is the brightest header, neutral like the active tab. */
 .sort.on {
-  color: var(--beam);
+  color: var(--text);
 }
 
 tfoot td {
@@ -2584,4 +2915,180 @@ td > svg {
   width: 18px;
   height: 18px;
   color: var(--text-faint);
+}
+
+/* ============================================================
+   Empty states, inline alerts, server picker
+   ============================================================ */
+
+/* Text first, then at most one action. No illustration: the page is a tool, and a blank
+   chart is the answer "nothing yet", not an error to decorate. */
+.empty {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 12px;
+  min-height: 96px;
+  margin: 0;
+  padding: 18px 12px;
+  color: var(--text-dim);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.empty p {
+  margin: 0;
+}
+
+/* A failed action, said where the action was. role="alert" on the element announces it. */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--danger);
+  border-radius: var(--shape-sm);
+  background: var(--surface-container);
+  color: var(--text);
+  font-size: 13px;
+  transition: opacity var(--dur-medium) var(--ease-standard),
+    transform var(--dur-medium) var(--ease-emphasized);
+}
+
+@supports (color: color-mix(in srgb, red, blue)) {
+  .alert {
+    border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+    background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  }
+}
+
+/* Sign-in with more than one server: one full-width row per server. */
+.server-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.server-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-md);
+  background: var(--surface-container);
+  transition: background var(--dur-short) var(--ease-standard);
+}
+
+.server-choice:hover {
+  background: var(--surface-container-high);
+}
+
+.server-choice .muted {
+  font-size: 12px;
+}
+
+/* ============================================================
+   Entry transitions
+   ============================================================ */
+
+/* Overlays fade in from their first frame. Where @starting-style is not supported the
+   element simply appears, which is what it did before there was any motion. */
+@starting-style {
+  .scrim,
+  .palette-scrim,
+  .modal-backdrop,
+  .drawer,
+  .palette,
+  .modal,
+  .alert {
+    opacity: 0;
+  }
+}
+
+/* Travel only for people who have not asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  @starting-style {
+    .drawer {
+      transform: translateX(-100%);
+    }
+
+    .palette,
+    .modal {
+      transform: translateY(-10px) scale(0.98);
+    }
+
+    .alert {
+      transform: translateY(-4px);
+    }
+  }
+}
+
+/* ============================================================
+   Touch input
+   ============================================================ */
+
+/* A finger is not a cursor: every control is at least 44px in its short side. Last in the
+   file so it wins over the compact desktop sizes above at equal specificity. */
+@media (pointer: coarse) {
+  button,
+  .search-trigger,
+  .seg a,
+  a.badge,
+  button.badge,
+  .link-out,
+  .back-link {
+    min-height: 44px;
+  }
+
+  /* Text-only buttons are inline in a sentence or a table cell. They get the full target
+     through padding that the negative margin takes back, so a row does not grow. */
+  button.link,
+  .ip-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 8px;
+    margin: -14px -8px;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* The whole line is the target, not just the box. */
+  label:has(> input[type='checkbox']),
+  label:has(> input[type='radio']) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+  }
+
+  /* A ranked row is one tap target high, and its link fills it instead of the text line. */
+  .bar-row {
+    min-height: 44px;
+    padding-block: 0;
+  }
+
+  a.bar-label {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+  }
+
+  /* The week grid is 168 small cells. They cannot all be 44px, but they can reach the 24px
+     floor of WCAG 2.5.8; the strip already scrolls sideways on a phone. */
+  .weekgrid {
+    grid-template-columns: 34px repeat(24, 24px);
+    min-width: max-content;
+  }
+
+  .weekgrid-cell {
+    height: 24px;
+  }
 }

@@ -1,4 +1,51 @@
 import type { Translate } from '@/i18n';
+import type { LabelledValue } from '@/server/stats';
+
+const WEEKDAY_SHORT = [
+  'weekday.mon',
+  'weekday.tue',
+  'weekday.wed',
+  'weekday.thu',
+  'weekday.fri',
+  'weekday.sat',
+  'weekday.sun',
+] as const;
+
+const WEEKDAY_LONG = [
+  'weekday.monday',
+  'weekday.tuesday',
+  'weekday.wednesday',
+  'weekday.thursday',
+  'weekday.friday',
+  'weekday.saturday',
+  'weekday.sunday',
+] as const;
+
+/**
+ * The server labels its weekday series in English ("Mon"…"Sun", Monday first). The position
+ * is the only thing it really says, so the label is rebuilt from that — the same words the
+ * week × hour grid uses, which keeps two charts on one page from disagreeing.
+ */
+export function localizeWeekdays(data: LabelledValue[], t: Translate): LabelledValue[] {
+  return data.map((d, index) => ({
+    ...d,
+    label: index < WEEKDAY_SHORT.length ? t(WEEKDAY_SHORT[index]) : d.label,
+  }));
+}
+
+/** Full weekday name for a Monday-first index, for use inside a sentence. */
+export function weekdayName(index: number, t: Translate): string {
+  return t(WEEKDAY_LONG[index] ?? WEEKDAY_LONG[0]);
+}
+
+/**
+ * Month labels for the twelve buckets the server returns in English. The month names come
+ * from the platform: unlike weekdays, no screen shows them anywhere else to stay in step with.
+ */
+export function localizeMonths(data: LabelledValue[], locale: string): LabelledValue[] {
+  const month = new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' });
+  return data.map((d, index) => ({ ...d, label: month.format(new Date(Date.UTC(2024, index, 1))) }));
+}
 
 export function formatDuration(ms: number): string {
   const minutes = Math.round(ms / 60000);
@@ -32,8 +79,28 @@ export function isoDay(value: Date | string): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+/** Next hands over `string | string[]` for a repeated key (`?by=a&by=b`); the first value wins. */
+export function firstParam(raw: string | string[] | undefined): string | undefined {
+  return Array.isArray(raw) ? raw[0] : raw;
+}
+
+/**
+ * A query-string integer within [min, max], else the fallback. Number() alone lets `abc`,
+ * `-1` and `1.5` through, and a NaN or fractional OFFSET makes SQLite throw a 500.
+ */
+export function intParam(
+  raw: string | string[] | undefined,
+  fallback: number,
+  min = 1,
+  max = 1_000_000,
+): number {
+  const value = Number(firstParam(raw));
+  return Number.isInteger(value) && value >= min && value <= max ? value : fallback;
+}
+
+// Clamped: a server can report a position past the runtime, and the scrub head would leave its track.
 export function percent(part: number, total: number): number {
-  return total > 0 ? Math.round((part / total) * 100) : 0;
+  return total > 0 ? Math.min(100, Math.max(0, Math.round((part / total) * 100))) : 0;
 }
 
 /**

@@ -138,22 +138,30 @@ export async function getWrapped(userId: number, year: number): Promise<Wrapped>
   `);
 
   // One entry per day of the year, so the heatmap has a fixed shape.
-  const calendarRows = await db.all<{ day: string; minutes: number }>(sql`
+  const calendarRows = await db.all<{ day: string; minutes: number; plays: number }>(sql`
     WITH RECURSIVE calendar(day) AS (
       SELECT ${`${year}-01-01`}
       UNION ALL
       SELECT date(day, '+1 day') FROM calendar WHERE day < ${`${year}-12-31`}
+    ),
+    -- Grouped once and joined to the calendar: joining the calendar to the raw rows evaluated
+    -- the date expression for every play once per day, seconds for a heavy year. The filter is
+    -- already this user and this year.
+    played(local_day, minutes, plays) AS (
+      SELECT date(watched_at / 1000, 'unixepoch', 'localtime'), sum(duration_ms) / 60000, count(*)
+      FROM watch_history
+      WHERE ${where}
+      GROUP BY 1
     )
-    SELECT calendar.day AS day, coalesce(sum(h.duration_ms), 0) / 60000 AS minutes
+    SELECT calendar.day AS day, coalesce(played.minutes, 0) AS minutes, coalesce(played.plays, 0) AS plays
     FROM calendar
-    LEFT JOIN watch_history h
-      ON date(h.watched_at / 1000, 'unixepoch', 'localtime') = calendar.day
-     AND h.user_id = ${userId}
-    GROUP BY calendar.day
+    LEFT JOIN played ON played.local_day = calendar.day
     ORDER BY calendar.day
   `);
 
-  const activeDays = calendarRows.filter((r) => Number(r.minutes) > 0).map((r) => r.day);
+  // Plays, not minutes: a play under a minute (or an import with no duration) still makes the
+  // day active in `active_days` above, so the streak must count it too.
+  const activeDays = calendarRows.filter((r) => Number(r.plays) > 0).map((r) => r.day);
   let longestStreak = 0;
   let current = 0;
   let previous: number | null = null;

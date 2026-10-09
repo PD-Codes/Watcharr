@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { badBody, readBody } from '@/server/body';
 import { updateSettings } from '@/server/config';
 import { sendNewsletter } from '@/server/newsletter';
 import { getSession } from '@/server/session';
@@ -16,31 +17,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
   }
 
-  const body = (await request.json()) as {
-    enabled?: boolean;
-    dayOfWeek?: number;
-    hour?: number;
-    days?: number;
-    libraries?: string[];
-    subject?: string;
-    intro?: string;
-    uniqueId?: string;
-    sendNow?: boolean;
-  };
+  const body = await readBody(request, {
+    enabled: 'boolean',
+    dayOfWeek: 'number',
+    hour: 'number',
+    days: 'number',
+    libraries: 'strings',
+    subject: 'string',
+    intro: 'string',
+    uniqueId: 'string',
+    sendNow: 'boolean',
+  });
+  if (!body) return badBody();
 
   // A test send must not silently use settings the admin has not saved yet, so the config
   // is written first and the send picks it up from there.
   await updateSettings({
-    newsletterEnabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
-    newsletterDayOfWeek: body.dayOfWeek,
-    newsletterHour: body.hour,
-    newsletterDays: body.days,
-    newsletterLibraries: Array.isArray(body.libraries)
-      ? body.libraries.filter((id): id is string => typeof id === 'string')
-      : undefined,
-    newsletterSubject: body.subject,
-    newsletterIntro: body.intro,
-    newsletterUniqueId: body.uniqueId,
+    newsletterEnabled: body.enabled ?? undefined,
+    newsletterDayOfWeek: body.dayOfWeek ?? undefined,
+    newsletterHour: body.hour ?? undefined,
+    newsletterDays: body.days ?? undefined,
+    newsletterLibraries: body.libraries ?? undefined,
+    newsletterSubject: body.subject ?? undefined,
+    newsletterIntro: body.intro ?? undefined,
+    newsletterUniqueId: body.uniqueId ?? undefined,
   });
 
   if (body.sendNow) {

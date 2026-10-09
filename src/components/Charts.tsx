@@ -7,15 +7,90 @@ import type { Translate } from '@/i18n';
 // Charts are server-rendered SVG. Interaction is CSS plus the shared Tooltip component,
 // so there is no charting dependency and no client-side data fetching.
 //
-// Colour rule: amber is data. Intensity separates series, never hue.
+// Color rule: amber is data. Intensity separates series, never hue.
 
-const RAMP = [
-  'var(--beam)',
-  'rgba(255, 176, 32, 0.72)',
-  'rgba(255, 176, 32, 0.5)',
-  'rgba(255, 176, 32, 0.34)',
-  'rgba(255, 176, 32, 0.22)',
-];
+const RAMP = [1, 0.72, 0.5, 0.34, 0.22];
+const rampOpacity = (index: number) => RAMP[index % RAMP.length];
+
+/**
+ * An SVG label scales with its viewBox, so a 10-unit label in a 760-wide chart is about 4px
+ * on a phone. This is the size, in viewBox units, that renders at roughly 9px when the chart
+ * fills a 330px card; the stylesheet applies it only on narrow screens.
+ */
+const phoneAxis = (width: number) =>
+  ({ '--axis-phone': `${((9 * width) / 330).toFixed(1)}px` }) as React.CSSProperties;
+
+/** Axis labels drop the year of an ISO date: "2026-09-10" reads as "09-10". */
+const shortLabel = (label: string) => (label.length > 5 ? label.slice(5) : label);
+
+/** Width of a phone-sized axis label in viewBox units; 0.62em is the mono advance. */
+const labelWidth = (label: string, width: number) =>
+  shortLabel(label).length * 0.62 * ((9 * width) / 330);
+
+/**
+ * Where a label goes. Centred on its point, unless that would push it past the viewBox, in
+ * which case it hangs inward from the edge instead of being cut in half.
+ */
+function placeLabel(center: number, label: string, width: number) {
+  const half = labelWidth(label, width) / 2;
+  if (center - half < 0) return { x: 0, anchor: 'start' as const };
+  if (center + half > width) return { x: width, anchor: 'end' as const };
+  return { x: center, anchor: 'middle' as const };
+}
+
+const labelAt = (center: number, label: string, width: number) => {
+  const { x, anchor } = placeLabel(center, label, width);
+  return { x, textAnchor: anchor };
+};
+
+/**
+ * The smallest label step at which phone-sized labels (see phoneAxis) do not touch. Callers
+ * may ask for more, never less: a step chosen for the desktop size ran the labels together
+ * on a phone. A first label that had to hang inward leaves less room beside it, so the gap
+ * is widened in that case only.
+ */
+function labelStep(labels: string[], width: number, slot: number, requested = 1, firstCenter = slot / 2) {
+  const widest = Math.max(1, ...labels.map((label) => labelWidth(label, width)));
+  const room = firstCenter < widest / 2 ? 1.5 : 1;
+  return Math.max(requested, Math.ceil((widest * room + 8) / slot));
+}
+
+/**
+ * Half and full scale lines plus the baseline, the same on every chart, with the top value
+ * written on the line. Gridlines with no scale say nothing about the numbers they frame.
+ */
+function Scale({
+  width,
+  base,
+  plot,
+  max,
+  format,
+}: {
+  width: number;
+  base: number;
+  plot: number;
+  max: number;
+  format: (value: number) => string;
+}) {
+  return (
+    <>
+      {[0.5, 1].map((fraction) => (
+        <line
+          key={fraction}
+          className="gl"
+          x1="0"
+          x2={width}
+          y1={base - plot * fraction}
+          y2={base - plot * fraction}
+        />
+      ))}
+      <text className="axis axis-halo" x="2" y={base - plot - 5} pointerEvents="none">
+        {format(max)}
+      </text>
+      <line className="baseline" x1="0" x2={width} y1={base} y2={base} />
+    </>
+  );
+}
 
 const niceMax = (values: number[]) => Math.max(1, ...values);
 const identity = (value: number) => String(value);
@@ -28,6 +103,8 @@ export function StatCard({
   href,
   trend,
   spark,
+  meter,
+  dots,
 }: {
   label: string;
   value: string;
@@ -38,19 +115,35 @@ export function StatCard({
   trend?: number | null;
   /** Tiny series drawn under the number for shape at a glance. */
   spark?: number[];
+  /** 0..1 — how full a bounded quantity is (active days of the period). */
+  meter?: number;
+  /** One lit/unlit cell per day, oldest first — a streak you can see. */
+  dots?: boolean[];
 }) {
   const body = (
     <>
       <p className="stat-label">
         {label}
         {info && (
-          <span className="info" data-tip={info} aria-label={info} tabIndex={0}>
+          <span className="info" role="img" data-tip={info} aria-label={info} tabIndex={0}>
             i
           </span>
         )}
       </p>
       <p className="stat-value">{value}</p>
       {spark && spark.length > 1 && <Sparkline values={spark} />}
+      {meter !== undefined && (
+        <span className="meter" aria-hidden>
+          <span style={{ width: `${Math.round(Math.min(1, Math.max(0, meter)) * 100)}%` }} />
+        </span>
+      )}
+      {dots && (
+        <span className="dots" aria-hidden>
+          {dots.map((on, index) => (
+            <span key={index} className={on ? 'on' : undefined} />
+          ))}
+        </span>
+      )}
       <p className="stat-hint">
         {trend !== undefined && trend !== null && (
           <span className={`trend ${trend >= 0 ? 'up' : 'down'}`}>
@@ -73,18 +166,26 @@ export function StatCard({
 
 export async function EmptyChart({ label }: { label?: string }) {
   const t = await getT();
-  return <p className="muted">{label ?? t('common.noData')}</p>;
+  return <p className="empty">{label ?? t('common.noData')}</p>;
 }
 
 /** Bare trend line for stat cards — no axes, no labels, just the shape. */
 export function Sparkline({ values }: { values: number[] }) {
   const max = niceMax(values);
   const step = 100 / Math.max(1, values.length - 1);
-  const points = values.map((value, index) => `${index * step},${20 - (value / max) * 18}`);
+  const points = values.map((value, index) => `${index * step},${19 - (value / max) * 16}`);
 
   return (
     <svg className="spark" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden>
-      <polyline points={points.join(' ')} fill="none" stroke="var(--beam-dim)" strokeWidth="1.5" />
+      <polygon points={`0,20 ${points.join(' ')} 100,20`} fill="var(--beam-wash)" />
+      <polyline
+        points={points.join(' ')}
+        fill="none"
+        stroke="var(--beam-dim)"
+        strokeWidth="1.5"
+        vectorEffect="non-scaling-stroke"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -179,11 +280,11 @@ export async function AreaChart({
   const width = 760;
   const height = 200;
   const padBottom = 26;
-  const padTop = 10;
+  const padTop = 22;
   const max = niceMax(data.map((d) => d.value));
   const plot = height - padBottom - padTop;
   const step = width / (data.length - 1);
-  const every = labelEvery ?? Math.ceil(data.length / 10);
+  const every = labelStep(data.map((d) => d.label), width, step, labelEvery, 0);
 
   const points = data.map((d, index) => ({
     x: index * step,
@@ -200,7 +301,7 @@ export async function AreaChart({
   }
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="chart" role="img">
+    <svg viewBox={`0 0 ${width} ${height}`} className="chart" role="img" style={phoneAxis(width)}>
       <title>{label ?? describe(t, data, format)}</title>
       <defs>
         <linearGradient id="area-fill" x1="0" y1="0" x2="0" y2="1">
@@ -209,17 +310,7 @@ export async function AreaChart({
         </linearGradient>
       </defs>
 
-      {[0.25, 0.5, 0.75, 1].map((fraction) => (
-        <line
-          key={fraction}
-          x1="0"
-          x2={width}
-          y1={padTop + plot - plot * fraction}
-          y2={padTop + plot - plot * fraction}
-          stroke="var(--line)"
-          strokeDasharray="2 6"
-        />
-      ))}
+      <Scale width={width} base={padTop + plot} plot={plot} max={max} format={format} />
 
       <path className="area-fill" d={`${path} L ${width} ${padTop + plot} L 0 ${padTop + plot} Z`} fill="url(#area-fill)" />
       <path className="area-line" d={path} fill="none" stroke="var(--beam)" strokeWidth="2" strokeLinecap="round" />
@@ -237,14 +328,12 @@ export async function AreaChart({
           <circle cx={points[index].x} cy={points[index].y} r="3.5" fill="var(--beam)" pointerEvents="none" />
           {index % every === 0 && (
             <text
-              x={points[index].x}
+              className="axis"
               y={height - 8}
-              fill="var(--text-faint)"
-              fontSize="10"
-              textAnchor="middle"
+              {...labelAt(points[index].x, d.label, width)}
               pointerEvents="none"
             >
-              {d.label.length > 5 ? d.label.slice(5) : d.label}
+              {shortLabel(d.label)}
             </text>
           )}
         </g>
@@ -276,23 +365,13 @@ export async function ColumnChart({
   const max = niceMax(data.map((d) => d.value));
   const slot = width / data.length;
   const barWidth = Math.min(44, Math.max(3, slot * 0.62));
-  const plot = height - padBottom - 8;
+  const plot = height - padBottom - 22;
+  const every = labelStep(data.map((d) => d.label), width, slot, labelEvery);
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="chart columns" role="img">
+    <svg viewBox={`0 0 ${width} ${height}`} className="chart columns" role="img" style={phoneAxis(width)}>
       <title>{label ?? describe(t, data, format)}</title>
-      {[0.5, 1].map((fraction) => (
-        <line
-          key={fraction}
-          x1="0"
-          x2={width}
-          y1={height - padBottom - plot * fraction}
-          y2={height - padBottom - plot * fraction}
-          stroke="var(--line)"
-          strokeDasharray="2 6"
-        />
-      ))}
-      <line x1="0" y1={height - padBottom} x2={width} y2={height - padBottom} stroke="var(--line-strong)" />
+      <Scale width={width} base={height - padBottom} plot={plot} max={max} format={format} />
 
       {data.map((d, index) => {
         const barHeight = Math.max((plot * d.value) / max, d.value > 0 ? 2 : 0);
@@ -309,16 +388,14 @@ export async function ColumnChart({
               style={{ animationDelay: `${index * 18}ms`, transformOrigin: `0 ${height - padBottom}px` }}
               pointerEvents="none"
             />
-            {index % labelEvery === 0 && (
+            {index % every === 0 && (
               <text
-                x={index * slot + slot / 2}
+                className="axis"
                 y={height - 8}
-                fill="var(--text-faint)"
-                fontSize="10"
-                textAnchor="middle"
+                {...labelAt(index * slot + slot / 2, d.label, width)}
                 pointerEvents="none"
               >
-                {d.label.length > 5 ? d.label.slice(5) : d.label}
+                {shortLabel(d.label)}
               </text>
             )}
           </g>
@@ -333,7 +410,7 @@ export async function ColumnChart({
  * is what makes "are transcodes growing, or is everything growing?" answerable at a glance —
  * two separate charts side by side never answer that.
  *
- * Series are separated by intensity down the amber ramp, never by hue: the colour rule
+ * Series are separated by intensity down the amber ramp, never by hue: the color rule
  * holds here too.
  */
 export async function StackedColumnChart({
@@ -356,15 +433,15 @@ export async function StackedColumnChart({
   const width = 760;
   const height = 200;
   const padBottom = 26;
-  const plot = height - padBottom - 10;
+  const plot = height - padBottom - 22;
   const max = niceMax(totals);
   const slot = width / labels.length;
   const barWidth = Math.min(30, Math.max(2, slot * 0.66));
-  const every = labelEvery ?? Math.ceil(labels.length / 12);
+  const every = labelStep(labels, width, slot, labelEvery);
 
   return (
     <>
-      <svg viewBox={`0 0 ${width} ${height}`} className="chart columns" role="img">
+      <svg viewBox={`0 0 ${width} ${height}`} className="chart columns" role="img" style={phoneAxis(width)}>
         <title>
           {t('chart.describeStacked', {
             series: series.map((s) => s.label).join(', '),
@@ -372,18 +449,7 @@ export async function StackedColumnChart({
             peak: format(Math.max(...totals)),
           })}
         </title>
-        {[0.5, 1].map((fraction) => (
-          <line
-            key={fraction}
-            x1="0"
-            x2={width}
-            y1={height - padBottom - plot * fraction}
-            y2={height - padBottom - plot * fraction}
-            stroke="var(--line)"
-            strokeDasharray="2 6"
-          />
-        ))}
-        <line x1="0" y1={height - padBottom} x2={width} y2={height - padBottom} stroke="var(--line-strong)" />
+        <Scale width={width} base={height - padBottom} plot={plot} max={max} format={format} />
 
         {labels.map((label, index) => {
           // Segments are laid out bottom-up, so each one needs the height of everything
@@ -409,21 +475,20 @@ export async function StackedColumnChart({
                     y={y}
                     width={barWidth}
                     height={segment}
-                    fill={RAMP[seriesIndex % RAMP.length]}
+                    fill="var(--beam)"
+                    fillOpacity={rampOpacity(seriesIndex)}
                     pointerEvents="none"
                   />
                 );
               })}
               {index % every === 0 && (
                 <text
-                  x={index * slot + slot / 2}
+                  className="axis"
                   y={height - 8}
-                  fill="var(--text-faint)"
-                  fontSize="10"
-                  textAnchor="middle"
+                  {...labelAt(index * slot + slot / 2, label, width)}
                   pointerEvents="none"
                 >
-                  {label.length > 5 ? label.slice(5) : label}
+                  {shortLabel(label)}
                 </text>
               )}
             </g>
@@ -433,7 +498,7 @@ export async function StackedColumnChart({
       <ul className="legend">
         {series.map((s, index) => (
           <li key={s.label}>
-            <span className="dot" style={{ background: RAMP[index % RAMP.length] }} />
+            <span className="dot" style={{ background: 'var(--beam)', opacity: rampOpacity(index) }} />
             {s.label}
             <span className="muted"> {format(s.values.reduce((sum, v) => sum + v, 0))}</span>
           </li>
@@ -465,7 +530,7 @@ export async function DonutChart({
     <div className="donut-wrap">
       <svg viewBox="0 0 160 160" className="donut" role="img">
         <title>{label ?? describe(t, data, format)}</title>
-        <circle cx="80" cy="80" r={radius} fill="none" stroke="rgba(255,255,255,.04)" strokeWidth="18" />
+        <circle cx="80" cy="80" r={radius} fill="none" stroke="var(--line)" strokeWidth="18" />
         <g transform="rotate(-90 80 80)">
           {data.map((d, index) => {
             const length = (d.value / total) * circumference;
@@ -477,7 +542,8 @@ export async function DonutChart({
                 cy="80"
                 r={radius}
                 fill="none"
-                stroke={RAMP[index % RAMP.length]}
+                stroke="var(--beam)"
+                strokeOpacity={rampOpacity(index)}
                 strokeWidth="18"
                 strokeDasharray={`${length} ${circumference - length}`}
                 strokeDashoffset={-offset}
@@ -491,8 +557,11 @@ export async function DonutChart({
       </svg>
       <ul className="legend">
         {data.map((d, index) => (
-          <li key={d.label} data-tip={`${format(d.value)} of ${format(total)}`}>
-            <span className="dot" style={{ background: RAMP[index % RAMP.length] }} />
+          <li
+            key={d.label}
+            data-tip={t('chart.legendTip', { value: format(d.value), total: format(total) })}
+          >
+            <span className="dot" style={{ background: 'var(--beam)', opacity: rampOpacity(index) }} />
             {d.label}
             <span className="muted"> {Math.round((d.value / total) * 100)}%</span>
           </li>
@@ -508,14 +577,17 @@ export async function DonutChart({
  */
 function FrameCell({ href, tip, opacity }: { href?: string; tip: string; opacity: number }) {
   if (!href) return <span className="frame" data-tip={tip} style={{ opacity }} />;
-  return <Link className="frame" href={href} data-tip={tip} aria-label={tip} style={{ opacity }} />;
+  // No prefetch: a year of frames is hundreds of links, and each prefetch renders a page.
+  return (
+    <Link className="frame" href={href} prefetch={false} data-tip={tip} aria-label={tip} style={{ opacity }} />
+  );
 }
 
 /**
  * A year of watching as a strip of film: one frame per day, sprocket holes along the
  * edges. Brighter frames are more exposed — more minutes watched that day.
  */
-export function Heatmap({
+export async function Heatmap({
   data,
   format = identity,
   hrefFor,
@@ -526,14 +598,27 @@ export function Heatmap({
   hrefFor?: (day: string) => string;
 }) {
   if (!data.length) return <EmptyChart />;
+  const t = await getT();
   const max = niceMax(data.map((d) => d.value));
+
+  // A strip of colored squares says nothing to a screen reader, so the grid gets one
+  // sentence instead. With links the frames are real controls and must stay reachable, so
+  // it is a labeled group; without them the whole strip is a single image.
+  const peak = data.reduce((best, d) => (d.value > best.value ? d : best), data[0]);
+  const summary = t('chart.describeHeatmap', {
+    days: data.length,
+    active: data.filter((d) => d.value > 0).length,
+    total: format(data.reduce((sum, d) => sum + d.value, 0)),
+    day: peak.label,
+    value: format(peak.value),
+  });
 
   const firstWeekday = (new Date(`${data[0].label}T00:00:00Z`).getUTCDay() + 6) % 7;
   const cells: (LabelledValue | null)[] = [...Array<null>(firstWeekday).fill(null), ...data];
   const perforations = Math.ceil(cells.length / 7);
 
   return (
-    <div className="filmstrip">
+    <div className="filmstrip" role={hrefFor ? 'group' : 'img'} aria-label={summary}>
       <div className="perf" aria-hidden>
         {Array.from({ length: perforations }, (_, index) => (
           <span key={index} />
@@ -590,9 +675,27 @@ export async function WeekHourGrid({
     t('weekday.sun'),
   ];
 
+  // The busiest cell, as one sentence for assistive technology (see Heatmap).
+  let peakDay = 0;
+  let peakHour = 0;
+  data.forEach((row, dayIndex) =>
+    row.forEach((value, hour) => {
+      if (value > (data[peakDay][peakHour] ?? 0)) {
+        peakDay = dayIndex;
+        peakHour = hour;
+      }
+    }),
+  );
+  const summary = t('chart.describeWeek', {
+    total: format(flat.reduce((sum, value) => sum + value, 0)),
+    day: days[peakDay],
+    hour: String(peakHour).padStart(2, '0'),
+    value: format(data[peakDay][peakHour] ?? 0),
+  });
+
   return (
     <div className="weekgrid-wrap">
-      <div className="weekgrid">
+      <div className="weekgrid" role={hrefFor ? 'group' : 'img'} aria-label={summary}>
         <span />
         {Array.from({ length: 24 }, (_, hour) => (
           <span key={hour} className="weekgrid-hour">
@@ -613,6 +716,7 @@ export async function WeekHourGrid({
                   key={`${day}-${hour}`}
                   className="weekgrid-cell"
                   href={href}
+                  prefetch={false}
                   data-tip={tip}
                   aria-label={tip}
                   style={{ opacity }}

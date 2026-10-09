@@ -459,10 +459,6 @@
     "en": "Server",
     "de": "Server"
   },
-  "libraries.subtitle": {
-    "en": "What is on the server, what arrived recently, and what is still sitting there unwatched.",
-    "de": "Was auf dem Server liegt, was zuletzt dazugekommen ist und was noch ungesehen dort liegt."
-  },
   "libraries.none": {
     "en": "The media server did not report any libraries.",
     "de": "Der Media-Server hat keine Bibliotheken gemeldet."
@@ -470,10 +466,6 @@
   "libraries.moviesLower": {
     "en": "movies",
     "de": "Filme"
-  },
-  "libraries.sectionInfo": {
-    "en": "Opens this library's own usage figures.",
-    "de": "Öffnet die Nutzungszahlen dieser Bibliothek."
   },
   "libraries.recentlyAdded": {
     "en": "Recently added",

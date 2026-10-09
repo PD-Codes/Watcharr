@@ -32,7 +32,6 @@
   "users.neverSignedIn": { "en": "never signed in", "de": "nie angemeldet" },
   "users.lastSeen": { "en": "last seen {date}", "de": "zuletzt gesehen {date}" },
   "users.tabDevices": { "en": "Devices & IPs", "de": "Geräte & IPs" },
-  "users.tabSessions": { "en": "Sessions", "de": "Sitzungen" },
   "users.watchTimeInfo": { "en": "Sum of the runtime of every recorded play.", "de": "Summe der Laufzeit aller erfassten Wiedergaben." },
   "users.activeDays": { "en": "{count} active days", "de": "{count} aktive Tage" },
   "users.distinctTitles": { "en": "Distinct titles", "de": "Verschiedene Titel" },

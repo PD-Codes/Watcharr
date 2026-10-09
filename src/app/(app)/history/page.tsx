@@ -4,7 +4,7 @@ import { db } from '@/db';
 import { watchHistory } from '@/db/schema';
 import { Icon } from '@/components/Icons';
 import TitleLink from '@/components/TitleLink';
-import { formatDate, formatDuration, isoDay } from '@/components/format';
+import { firstParam, formatDate, formatDuration, intParam, isoDay } from '@/components/format';
 import { historyFilters } from '@/server/history';
 import { reportSyncError, syncHistory } from '@/server/sync';
 import { requireUser } from '@/server/session';
@@ -51,14 +51,18 @@ function withParams(params: Params, patch: Record<string, string | undefined>): 
 export default async function HistoryPage({
   searchParams,
 }: {
-  searchParams: Promise<Params>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await requireUser();
   const t = await getT();
   await syncHistory(session).catch(reportSyncError('history sync'));
 
-  const params = await searchParams;
-  const page = Math.max(1, Number(params.page ?? 1));
+  const raw = await searchParams;
+  // A repeated key arrives as an array, and an array reaching a bound SQL parameter is a 500.
+  const params: Params = Object.fromEntries(
+    Object.entries(raw).map(([key, value]) => [key, firstParam(value)]),
+  );
+  const page = intParam(params.page, 1);
   const where = historyFilters(session.user.id, params);
 
   const [rows, [count]] = await Promise.all([

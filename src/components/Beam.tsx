@@ -14,7 +14,7 @@ const PLAY_METHOD_KEYS = {
 /**
  * The signature element: what is playing, right now. This is the only place in the
  * interface that lights up — the amber wash and the playhead exist solely while a
- * session is live, which is what makes "colour means playing" readable at a glance.
+ * session is live, which is what makes "color means playing" readable at a glance.
  */
 export default async function Beam({
   session,

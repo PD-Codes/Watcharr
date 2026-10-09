@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { badBody, readBody } from '@/server/body';
 import { subscribe, unsubscribe } from '@/server/newsletter';
 import { getSession } from '@/server/session';
 
@@ -13,8 +14,9 @@ export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Sign in first' }, { status: 401 });
 
-  const { email } = (await request.json()) as { email?: string };
-  const address = email?.trim() ?? '';
+  const body = await readBody(request, { email: 'string' });
+  if (!body) return badBody();
+  const address = body.email?.trim() ?? '';
   if (!EMAIL.test(address)) {
     return NextResponse.json({ error: 'That does not look like an email address' }, { status: 400 });
   }

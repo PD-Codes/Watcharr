@@ -1,0 +1,302 @@
+/*
+ * Shell additions: icon rail, desktop top bar, page-enter motion, theme-switch reveal.
+ * Loaded after globals.css, so these rules extend the shell blocks defined there.
+ */
+
+/* --- Desktop top bar ---------------------------------------------------------------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--topbar-h);
+  padding: 0 36px;
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--backdrop);
+  backdrop-filter: var(--backdrop);
+  border-bottom: 1px solid var(--glass-line);
+}
+
+.topbar .search-trigger {
+  width: min(380px, 42%);
+  margin: 0;
+}
+
+.topbar-spacer {
+  flex: 1;
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--shape-full);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  transition: background var(--dur-short) var(--ease-standard),
+    border-color var(--dur-short) var(--ease-standard);
+}
+
+.live-pill:hover {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+.live-pill.on {
+  color: var(--text);
+  border-color: var(--beam-soft);
+  background: var(--beam-wash);
+}
+
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--surface-container-highest);
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 112;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.avatar:hover {
+  background: var(--surface-container-high);
+}
+
+@media (max-width: 880px) {
+  .topbar {
+    display: none;
+  }
+}
+
+/* --- Skip link and focus target ---------------------------------------------------- */
+
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 12px 18px;
+  border-radius: var(--shape-full);
+  background: var(--surface-container-highest);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--elev-3);
+  transform: translateY(-160%);
+}
+
+.skip-link:focus-visible {
+  transform: none;
+}
+
+/* <main> takes programmatic focus after the skip link; a ring around the page is noise. */
+.main:focus {
+  outline: none;
+}
+
+/* --- Icon rail ---------------------------------------------------------------------- */
+
+.rail-toggle {
+  width: 40px;
+  height: 40px;
+}
+
+@media (min-width: 881px) {
+  html[data-rail='1'] .sidebar {
+    width: var(--rail-w);
+    flex-basis: var(--rail-w);
+    padding-inline: 10px;
+  }
+
+  html[data-rail='1'] .sidebar .wordmark {
+    justify-content: center;
+    padding: 0;
+  }
+
+  html[data-rail='1'] .sidebar .wordmark span:not(.bulb),
+  html[data-rail='1'] .sidebar .group,
+  html[data-rail='1'] .sidebar nav a .badge {
+    display: none;
+  }
+
+  /* Clipped, not display:none: the label is still the link's accessible name. */
+  html[data-rail='1'] .sidebar .nav-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  html[data-rail='1'] .sidebar nav a {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  html[data-rail='1'] .sidebar nav a svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* The live bulb next to "Activity" becomes a corner dot on the icon. */
+  html[data-rail='1'] .sidebar nav a > .bulb {
+    position: absolute;
+    top: 9px;
+    right: 15px;
+  }
+
+  html[data-rail='1'] .sidebar nav a.active::before {
+    left: -10px;
+  }
+
+  html[data-rail='1'] .sidebar-foot {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  html[data-rail='1'] .sidebar-foot nav {
+    flex: none;
+    width: 100%;
+  }
+}
+
+@media (max-width: 880px) {
+  .rail-toggle {
+    display: none;
+  }
+}
+
+/* --- Page-enter motion --------------------------------------------------------------
+   Children of <main> rise in, a hair apart. The end state is `transform: none`, which
+   (unlike a leftover translate) creates no containing block, so sticky table heads and
+   fixed overlays inside a page keep working once the motion is over. */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.main > * {
+  animation: rise var(--dur-long) var(--ease-emphasized) both;
+}
+
+.main > :nth-child(2) {
+  animation-delay: 30ms;
+}
+.main > :nth-child(3) {
+  animation-delay: 60ms;
+}
+.main > :nth-child(4) {
+  animation-delay: 90ms;
+}
+.main > :nth-child(5) {
+  animation-delay: 120ms;
+}
+.main > :nth-child(n + 6) {
+  animation-delay: 150ms;
+}
+
+/* --- Theme switch: a circle of the new scheme grows out of the toggle ------------------ */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-new(root) {
+  animation: theme-reveal 520ms var(--ease-emphasized) both;
+  z-index: 2;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0 at var(--reveal-x, 50%) var(--reveal-y, 50%));
+  }
+  to {
+    clip-path: circle(150vmax at var(--reveal-x, 50%) var(--reveal-y, 50%));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .main > *,
+  .shell[data-live='1']::after {
+    animation: none !important;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* --- Link buttons -------------------------------------------------------------------
+   The anchor twin of the `button` styles in globals.css: filled neutral by default, and
+   `.ghost` for the quiet outline. Never amber — a button is not data. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 22px;
+  border-radius: var(--shape-full);
+  background: var(--text);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 13.5px;
+  transition: box-shadow var(--dur-medium) var(--ease-standard),
+    filter var(--dur-short) var(--ease-standard), background var(--dur-short) var(--ease-standard);
+}
+
+.btn:hover {
+  box-shadow: var(--elev-2);
+  filter: brightness(1.08);
+}
+
+.btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.btn.ghost {
+  background: none;
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+}
+
+.btn.ghost:hover {
+  background: var(--state-hover);
+  box-shadow: none;
+  filter: none;
+}

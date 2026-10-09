@@ -4,7 +4,7 @@ import { db } from '@/db';
 import { watchHistory } from '@/db/schema';
 import { Icon } from '@/components/Icons';
 import Poster from '@/components/Poster';
-import { artUrl, formatDate, formatDuration, formatTimeAgo } from '@/components/format';
+import { artUrl, firstParam, formatDate, formatDuration, formatTimeAgo } from '@/components/format';
 import { getLibrary, getSections } from '@/server/library';
 import { getLibraryTotals } from '@/server/librarystats';
 import { adminScope, isAdmin, requireUser } from '@/server/session';
@@ -82,11 +82,13 @@ function compare(a: Row, b: Row, sort: SortKey): number {
 export default async function LibrariesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string; dir?: string; q?: string }>;
+  searchParams: Promise<{ sort?: string; dir?: string; q?: string | string[] }>;
 }) {
   const session = await requireUser();
   const t = await getT();
-  const params = await searchParams;
+  const raw = await searchParams;
+  // `?q=a&q=b` is an array, and .trim() on one is a 500.
+  const params = { ...raw, q: firstParam(raw.q) };
   const serverId = session.user.serverId;
   const scope = isAdmin(session.user) ? adminScope(session.user) : { userId: session.user.id };
 

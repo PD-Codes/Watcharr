@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { badBody, readBody } from '@/server/body';
 import { getServer } from '@/server/config';
 import { getSession } from '@/server/session';
 import { importFromTautulli } from '@/server/tautulli';
@@ -22,26 +23,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
   }
 
-  const body = (await request.json().catch(() => null)) as {
-    path?: string;
-    serverId?: number;
-    dryRun?: boolean;
-    days?: number;
-  } | null;
+  const body = await readBody(request, {
+    path: 'string',
+    serverId: 'number',
+    dryRun: 'boolean',
+    days: 'number',
+  });
+  if (!body) return badBody();
 
-  const path = body?.path?.trim();
-  const serverId = Number(body?.serverId);
+  const path = body.path?.trim();
+  const serverId = Number(body.serverId);
   if (!path) return NextResponse.json({ error: 'A database path is required' }, { status: 400 });
   if (!Number.isInteger(serverId) || !(await getServer(serverId))) {
     return NextResponse.json({ error: 'Unknown server' }, { status: 400 });
   }
 
-  const days = Number(body?.days);
+  const days = Number(body.days);
   const sinceMs = Number.isFinite(days) && days > 0 ? Date.now() - days * 86_400_000 : 0;
 
   try {
     const summary = await importFromTautulli(path, serverId, {
-      dryRun: body?.dryRun === true,
+      dryRun: body.dryRun === true,
       sinceMs,
     });
     return NextResponse.json({ ok: true, ...summary });

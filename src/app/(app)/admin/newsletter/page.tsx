@@ -1,8 +1,8 @@
 import { formatDate } from '@/components/format';
 import { getSettings, listServers } from '@/server/config';
-import { getSections } from '@/server/library';
+import { getSections, sectionKey } from '@/server/library';
 import { listChannels } from '@/server/notifications';
-import { listSubscribers } from '@/server/newsletter';
+import { listSubscribers, normalizeLibraries } from '@/server/newsletter';
 import { requireGlobalAdmin } from '@/server/session';
 import { getT } from '@/i18n/server';
 import NewsletterForm, { type LibraryOption } from './NewsletterForm';
@@ -19,13 +19,14 @@ export default async function AdminNewsletterPage() {
     listServers(),
   ]);
 
-  // Sections from every configured server, prefixed so two servers cannot collide on an id.
+  // Sections from every configured server, keyed with the server so two servers cannot collide
+  // on an id (Plex numbers its libraries per server).
   const libraries: LibraryOption[] = (
     await Promise.all(
       servers.map(async (server) => {
         const sections = await getSections(server.id).catch(() => []);
         return sections.map((section) => ({
-          id: section.id,
+          id: sectionKey(server.id, section.id),
           name: servers.length > 1 ? `${server.label} · ${section.name}` : section.name,
         }));
       }),
@@ -44,7 +45,10 @@ export default async function AdminNewsletterPage() {
         hour={settings.newsletterHour}
         days={settings.newsletterDays}
         libraries={libraries}
-        selectedLibraries={settings.newsletterLibraries}
+        selectedLibraries={normalizeLibraries(
+          settings.newsletterLibraries,
+          servers.map((server) => server.id),
+        )}
         subject={settings.newsletterSubject}
         intro={settings.newsletterIntro}
         uniqueId={settings.newsletterUniqueId}

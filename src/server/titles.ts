@@ -1,7 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
-import type { LabelledValue, Scope } from './stats';
+import { scopeFilter, type LabelledValue, type Scope } from './stats';
 
 export interface TitleDetail {
   label: string;
@@ -34,9 +34,10 @@ export interface TitleDetail {
  */
 export async function getTitleDetail(label: string, scope: Scope): Promise<TitleDetail | null> {
   const matches = sql`coalesce(grandparent_title, title) = ${label}`;
-  const scoped =
-    scope.userId === null ? sql`1 = 1` : sql`user_id = ${scope.userId}`;
-  const where = sql`${matches} AND ${scoped}`;
+  // scopeFilter() is the one place a scope becomes SQL. The inline userId check this
+  // replaced ignored scope.serverId, so a server admin saw the plays, devices and viewers
+  // of every other server for any title the two servers had in common.
+  const where = sql`${matches} AND ${scopeFilter(scope)}`;
 
   const [summary] = await db.all<{
     item_id: string | null;
@@ -81,7 +82,7 @@ export async function getTitleDetail(label: string, scope: Scope): Promise<Title
     SELECT u.username AS label, sum(h.duration_ms) / 60000 AS minutes
     FROM watch_history h
     JOIN users u ON u.id = h.user_id
-    WHERE coalesce(h.grandparent_title, h.title) = ${label}
+    WHERE coalesce(h.grandparent_title, h.title) = ${label} AND ${scopeFilter(scope, 'h.')}
     GROUP BY u.id
     ORDER BY minutes DESC
   `);
@@ -91,14 +92,20 @@ export async function getTitleDetail(label: string, scope: Scope): Promise<Title
       SELECT date('now', 'localtime', '-29 days')
       UNION ALL
       SELECT date(day, '+1 day') FROM calendar WHERE day < date('now', 'localtime')
+    ),
+    -- Grouped once and joined to the calendar, not the other way round: the date expression
+    -- cannot use an index, so the join evaluated it for every matching play once per day.
+    -- The 31 days are a prefilter only, the join is exact.
+    played(local_day, minutes) AS (
+      SELECT date(watched_at / 1000, 'unixepoch', 'localtime'), sum(duration_ms) / 60000
+      FROM watch_history
+      WHERE ${matches} AND ${scopeFilter(scope)}
+        AND watched_at >= (unixepoch('now', '-31 days') * 1000)
+      GROUP BY 1
     )
-    SELECT calendar.day AS day, coalesce(sum(h.duration_ms), 0) / 60000 AS minutes
+    SELECT calendar.day AS day, coalesce(played.minutes, 0) AS minutes
     FROM calendar
-    LEFT JOIN watch_history h
-      ON date(h.watched_at / 1000, 'unixepoch', 'localtime') = calendar.day
-     AND coalesce(h.grandparent_title, h.title) = ${label}
-     AND ${scope.userId === null ? sql`1 = 1` : sql`h.user_id = ${scope.userId}`}
-    GROUP BY calendar.day
+    LEFT JOIN played ON played.local_day = calendar.day
     ORDER BY calendar.day
   `);
 
@@ -172,7 +179,7 @@ export async function getTitleDetail(label: string, scope: Scope): Promise<Title
  * the truth: the media server has not counted this as played yet.
  */
 async function liveItemDetail(itemId: string, scope: Scope): Promise<ItemDetail | null> {
-  const scoped = scope.userId === null ? sql`1 = 1` : sql`user_id = ${scope.userId}`;
+  const scoped = scopeFilter(scope);
   const [row] = await db.all<{
     title: string;
     show_label: string | null;
@@ -200,7 +207,7 @@ async function liveItemDetail(itemId: string, scope: Scope): Promise<ItemDetail 
     SELECT u.username AS label, sum(p.progress_ms) / 60000 AS minutes
     FROM playback_sessions p
     JOIN users u ON u.id = p.user_id
-    WHERE p.item_id = ${itemId}
+    WHERE p.item_id = ${itemId} AND ${scopeFilter(scope, 'p.')}
     GROUP BY u.id
     ORDER BY minutes DESC
   `);
@@ -273,7 +280,7 @@ export async function getItemMedia(itemId: string, serverId: number): Promise<It
            coalesce(source_height, height) AS height,
            coalesce(source_bitrate_kbps, bitrate_kbps) AS bitrate
     FROM playback_sessions
-    WHERE item_id = ${itemId}
+    WHERE item_id = ${itemId} AND session_key LIKE ${`${serverId}:%`}
     ORDER BY started_at DESC
     LIMIT 1
   `);
@@ -307,8 +314,7 @@ export interface ItemDetail {
 
 /** Same view as getTitleDetail, but for a single item (one episode or one movie). */
 export async function getItemDetail(itemId: string, scope: Scope): Promise<ItemDetail | null> {
-  const scoped = scope.userId === null ? sql`1 = 1` : sql`user_id = ${scope.userId}`;
-  const where = sql`item_id = ${itemId} AND ${scoped}`;
+  const where = sql`item_id = ${itemId} AND ${scopeFilter(scope)}`;
 
   const [summary] = await db.all<{
     item_title: string | null;
@@ -356,7 +362,7 @@ export async function getItemDetail(itemId: string, scope: Scope): Promise<ItemD
     SELECT u.username AS label, sum(h.duration_ms) / 60000 AS minutes
     FROM watch_history h
     JOIN users u ON u.id = h.user_id
-    WHERE h.item_id = ${itemId}
+    WHERE h.item_id = ${itemId} AND ${scopeFilter(scope, 'h.')}
     GROUP BY u.id
     ORDER BY minutes DESC
   `);

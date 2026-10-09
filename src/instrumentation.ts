@@ -11,6 +11,15 @@ export async function register() {
   // there is neither a database file nor any reason to open a socket.
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
   if (process.env.NEXT_PHASE === 'phase-production-build') return;
+  // Warned about, not refused: an existing install has its tokens encrypted with this value,
+  // so a hard stop would be an outage for something the admin has to fix deliberately.
+  if (process.env.NODE_ENV === 'production' && process.env.SESSION_SECRET === 'change-me') {
+    console.warn(
+      'SESSION_SECRET is still the placeholder from .env.example, so anyone can decrypt the ' +
+        'stored tokens from a copy of the database. Generate one with: openssl rand -hex 32. ' +
+        'Changing it signs everyone out and the media server tokens have to be entered again.',
+    );
+  }
   // Escape hatch for anyone running the container purely as a web front end, and for the
   // route test suite, which boots the app against a stub that speaks no websockets.
   if (process.env.WATCHARR_NO_BACKGROUND === '1') return;

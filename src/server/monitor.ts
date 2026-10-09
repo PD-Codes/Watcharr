@@ -7,18 +7,27 @@ import type { Translate } from '@/i18n';
 import { getDefaultT } from '@/i18n/server';
 import { liveSessionFilter } from './sync';
 import { notify } from './notifications';
+import { globalState } from './state';
 
 // Threshold checks over the live session table and the login history. Runs from the same
 // activity-sync tick as everything else in sync.ts — there is no separate poller, this app
 // has exactly one.
 
 const COOLDOWN_MS = 15 * 60_000;
-const lastAlertAt = new Map<string, number>();
+// Process-wide (see state.ts): per graph this would be two cooldowns, and every alert would
+// fire once per graph per window.
+const lastAlertAt = globalState('monitor.alertAt', () => new Map<string, number>());
 
 function cooled(rule: string): boolean {
+  const now = Date.now();
+  // Keys carry IPs and usernames, so an address sweep would grow the map forever. Entries past
+  // their cooldown behave exactly like absent ones, so dropping them changes nothing.
+  if (lastAlertAt.size > 500) {
+    for (const [key, at] of lastAlertAt) if (now - at >= COOLDOWN_MS) lastAlertAt.delete(key);
+  }
   const last = lastAlertAt.get(rule) ?? 0;
-  if (Date.now() - last < COOLDOWN_MS) return true;
-  lastAlertAt.set(rule, Date.now());
+  if (now - last < COOLDOWN_MS) return true;
+  lastAlertAt.set(rule, now);
   return false;
 }
 
@@ -59,14 +68,17 @@ export async function checkThresholds() {
       .where(liveSessionFilter());
 
     if (settings.monitorMaxStreamsPerUser) {
-      const perUser = new Map<string, number>();
+      // Keyed by account, not name: the same name on two servers is two people (or two
+      // accounts), and summing them alerts on a limit neither one exceeded.
+      const perUser = new Map<number | null, { username: string; count: number }>();
       for (const row of live) {
-        const key = row.username ?? 'unknown';
-        perUser.set(key, (perUser.get(key) ?? 0) + 1);
+        const entry = perUser.get(row.userId) ?? { username: row.username ?? 'unknown', count: 0 };
+        entry.count += 1;
+        perUser.set(row.userId, entry);
       }
-      for (const [username, count] of perUser) {
+      for (const [userId, { username, count }] of perUser) {
         if (count <= settings.monitorMaxStreamsPerUser) continue;
-        if (cooled(`streams:${username}`)) continue;
+        if (cooled(`streams:${userId}`)) continue;
         await fire(
           'max_streams_per_user',
           t('monitor.maxStreams', {

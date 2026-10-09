@@ -93,6 +93,10 @@ type JfSession = {
 
 const ticksToMs = (ticks?: number) => Math.round((ticks ?? 0) / 10_000);
 
+/** Items per library request, and the ceiling that keeps a runaway server from filling memory. */
+const LIBRARY_PAGE = 5000;
+const MAX_LIBRARY_ITEMS = 200_000;
+
 /**
  * RemoteEndPoint is an endpoint, not an address: it carries the client's source port
  * ("10.0.0.5:52344", IPv6 bracketed as "[::1]:52344"). The port is noise on screen and
@@ -294,20 +298,32 @@ export class JellyfinAdapter implements MediaServerAdapter {
 
     const pages = await Promise.all(
       sources.map(async (sectionId) => {
-        const params = new URLSearchParams({
-          Recursive: 'true',
-          IncludeItemTypes: 'Movie,Series',
-          // MediaSources carries file size and the video stream; UserData carries the
-          // server's own last-played date, which reaches further back than watch_history.
-          Fields: 'Genres,ProductionYear,MediaSources,UserData,DateCreated',
-          SortBy: 'SortName',
-          Limit: '5000',
-        });
-        if (sectionId) params.set('ParentId', sectionId);
-        const res = await apiFetch<{ Items: JfItem[] }>(this.url(`/Items?${params}`), {
-          headers: this.headers(),
-        }).catch(() => ({ Items: [] as JfItem[] }));
-        return res.Items.map((i) => {
+        // Paged: a single capped request would silently drop everything past the cap from
+        // search, the library table and the "never started" list.
+        const items: JfItem[] = [];
+        try {
+          for (let start = 0; start < MAX_LIBRARY_ITEMS; start += LIBRARY_PAGE) {
+            const params = new URLSearchParams({
+              Recursive: 'true',
+              IncludeItemTypes: 'Movie,Series',
+              // MediaSources carries file size and the video stream; UserData carries the
+              // server's own last-played date, which reaches further back than watch_history.
+              Fields: 'Genres,ProductionYear,MediaSources,UserData,DateCreated',
+              SortBy: 'SortName',
+              StartIndex: String(start),
+              Limit: String(LIBRARY_PAGE),
+            });
+            if (sectionId) params.set('ParentId', sectionId);
+            const res = await apiFetch<{ Items: JfItem[] }>(this.url(`/Items?${params}`), {
+              headers: this.headers(),
+            });
+            items.push(...res.Items);
+            if (res.Items.length < LIBRARY_PAGE) break;
+          }
+        } catch {
+          return [];
+        }
+        return items.map((i) => {
           const source = i.MediaSources?.[0];
           const video = source?.MediaStreams?.find((stream) => stream.Type === 'Video');
           return {

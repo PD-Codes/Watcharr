@@ -76,14 +76,18 @@ export async function getAdapter(serverId: number): Promise<MediaServerAdapter> 
   return createAdapter(server.serverType as ServerType, server.serverUrl, server.serverToken);
 }
 
-export async function createServer(input: {
+interface NewServer {
   serverType: ServerType;
   serverUrl: string;
   serverToken: string;
   serverName?: string;
   label?: string;
-}): Promise<ServerRow> {
-  const label = input.label?.trim() || input.serverName?.trim() || 'Media Server';
+}
+
+const labelOf = (input: NewServer) => input.label?.trim() || input.serverName?.trim() || 'Media Server';
+
+export async function createServer(input: NewServer): Promise<ServerRow> {
+  const label = labelOf(input);
   const [row] = await db
     .insert(appConfig)
     .values({
@@ -96,6 +100,35 @@ export async function createServer(input: {
     })
     .returning();
   return decrypt(row);
+}
+
+/**
+ * First-run setup. Looking for an existing server and inserting happen in one transaction
+ * that takes the write lock up front: the route's own early check is separated from this
+ * by a request to the media server, so two setup requests in flight could otherwise both
+ * pass it and both create a server. Null means one already exists.
+ */
+export function createFirstServer(input: NewServer): ServerRow | null {
+  const label = labelOf(input);
+  const row = db.transaction(
+    (tx) => {
+      if (tx.select({ id: appConfig.id }).from(appConfig).limit(1).all().length) return null;
+      return tx
+        .insert(appConfig)
+        .values({
+          serverType: input.serverType,
+          serverUrl: input.serverUrl,
+          serverToken: encryptSecret(input.serverToken),
+          serverName: input.serverName,
+          label,
+          slug: slugify(label), // nothing else exists yet, so nothing to collide with
+        })
+        .returning()
+        .get();
+    },
+    { behavior: 'immediate' },
+  );
+  return row ? decrypt(row) : null;
 }
 
 export async function updateServer(
@@ -259,6 +292,13 @@ export async function getSettings(): Promise<AppSettings> {
   };
 }
 
+// NaN and Infinity reach here from `1e999` in a JSON body or a bad Number() upstream. Math.max/min
+// pass NaN straight through to a NOT NULL column, so a clamped setting skips a non-finite value
+// and a nullable one reads it as "off", the same as any other garbage.
+const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+const positiveOrNull = (n: number | null | undefined): number | null =>
+  finite(n) && n > 0 ? Math.round(n) : null;
+
 export async function updateSettings(input: {
   tmdbApiKey?: string | null;
   defaultLocale?: string;
@@ -320,7 +360,7 @@ export async function updateSettings(input: {
     patch.apiKey = input.apiKey ? encryptSecret(input.apiKey) : null;
   }
   if (input.features) patch.features = input.features;
-  if (input.watchedThreshold !== undefined) {
+  if (finite(input.watchedThreshold)) {
     // Clamped rather than rejected: the value only shifts a boundary, and a nonsensical
     // one would silently make every completion statistic meaningless.
     patch.watchedThreshold = Math.min(100, Math.max(1, Math.round(input.watchedThreshold)));
@@ -338,27 +378,18 @@ export async function updateSettings(input: {
     patch.geoipUrl = url && /^https?:\/\//i.test(url) ? url : null;
   }
   if (input.monitorMaxStreamsPerUser !== undefined) {
-    patch.monitorMaxStreamsPerUser =
-      input.monitorMaxStreamsPerUser && input.monitorMaxStreamsPerUser > 0
-        ? Math.round(input.monitorMaxStreamsPerUser)
-        : null;
+    patch.monitorMaxStreamsPerUser = positiveOrNull(input.monitorMaxStreamsPerUser);
   }
   if (input.monitorBandwidthMbps !== undefined) {
-    patch.monitorBandwidthMbps =
-      input.monitorBandwidthMbps && input.monitorBandwidthMbps > 0
-        ? Math.round(input.monitorBandwidthMbps)
-        : null;
+    patch.monitorBandwidthMbps = positiveOrNull(input.monitorBandwidthMbps);
   }
   if (input.monitorTranscodeAlert !== undefined) {
     patch.monitorTranscodeAlert = input.monitorTranscodeAlert;
   }
   if (input.monitorFailedLoginThreshold !== undefined) {
-    patch.monitorFailedLoginThreshold =
-      input.monitorFailedLoginThreshold && input.monitorFailedLoginThreshold > 0
-        ? Math.round(input.monitorFailedLoginThreshold)
-        : null;
+    patch.monitorFailedLoginThreshold = positiveOrNull(input.monitorFailedLoginThreshold);
   }
-  if (input.monitorFailedLoginWindowMin !== undefined) {
+  if (finite(input.monitorFailedLoginWindowMin)) {
     patch.monitorFailedLoginWindowMin = Math.max(1, Math.round(input.monitorFailedLoginWindowMin));
   }
   if (input.monitorNewAddressAlert !== undefined) {
@@ -370,10 +401,10 @@ export async function updateSettings(input: {
   }
   if (input.digestLastSentAt) patch.digestLastSentAt = input.digestLastSentAt;
   if (input.backupAutoEnabled !== undefined) patch.backupAutoEnabled = input.backupAutoEnabled;
-  if (input.backupIntervalHours !== undefined) {
+  if (finite(input.backupIntervalHours)) {
     patch.backupIntervalHours = Math.max(1, Math.round(input.backupIntervalHours));
   }
-  if (input.backupRetention !== undefined) {
+  if (finite(input.backupRetention)) {
     patch.backupRetention = Math.max(1, Math.round(input.backupRetention));
   }
   if (input.backupLastAt) patch.backupLastAt = input.backupLastAt;
@@ -382,17 +413,17 @@ export async function updateSettings(input: {
   for (const key of ['retentionSessionDays', 'retentionLogDays', 'retentionHistoryDays'] as const) {
     const value = input[key];
     if (value === undefined) continue;
-    patch[key] = value && value > 0 ? Math.round(value) : null;
+    patch[key] = positiveOrNull(value);
   }
   if (input.retentionLastAt) patch.retentionLastAt = input.retentionLastAt;
   if (input.newsletterEnabled !== undefined) patch.newsletterEnabled = input.newsletterEnabled;
-  if (input.newsletterDayOfWeek !== undefined) {
+  if (finite(input.newsletterDayOfWeek)) {
     patch.newsletterDayOfWeek = Math.min(6, Math.max(0, Math.round(input.newsletterDayOfWeek)));
   }
-  if (input.newsletterHour !== undefined) {
+  if (finite(input.newsletterHour)) {
     patch.newsletterHour = Math.min(23, Math.max(0, Math.round(input.newsletterHour)));
   }
-  if (input.newsletterDays !== undefined) {
+  if (finite(input.newsletterDays)) {
     patch.newsletterDays = Math.min(90, Math.max(1, Math.round(input.newsletterDays)));
   }
   if (input.newsletterLibraries) patch.newsletterLibraries = input.newsletterLibraries;

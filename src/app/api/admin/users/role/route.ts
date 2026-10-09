@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { users } from '@/db/schema';
+import { badBody, readBody } from '@/server/body';
 import { countGlobalAdmins, getSession } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -13,10 +14,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
   }
 
-  const { userId, globalAdmin } = (await request.json()) as {
-    userId?: number;
-    globalAdmin?: boolean;
-  };
+  const body = await readBody(request, { userId: 'number', globalAdmin: 'boolean' });
+  if (!body) return badBody();
+  const { userId, globalAdmin } = body;
   if (!userId || typeof globalAdmin !== 'boolean') {
     return NextResponse.json({ error: 'userId and globalAdmin are required' }, { status: 400 });
   }

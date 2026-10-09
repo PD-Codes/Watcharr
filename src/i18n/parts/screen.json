@@ -1,0 +1,18 @@
+{
+  "screen.title": { "en": "Lobby display", "de": "Foyer-Anzeige" },
+  "screen.intermission": { "en": "Intermission", "de": "Pause" },
+  "screen.kindAdded": { "en": "Recently added", "de": "Neu hinzugefügt" },
+  "screen.kindWatched": { "en": "Recently watched", "de": "Zuletzt gesehen" },
+  "screen.addedAgo": { "en": "Added {ago}", "de": "Hinzugefügt {ago}" },
+  "screen.watchedAgo": { "en": "Watched {ago}", "de": "Gesehen {ago}" },
+  "screen.endsAt": { "en": "Ends at {time}", "de": "Endet um {time}" },
+  "screen.watching": { "en": "Watching", "de": "Zuschauer" },
+  "screen.player": { "en": "Player", "de": "Player" },
+  "screen.statPlays": { "en": "Plays this week", "de": "Wiedergaben diese Woche" },
+  "screen.statTime": { "en": "Watch time this week", "de": "Sehzeit diese Woche" },
+  "screen.hint": { "en": "Press F for fullscreen", "de": "F drücken für Vollbild" },
+  "screen.hintAwake": { "en": "The screen stays awake.", "de": "Der Bildschirm bleibt an." },
+  "screen.enterFullscreen": { "en": "Enter fullscreen", "de": "Vollbild" },
+  "screen.exitFullscreen": { "en": "Exit fullscreen", "de": "Vollbild beenden" },
+  "screen.leave": { "en": "Leave the display", "de": "Anzeige verlassen" }
+}

@@ -25,19 +25,24 @@ export default function NewsletterSubscription({
     setBusy(true);
     setError(null);
     setMessage(null);
-    const res = await fetch('/api/newsletter', {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: method === 'POST' ? JSON.stringify({ email }) : undefined,
-    });
-    setBusy(false);
-    const body = (await res.json()) as { ok?: boolean; error?: string };
-    if (!res.ok || body.error) {
-      setError(body.error ?? t('error.generic'));
-      return;
+    try {
+      const res = await fetch('/api/newsletter', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: method === 'POST' ? JSON.stringify({ email }) : undefined,
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || body.error) {
+        setError(body.error ?? t('error.generic'));
+        return;
+      }
+      setMessage(method === 'POST' ? t('profile.nlSubscribed') : t('profile.nlUnsubscribed'));
+      router.refresh();
+    } catch {
+      setError(t('error.generic'));
+    } finally {
+      setBusy(false);
     }
-    setMessage(method === 'POST' ? t('profile.nlSubscribed') : t('profile.nlUnsubscribed'));
-    router.refresh();
   }
 
   return (

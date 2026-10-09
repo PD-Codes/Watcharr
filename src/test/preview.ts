@@ -4,14 +4,16 @@
  * Not a test — it stays running until interrupted.
  */
 import { execFileSync, spawn } from 'node:child_process';
+import { deflateSync } from 'node:zlib';
 import { createServer } from 'node:http';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'watcharr-preview-'));
-const APP_PORT = 3311;
-const STUB_PORT = 39011;
+// PREVIEW_PORT lets several previews run side by side; the stub always sits 35700 above it.
+const APP_PORT = Number(process.env.PREVIEW_PORT ?? 3311);
+const STUB_PORT = APP_PORT + 35700;
 process.env.DATABASE_PATH = join(dir, 'preview.db');
 process.env.SESSION_SECRET = 'preview-secret';
 
@@ -35,6 +37,58 @@ const SHOWS: Record<string, string> = {
 };
 const CLIENTS = ['Jellyfin Web', 'Jellyfin Android TV', 'Infuse', 'Jellyfin iOS'];
 const DEVICES = ['Living Room', 'Fire TV', 'iPad', 'Office'];
+
+const CRC = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+
+function chunk(type: string, data: Buffer): Buffer {
+  const body = Buffer.concat([Buffer.from(type), data]);
+  let crc = 0xffffffff;
+  for (const byte of body) crc = CRC[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  const out = Buffer.alloc(body.length + 8);
+  out.writeUInt32BE(data.length, 0);
+  body.copy(out, 4);
+  out.writeUInt32BE((crc ^ 0xffffffff) >>> 0, body.length + 4);
+  return out;
+}
+
+/** A valid 120x180 PNG poster: a hue per path, lit from the top. Stands in for artwork. */
+function posterPng(seed: string): Buffer {
+  const width = 120;
+  const height = 180;
+  let hash = 0;
+  for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const hue = hash % 360;
+  const rows: number[] = [];
+  for (let y = 0; y < height; y += 1) {
+    rows.push(0);
+    for (let x = 0; x < width; x += 1) {
+      const light = 0.18 + 0.5 * (1 - y / height) + 0.12 * Math.sin((x + hash) / 11);
+      const h = (hue + (x / width) * 40) / 60;
+      const f = h - Math.floor(h);
+      const sector = Math.floor(h) % 6;
+      const r = [1, 1 - f, 0.35, 0.35, f, 1][sector];
+      const g = [f, 1, 1, 1 - f, 0.35, 0.35][sector];
+      const b = [0.35, 0.35, f, 1, 1, 1 - f][sector];
+
+      rows.push(Math.round(255 * r * light), Math.round(255 * g * light), Math.round(255 * b * light));
+    }
+  }
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 2;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(Buffer.from(rows))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
 
 function startStub() {
   const item = (id: string, name: string, type: string, year: number, genres: string[]) => ({
@@ -88,8 +142,8 @@ function startStub() {
       body = { Items: path.startsWith('/Users/') ? library.slice(0, 4) : library };
     }
     if (body === undefined && path.includes('/Images/')) {
-      res.writeHead(200, { 'Content-Type': 'image/jpeg' });
-      res.end(Buffer.from([0xff, 0xd8, 0xff]));
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      res.end(posterPng(path));
       return;
     }
     res.writeHead(body === undefined ? 404 : 200, { 'Content-Type': 'application/json' });
@@ -245,10 +299,12 @@ async function main() {
 
   console.log(`\nPREVIEW_URL=${base}`);
   console.log(`PREVIEW_COOKIE=${cookie}\n`);
-  process.on('SIGINT', () => {
-    app.kill();
-    process.exit(0);
-  });
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      app.kill();
+      process.exit(0);
+    });
+  }
 }
 
 void main();

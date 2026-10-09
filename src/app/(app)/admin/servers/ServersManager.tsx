@@ -30,29 +30,42 @@ export default function ServersManager({
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function send(method: 'POST' | 'PATCH' | 'DELETE', body: unknown, done: string) {
+  async function send(
+    method: 'POST' | 'PATCH' | 'DELETE',
+    body: unknown,
+    done: string,
+  ): Promise<boolean> {
     setBusy(true);
     setError(null);
     setMessage(null);
-    const res = await fetch('/api/admin/servers', {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    setBusy(false);
-    if (res.ok) {
-      setMessage(done);
-      router.refresh();
-    } else {
-      setError(((await res.json()) as { error?: string }).error ?? t('error.generic'));
+    // try/finally: a dropped connection must not leave every button disabled for good.
+    try {
+      const res = await fetch('/api/admin/servers', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setMessage(done);
+        router.refresh();
+        return true;
+      }
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(data.error ?? t('error.generic'));
+    } catch {
+      setError(t('error.generic'));
+    } finally {
+      setBusy(false);
     }
+    return false;
   }
 
   async function onAdd(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await send('POST', Object.fromEntries(form), t('servers.added'));
-    event.currentTarget.reset();
+    // currentTarget is null again after the first await, and a failed add keeps what was typed.
+    const element = event.currentTarget;
+    const form = new FormData(element);
+    if (await send('POST', Object.fromEntries(form), t('servers.added'))) element.reset();
   }
 
   async function onUpdate(event: React.FormEvent<HTMLFormElement>, id: number) {

@@ -1,4 +1,5 @@
 import { formatDate } from '@/components/format';
+import { BadgeShelf } from '@/components/Insights';
 import LanguagePicker from '@/components/LanguagePicker';
 import RevokeSessionButton from '@/components/RevokeSessionButton';
 import Tabs, { activeTab, type TabDef } from '@/components/Tabs';
@@ -93,6 +94,11 @@ export default async function ProfilePage({
         <div className="card">
           <LanguagePicker current={user.locale} />
         </div>
+      </section>
+
+      <section className="section">
+        <h2>{t('ins.shelfTitle')}</h2>
+        <BadgeShelf scope={{ userId: user.id }} />
       </section>
     </>
   );

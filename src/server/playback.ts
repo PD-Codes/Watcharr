@@ -29,7 +29,9 @@ export interface CompletionSplit {
  * no progress, while a session records the position the stream reached.
  *
  * Sessions without a duration (live streams, servers that report none) are left out —
- * counting them as abandoned would drag the rate down for something never watchable.
+ * counting them as abandoned would drag the rate down for something never watchable. So are
+ * sessions that are still open: a stream at 20% right now has not been abandoned, it has not
+ * finished either, and the next poll moves it.
  */
 export async function getCompletionSplit(
   threshold: number,
@@ -40,7 +42,7 @@ export async function getCompletionSplit(
     SELECT count(*) FILTER (WHERE progress_ms * 100 >= duration_ms * ${threshold}) AS finished,
            count(*) AS total
     FROM playback_sessions
-    WHERE duration_ms > 0 AND ${since(days)} AND ${scoped(scope)}
+    WHERE duration_ms > 0 AND state = 'ended' AND ${since(days)} AND ${scoped(scope)}
   `);
   const finished = Number(row?.finished ?? 0);
   const total = Number(row?.total ?? 0);
@@ -49,6 +51,43 @@ export async function getCompletionSplit(
     abandoned: Math.max(0, total - finished),
     rate: total > 0 ? Math.round((finished / total) * 100) : null,
   };
+}
+
+/**
+ * Time buckets (ts, next_ts in epoch ms, plus a label) for the over-time charts, cut in the
+ * configured zone like every other aggregate (see db/index.ts). They used to be cut in UTC,
+ * so with a zone set an evening peak was labeled hours early and a day boundary fell in the
+ * middle of the evening.
+ *
+ * Hours are stepped in UTC milliseconds — an hour is an hour whatever the clock says. Days
+ * are built as local calendar days and converted: a fixed 24 h step drifts off midnight
+ * after every DST change and would file the same evening under the wrong day.
+ */
+function bucketsCte(days: number): SQL {
+  if (days <= 7) {
+    return sql`
+      WITH RECURSIVE hour(ts) AS (
+        SELECT unixepoch(strftime('%Y-%m-%d %H:00:00', 'now', 'localtime', ${`-${days} days`}), 'utc') * 1000
+        UNION ALL
+        SELECT ts + 3600000 FROM hour
+        WHERE ts + 3600000 <= unixepoch(strftime('%Y-%m-%d %H:00:00', 'now', 'localtime'), 'utc') * 1000
+      ),
+      bucket(ts, next_ts, slot) AS (
+        SELECT ts, ts + 3600000, strftime('%m-%d %H:00', ts / 1000, 'unixepoch', 'localtime') FROM hour
+      )`;
+  }
+  return sql`
+    WITH RECURSIVE day_list(day) AS (
+      SELECT date('now', 'localtime', ${`-${days} days`})
+      UNION ALL
+      SELECT date(day, '+1 day') FROM day_list WHERE day < date('now', 'localtime')
+    ),
+    bucket(ts, next_ts, slot) AS (
+      SELECT unixepoch(day, 'utc') * 1000,
+             unixepoch(date(day, '+1 day'), 'utc') * 1000,
+             strftime('%m-%d', day)
+      FROM day_list
+    )`;
 }
 
 export interface ConcurrencyPoint {
@@ -72,24 +111,14 @@ export async function getConcurrencyOverTime(
   days = 7,
   scope?: Scope,
 ): Promise<ConcurrencyPoint[]> {
-  const hourly = days <= 7;
-  const stepMs = hourly ? 3_600_000 : 86_400_000;
-  const truncFormat = hourly ? '%Y-%m-%d %H:00:00' : '%Y-%m-%d 00:00:00';
-  const labelFormat = hourly ? '%m-%d %H:00' : '%m-%d';
-
   const rows = await db.all<{ slot: string; streams: number; bandwidth: number }>(sql`
-    WITH RECURSIVE bucket(ts) AS (
-      SELECT unixepoch(strftime(${truncFormat}, 'now', ${`-${days} days`})) * 1000
-      UNION ALL
-      SELECT ts + ${stepMs} FROM bucket
-      WHERE ts + ${stepMs} <= unixepoch(strftime(${truncFormat}, 'now')) * 1000
-    )
-    SELECT strftime(${labelFormat}, ts / 1000, 'unixepoch') AS slot,
+    ${bucketsCte(days)}
+    SELECT slot,
            count(s.session_key) AS streams,
            coalesce(sum(s.bitrate_kbps), 0) AS bandwidth
     FROM bucket
     LEFT JOIN playback_sessions s
-      ON s.started_at < ts + ${stepMs}
+      ON s.started_at < next_ts
      AND max(s.last_seen_at, s.started_at) >= ts
      AND ${scoped(scope, 's.')}
     GROUP BY ts
@@ -116,24 +145,14 @@ export interface BandwidthPoint {
  * problem. is_local is derived on write, so this is a filter rather than a re-parse.
  */
 export async function getBandwidthOverTime(days = 7, scope?: Scope): Promise<BandwidthPoint[]> {
-  const hourly = days <= 7;
-  const stepMs = hourly ? 3_600_000 : 86_400_000;
-  const truncFormat = hourly ? '%Y-%m-%d %H:00:00' : '%Y-%m-%d 00:00:00';
-  const labelFormat = hourly ? '%m-%d %H:00' : '%m-%d';
-
   const rows = await db.all<{ slot: string; lan: number; wan: number }>(sql`
-    WITH RECURSIVE bucket(ts) AS (
-      SELECT unixepoch(strftime(${truncFormat}, 'now', ${`-${days} days`})) * 1000
-      UNION ALL
-      SELECT ts + ${stepMs} FROM bucket
-      WHERE ts + ${stepMs} <= unixepoch(strftime(${truncFormat}, 'now')) * 1000
-    )
-    SELECT strftime(${labelFormat}, ts / 1000, 'unixepoch') AS slot,
+    ${bucketsCte(days)}
+    SELECT slot,
            coalesce(sum(s.bitrate_kbps) FILTER (WHERE s.is_local = 1), 0) AS lan,
            coalesce(sum(s.bitrate_kbps) FILTER (WHERE s.is_local IS NOT 1), 0) AS wan
     FROM bucket
     LEFT JOIN playback_sessions s
-      ON s.started_at < ts + ${stepMs}
+      ON s.started_at < next_ts
      AND max(s.last_seen_at, s.started_at) >= ts
      AND ${scoped(scope, 's.')}
     GROUP BY ts
@@ -168,16 +187,25 @@ export async function getStreamTypesOverTime(days = 30, scope?: Scope): Promise<
       SELECT date('now', 'localtime', ${`-${days - 1} days`})
       UNION ALL
       SELECT date(day, '+1 day') FROM calendar WHERE day < date('now', 'localtime')
+    ),
+    -- One grouped scan, joined to the calendar below. Joining the calendar to the raw sessions
+    -- evaluates the date expression for every session once per day (no index can serve it):
+    -- a year over 20k sessions took five seconds. The extra day in since() is a prefilter only.
+    used(local_day, direct_play, direct_stream, transcode) AS (
+      SELECT date(started_at / 1000, 'unixepoch', 'localtime'),
+             count(*) FILTER (WHERE play_method = 'directplay'),
+             count(*) FILTER (WHERE play_method = 'directstream'),
+             count(*) FILTER (WHERE play_method = 'transcode')
+      FROM playback_sessions
+      WHERE ${scoped(scope)} AND ${since(days + 1)}
+      GROUP BY 1
     )
     SELECT calendar.day AS day,
-           count(s.session_key) FILTER (WHERE s.play_method = 'directplay') AS direct_play,
-           count(s.session_key) FILTER (WHERE s.play_method = 'directstream') AS direct_stream,
-           count(s.session_key) FILTER (WHERE s.play_method = 'transcode') AS transcode
+           coalesce(used.direct_play, 0) AS direct_play,
+           coalesce(used.direct_stream, 0) AS direct_stream,
+           coalesce(used.transcode, 0) AS transcode
     FROM calendar
-    LEFT JOIN playback_sessions s
-      ON date(s.started_at / 1000, 'unixepoch', 'localtime') = calendar.day
-     AND ${scoped(scope, 's.')}
-    GROUP BY calendar.day
+    LEFT JOIN used ON used.local_day = calendar.day
     ORDER BY calendar.day
   `);
 
@@ -491,12 +519,16 @@ export async function getConcurrencyPeak(days?: number, scope?: Scope): Promise<
              count(*) FILTER (WHERE b.play_method = 'transcode') AS transcodes,
              count(*) FILTER (WHERE b.play_method = 'directstream') AS direct_streams,
              count(*) FILTER (WHERE b.play_method = 'directplay') AS direct_plays
-      FROM playback_sessions a
+      -- Distinct start instants: sessions first seen in the same poll share one started_at,
+      -- and joining each of them to the overlap set multiplied every count.
+      FROM (
+        SELECT DISTINCT started_at FROM playback_sessions a
+        WHERE ${since(days, 'a.')} AND ${scoped(scope, 'a.')}
+      ) AS a
       JOIN playback_sessions b
         ON b.started_at <= a.started_at
        AND max(b.last_seen_at, b.started_at) >= a.started_at
        AND ${scoped(scope, 'b.')}
-      WHERE ${since(days, 'a.')} AND ${scoped(scope, 'a.')}
       GROUP BY a.started_at
     ) AS overlap
   `);

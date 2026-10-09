@@ -30,11 +30,17 @@ async function libraryKeys(serverId: number, sectionId: string) {
   };
 }
 
-/** SQL predicate: this history row belongs to the given library. */
-function inLibrary(ids: string, titles: string) {
+/**
+ * SQL predicate: this history row belongs to the given library. Item ids are only unique
+ * per server (Plex rating keys) and the same title exists on several, so the row also has
+ * to belong to a user of that server — otherwise a global admin's numbers for one library
+ * include everybody else's plays of anything with the same name.
+ */
+function inLibrary(serverId: number, ids: string, titles: string) {
   return sql`(
-    item_id IN (SELECT value FROM json_each(${ids}))
-    OR lower(coalesce(grandparent_title, title)) IN (SELECT value FROM json_each(${titles}))
+    (item_id IN (SELECT value FROM json_each(${ids}))
+     OR lower(coalesce(grandparent_title, title)) IN (SELECT value FROM json_each(${titles})))
+    AND ${scopeFilter({ userId: null, serverId })}
   )`;
 }
 
@@ -61,10 +67,10 @@ export async function getLibraryTotals(
            coalesce(sum(duration_ms), 0) AS watchtime,
            max(watched_at) AS last_played,
            (SELECT coalesce(h2.grandparent_title, h2.title) FROM watch_history h2
-             WHERE ${inLibrary(ids, titles)} AND ${scopeFilter(scope, 'h2.')}
+             WHERE ${inLibrary(serverId, ids, titles)} AND ${scopeFilter(scope, 'h2.')}
              ORDER BY h2.watched_at DESC LIMIT 1) AS last_title
     FROM watch_history
-    WHERE ${inLibrary(ids, titles)} AND ${scopeFilter(scope)} AND ${windowFilter(days)}
+    WHERE ${inLibrary(serverId, ids, titles)} AND ${scopeFilter(scope)} AND ${windowFilter(days)}
   `);
 
   return {
@@ -87,7 +93,7 @@ export async function getLibraryUsers(
     SELECT u.username AS label, count(*) AS total
     FROM watch_history h
     JOIN users u ON u.id = h.user_id
-    WHERE ${inLibrary(ids, titles)} AND ${scopeFilter(scope, 'h.')}
+    WHERE ${inLibrary(serverId, ids, titles)} AND ${scopeFilter(scope, 'h.')}
     GROUP BY u.id
     ORDER BY total DESC, label ASC
     LIMIT ${limit}
@@ -106,7 +112,7 @@ export async function getLibraryTopTitles(
   const rows = await db.all<{ label: string; total: number }>(sql`
     SELECT coalesce(grandparent_title, title) AS label, count(*) AS total
     FROM watch_history
-    WHERE ${inLibrary(ids, titles)} AND ${scopeFilter(scope)}
+    WHERE ${inLibrary(serverId, ids, titles)} AND ${scopeFilter(scope)}
     GROUP BY label
     ORDER BY total DESC, label ASC
     LIMIT ${limit}

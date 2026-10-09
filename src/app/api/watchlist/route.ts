@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { watchlist } from '@/db/schema';
+import { badBody, readBody } from '@/server/body';
 import { getSession } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -12,12 +13,13 @@ export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const body = (await request.json()) as {
-    itemId?: string;
-    title?: string;
-    mediaType?: string;
-    year?: number;
-  };
+  const body = await readBody(request, {
+    itemId: 'string',
+    title: 'string',
+    mediaType: 'string',
+    year: 'number',
+  });
+  if (!body) return badBody();
   if (!body.itemId || !body.title) {
     return NextResponse.json({ error: 'itemId and title are required' }, { status: 400 });
   }
@@ -29,7 +31,7 @@ export async function POST(request: Request) {
       itemId: body.itemId,
       title: body.title,
       mediaType: body.mediaType ?? 'unknown',
-      year: body.year,
+      year: body.year ?? undefined,
     })
     .onConflictDoNothing();
   return NextResponse.json({ ok: true });
@@ -39,7 +41,9 @@ export async function PATCH(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { itemId, status } = (await request.json()) as { itemId?: string; status?: string };
+  const body = await readBody(request, { itemId: 'string', status: 'string' });
+  if (!body) return badBody();
+  const { itemId, status } = body;
   if (!itemId || !status || !STATUSES.includes(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
   }

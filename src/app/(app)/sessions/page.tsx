@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, like, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { playbackSessions, users, watchHistory } from '@/db/schema';
 import Beam from '@/components/Beam';
@@ -43,7 +43,12 @@ export default async function SessionsPage() {
           })
           .from(playbackSessions)
           .leftJoin(users, eq(users.id, playbackSessions.userId))
-          .where(liveSessionFilter())
+          .where(
+            session.user.globalAdmin
+              ? liveSessionFilter()
+              : // A server admin sees their own server only. Session keys carry the server id.
+                and(liveSessionFilter(), like(playbackSessions.sessionKey, `${session.user.serverId}:%`)),
+          )
       : Promise.resolve([]),
     getTotals(scope, 30),
     getStreak(scope),

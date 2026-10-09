@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { badBody, readBody } from '@/server/body';
 import { createAdapter, SERVER_TYPES, type ServerType } from '@/server/adapters';
 import { createServer, deleteServer, getServer, listServers, updateServer } from '@/server/config';
 import { getSession } from '@/server/session';
@@ -20,12 +21,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
   }
 
-  const body = (await request.json()) as {
-    serverType?: string;
-    serverUrl?: string;
-    serverToken?: string;
-    label?: string;
-  };
+  const body = await readBody(request, {
+    serverType: 'string',
+    serverUrl: 'string',
+    serverToken: 'string',
+    label: 'string',
+  });
+  if (!body) return badBody();
 
   if (!body.serverType || !SERVER_TYPES.includes(body.serverType as ServerType)) {
     return NextResponse.json({ error: 'Invalid server type' }, { status: 400 });
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
     serverUrl: body.serverUrl,
     serverToken: body.serverToken,
     serverName: 'serverName' in health ? health.serverName : undefined,
-    label: body.label,
+    label: body.label ?? undefined,
   });
   return NextResponse.json({ ok: true, id: server.id, slug: server.slug });
 }
@@ -57,12 +59,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
   }
 
-  const body = (await request.json()) as {
-    id?: number;
-    serverUrl?: string;
-    serverToken?: string;
-    label?: string;
-  };
+  const body = await readBody(request, {
+    id: 'number',
+    serverUrl: 'string',
+    serverToken: 'string',
+    label: 'string',
+  });
+  if (!body) return badBody();
   const current = body.id ? await getServer(body.id) : null;
   if (!current) return NextResponse.json({ error: 'Unknown server' }, { status: 404 });
 
@@ -79,9 +82,9 @@ export async function PATCH(request: Request) {
   }
 
   await updateServer(current.id, {
-    serverUrl: body.serverUrl,
-    serverToken: body.serverToken,
-    label: body.label,
+    serverUrl: body.serverUrl ?? undefined,
+    serverToken: body.serverToken ?? undefined,
+    label: body.label ?? undefined,
   });
   return NextResponse.json({ ok: true });
 }
@@ -92,7 +95,9 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
   }
 
-  const { id } = (await request.json()) as { id?: number };
+  const deleteBody = await readBody(request, { id: 'number' });
+  if (!deleteBody) return badBody();
+  const id = deleteBody.id;
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
   if (id === session.user.serverId) {
     return NextResponse.json(

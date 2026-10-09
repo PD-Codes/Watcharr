@@ -18,11 +18,14 @@ import { useT } from '@/i18n/client';
 export default function AppBar({
   username,
   liveCount,
+  playingCount,
   nav,
   adminItems,
 }: {
   username: string;
   liveCount: number;
+  /** Streams that are actually running: only these light the bulb. */
+  playingCount: number;
   nav: NavItem[];
   adminItems: NavItem[];
 }) {
@@ -66,7 +69,7 @@ export default function AppBar({
         </button>
 
         <p className="appbar-title">
-          <span className={`bulb ${liveCount > 0 ? 'on' : ''}`} />
+          <span className={`bulb ${playingCount > 0 ? 'on' : ''}`} />
           <span>{t('app.name')}</span>
         </p>
 
@@ -94,7 +97,7 @@ export default function AppBar({
           >
             <div className="drawer-head">
               <span className="wordmark" style={{ margin: 0, padding: 0 }}>
-                <span className={`bulb ${liveCount > 0 ? 'on' : ''}`} />
+                <span className={`bulb ${playingCount > 0 ? 'on' : ''}`} />
                 <span>{t('app.name')}</span>
               </span>
               <button
@@ -115,7 +118,7 @@ export default function AppBar({
                   icon={item.icon}
                   onNavigate={() => setOpen(false)}
                   trailing={
-                    item.href === '/activity' && liveCount > 0 ? <span className="bulb on" /> : null
+                    item.href === '/activity' && playingCount > 0 ? <span className="bulb on" /> : null
                   }
                 >
                   {item.label}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
+import { badBody, readBody } from '@/server/body';
 import { createAdapter, SERVER_TYPES, type ServerType } from '@/server/adapters';
-import { createServer, isConfigured, listServers, updateSettings } from '@/server/config';
+import { createFirstServer, isConfigured, listServers, updateSettings } from '@/server/config';
 
 export async function GET() {
   const servers = await listServers();
@@ -19,13 +20,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Already configured' }, { status: 409 });
   }
 
-  const body = (await request.json()) as {
-    serverType?: string;
-    serverUrl?: string;
-    serverToken?: string;
-    tmdbApiKey?: string;
-    label?: string;
-  };
+  const body = await readBody(request, {
+    serverType: 'string',
+    serverUrl: 'string',
+    serverToken: 'string',
+    tmdbApiKey: 'string',
+    label: 'string',
+  });
+  if (!body) return badBody();
 
   if (!body.serverType || !SERVER_TYPES.includes(body.serverType as ServerType)) {
     return NextResponse.json({ error: 'Invalid server type' }, { status: 400 });
@@ -41,13 +43,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Could not reach the media server' }, { status: 400 });
   }
 
-  await createServer({
+  const created = createFirstServer({
     serverType,
     serverUrl: body.serverUrl,
     serverToken: body.serverToken,
     serverName: health.serverName,
-    label: body.label,
+    label: body.label ?? undefined,
   });
+  // Someone else finished setup while the media server was being pinged.
+  if (!created) return NextResponse.json({ error: 'Already configured' }, { status: 409 });
   if (body.tmdbApiKey) await updateSettings({ tmdbApiKey: body.tmdbApiKey });
   return NextResponse.json({ ok: true, serverName: health.serverName });
 }

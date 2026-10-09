@@ -3,7 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { users, watchHistory } from '@/db/schema';
 import { BarChart, ColumnChart, StackedColumnChart, StatCard } from '@/components/Charts';
-import { formatDate, formatDuration, formatMinutes } from '@/components/format';
+import { formatDate, formatDuration, formatMinutes, localizeWeekdays } from '@/components/format';
 import {
   getDailyActivity,
   getDailyPlays,
@@ -182,7 +182,7 @@ export default async function AdminUserDetailPage({
           <section>
             <h2>{t('users.byWeekday')}</h2>
             <div className="card">
-              <ColumnChart data={weekdays} format={formatMinutes} />
+              <ColumnChart data={localizeWeekdays(weekdays, t)} format={formatMinutes} />
             </div>
           </section>
           <section>

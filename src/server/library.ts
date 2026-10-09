@@ -1,11 +1,14 @@
 import 'server-only';
 import type { LibraryItem, LibrarySection } from './adapters';
 import { getAdapter } from './config';
+import { globalState } from './state';
 
 // ponytail: in-process cache of each server's library. Fine for a handful of servers and a
 // few thousand items each; move to a table if a library grows past what memory should hold.
+// Process-wide (see state.ts): per module graph the tick and the pages would each fetch and
+// hold their own copy, and a forced refresh from a page would leave the tick's copy stale.
 const TTL_MS = 5 * 60 * 1000;
-const cache = new Map<number, { items: LibraryItem[]; at: number }>();
+const cache = globalState('library.items', () => new Map<number, { items: LibraryItem[]; at: number }>());
 
 export async function getLibrary(serverId: number, force = false): Promise<LibraryItem[]> {
   const hit = cache.get(serverId);
@@ -17,7 +20,10 @@ export async function getLibrary(serverId: number, force = false): Promise<Libra
 
 // The section list costs three requests per show library — series, seasons and episodes
 // are separate totals — and four pages ask for it. Same TTL as the item cache above.
-const sectionCache = new Map<number, { sections: LibrarySection[]; at: number }>();
+const sectionCache = globalState(
+  'library.sections',
+  () => new Map<number, { sections: LibrarySection[]; at: number }>(),
+);
 
 /** The libraries of one server, with their counts. Cached like getLibrary(). */
 export async function getSections(serverId: number, force = false): Promise<LibrarySection[]> {
@@ -93,7 +99,7 @@ export function lookupSection(index: SectionIndex, item: PlayedItem): string | n
   return name ? (index.byTitle.get(name.toLowerCase()) ?? null) : null;
 }
 
-const indexCache = new Map<number, { at: number; index: SectionIndex }>();
+const indexCache = globalState('library.index', () => new Map<number, { at: number; index: SectionIndex }>());
 
 /** Cache-only. Null means "not loaded", never a fetch — see the note above. */
 export function resolveSectionKey(serverId: number, item: PlayedItem): string | null {

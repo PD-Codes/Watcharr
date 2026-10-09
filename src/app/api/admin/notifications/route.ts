@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { badBody, readBody } from '@/server/body';
 import { CHANNEL_TYPES, NOTIFICATION_EVENTS, type ChannelType } from '@/server/features';
 import { createChannel, deleteChannel, updateChannel } from '@/server/notifications';
 import { getSession } from '@/server/session';
@@ -58,14 +59,15 @@ export async function POST(request: Request) {
   if (!(await requireGlobal())) {
     return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
   }
-  const body = (await request.json()) as {
-    type?: string;
-    name?: string;
-    config?: Record<string, string>;
-    events?: string[];
-    conditions?: Record<string, unknown>;
-    template?: string;
-  };
+  const body = await readBody(request, {
+    type: 'string',
+    name: 'string',
+    config: 'stringMap',
+    events: 'strings',
+    conditions: 'object',
+    template: 'string',
+  });
+  if (!body) return badBody();
   if (!body.type || !VALID_TYPES.includes(body.type as ChannelType)) {
     return NextResponse.json({ error: 'Invalid channel type' }, { status: 400 });
   }
@@ -84,24 +86,25 @@ export async function PATCH(request: Request) {
   if (!(await requireGlobal())) {
     return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
   }
-  const body = (await request.json()) as {
-    id?: number;
-    name?: string;
-    config?: Record<string, string>;
-    events?: string[];
-    conditions?: Record<string, unknown>;
-    template?: string;
-    enabled?: boolean;
-  };
+  const body = await readBody(request, {
+    id: 'number',
+    name: 'string',
+    config: 'stringMap',
+    events: 'strings',
+    conditions: 'object',
+    template: 'string',
+    enabled: 'boolean',
+  });
+  if (!body) return badBody();
   if (!body.id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
   await updateChannel(body.id, {
     name: body.name?.trim() || undefined,
-    config: body.config,
+    config: body.config ?? undefined,
     events: body.events ? sanitizeEvents(body.events) : undefined,
-    conditions: body.conditions === undefined ? undefined : sanitizeConditions(body.conditions),
-    template: body.template === undefined ? undefined : sanitizeTemplate(body.template),
-    enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
+    conditions: body.conditions == null ? undefined : sanitizeConditions(body.conditions),
+    template: body.template == null ? undefined : sanitizeTemplate(body.template),
+    enabled: body.enabled ?? undefined,
   });
   return NextResponse.json({ ok: true });
 }
@@ -110,8 +113,9 @@ export async function DELETE(request: Request) {
   if (!(await requireGlobal())) {
     return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
   }
-  const { id } = (await request.json()) as { id?: number };
-  if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
-  await deleteChannel(id);
+  const body = await readBody(request, { id: 'number' });
+  if (!body) return badBody();
+  if (!body.id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+  await deleteChannel(body.id);
   return NextResponse.json({ ok: true });
 }

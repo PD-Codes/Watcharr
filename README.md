@@ -35,7 +35,7 @@ what device and whether it had to transcode — and it shows you almost none of 
 is a small companion app that sits next to it and answers those questions, for regular users
 and for the admin, without asking anyone to create yet another account.
 
-- **One server per deployment.** Plex *or* Jellyfin *or* Emby, chosen once during setup.
+- **One or more servers.** Plex, Jellyfin and Emby can be mixed; the first is chosen during setup, more are added under Admin → Servers.
 - **No password system.** People sign in with their media server account. The server's admin
   flag becomes the app's admin role.
 - **One container, one file.** SQLite, no separate database service, no Redis, no queue.
@@ -92,8 +92,10 @@ horizontally scrollable charts.
 - **Docker** with Compose v2 — *or* **Node.js 22+** if you would rather run it directly
 - ~100 MB disk for the image, plus a few MB per year of watch history
 
-Watcharr makes no outbound connections of its own. It talks to your media server, to
-`plex.tv` if you use Plex sign-in, and to TMDB only if you configure an API key.
+Watcharr only talks to the services you set up: your media servers, `plex.tv` for Plex
+sign-in, TMDB if you configure an API key, an IP-lookup provider if you switch geo lookup on,
+and whatever notification channels you add. The one call it makes on its own is the daily
+update check against the GitHub releases API; switch it off under the feature toggles.
 
 ---
 
@@ -165,7 +167,7 @@ configuration page.
 |---|---|---|
 | `SESSION_SECRET` | *(required)* | Signs session cookies and derives the key that encrypts media server tokens at rest. Generate with `openssl rand -hex 32`. **Changing it invalidates every stored token and signs everyone out.** |
 | `DATABASE_PATH` | `./data/watcharr.db` | SQLite file. The container defaults to `/app/data/watcharr.db`; keep that path on a volume. |
-| `APP_URL` | `http://localhost:3000` | Public base URL of this deployment. Used for the Plex sign-in callback. |
+| `APP_URL` | `http://localhost:3000` | Public base URL of this deployment: **the address you actually type into the browser**. Used for the artwork links in Discord and Slack notifications and as an accepted origin for state-changing requests. |
 | `PORT` | `3000` | Port the server listens on. |
 | `WATCHARR_SCRIPTS_DIR` | `./data/scripts` | The only folder a `script` notification channel may run a file from. A channel names a plain file name, never a path. |
 | `WATCHARR_NO_BACKGROUND` | *(unset)* | Set to `1` to run this instance as a web front end only: no live event sockets, no background sync. Only useful next to another instance that does the work. |
@@ -233,8 +235,8 @@ server type, the server URL and an admin API token.
 2. The URL of the XML page ends in `&X-Plex-Token=…` — that value is your token.
    ([Plex's own instructions](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/))
 3. Server URL is your Plex Media Server address, for example `http://192.168.1.10:32400`.
-4. Make sure `APP_URL` is set to the URL people will actually open, otherwise the PIN
-   sign-in flow returns them to the wrong place.
+4. Only accounts that have access to this Plex server can sign in; plex.tv is asked
+   which servers an account may use.
 
 </details>
 
@@ -252,6 +254,12 @@ kept server-side; the browser only ever gets a signed session id.
 
 Set `APP_URL` to the public URL and forward to port 3000. The app sets no cookies that need
 a subpath, but it does expect to live at the root of whatever host it is served from.
+
+The proxy has to send `X-Forwarded-Proto: https` (Caddy does by default, the nginx block
+below does): it decides whether the session cookie is marked `Secure`. Without it the cookie
+is still issued and works, just without that flag. The reverse is also true: a proxy that
+claims `https` while the browser is on plain HTTP makes the browser drop the cookie, and
+sign-in appears to do nothing.
 
 <details>
 <summary>Caddy</summary>
@@ -328,8 +336,9 @@ somewhere safe and separate.
   `SESSION_SECRET`.
 - Session cookies carry a signed random id and nothing else; sessions live server-side and
   expired ones are cleaned up on sign-in.
-- Artwork is proxied through `/api/art/[itemId]` so a token never reaches a browser. The
-  proxy enforces a session, an allowlist on the item id, an origin match against the
+- Artwork is proxied through `/api/art/[serverSlug]/[itemId]` so a token never reaches a
+  browser. The proxy enforces a session (or a signed, expiring link for notifications), an
+  allowlist on the item id, an origin match against the
   configured server, an `image/*` response type and an upstream timeout.
 - Login and Plex PIN polling are rate limited.
 - `/api/health` reports database and media server health and backs the container

@@ -1,0 +1,74 @@
+{
+  "story.title": { "en": "Your year, as a story", "de": "Dein Jahr als Story" },
+  "story.playAsStory": { "en": "Play as story", "de": "Als Story abspielen" },
+  "story.shareCard": { "en": "Share card", "de": "Karte teilen" },
+  "story.close": { "en": "Close story", "de": "Story schließen" },
+  "story.prev": { "en": "Previous slide", "de": "Vorherige Folie" },
+  "story.next": { "en": "Next slide", "de": "Nächste Folie" },
+  "story.pause": { "en": "Pause", "de": "Pause" },
+  "story.resume": { "en": "Resume", "de": "Fortsetzen" },
+  "story.slideRole": { "en": "slide", "de": "Folie" },
+  "story.position": { "en": "Slide {current} of {total}", "de": "Folie {current} von {total}" },
+  "story.hint": {
+    "en": "Tap, swipe or use the arrow keys",
+    "de": "Tippen, wischen oder Pfeiltasten nutzen"
+  },
+  "story.empty": {
+    "en": "Nothing was watched in {year}, so there is no story to tell yet.",
+    "de": "In {year} wurde nichts gesehen, deshalb gibt es noch keine Story."
+  },
+  "story.backToReport": { "en": "Back to the report", "de": "Zurück zum Bericht" },
+
+  "story.intro.eyebrow": { "en": "Your year in review", "de": "Dein Jahresrückblick" },
+  "story.intro.name": {
+    "en": "{name}, here is what you watched.",
+    "de": "{name}, das hast du geschaut."
+  },
+
+  "story.time.eyebrow": { "en": "You watched for", "de": "Du hast geschaut" },
+  "story.unit.hours": { "en": "Hours", "de": "Stunden" },
+  "story.unit.minutes": { "en": "Minutes", "de": "Minuten" },
+  "story.time.days": {
+    "en": "That is about {days} days without a single break.",
+    "de": "Das sind etwa {days} Tage am Stück."
+  },
+
+  "story.plays.eyebrow": { "en": "You pressed play", "de": "Du hast Play gedrückt" },
+  "story.plays.label": { "en": "Plays", "de": "Wiedergaben" },
+  "story.plays.titles": { "en": "Different titles", "de": "Verschiedene Titel" },
+
+  "story.top.eyebrow": { "en": "Your number one", "de": "Dein Spitzenreiter" },
+
+  "story.versus.eyebrow": { "en": "Series or film?", "de": "Serie oder Film?" },
+  "story.versus.show": { "en": "Top series", "de": "Top-Serie" },
+  "story.versus.movie": { "en": "Top movie", "de": "Top-Film" },
+  "story.versus.vs": { "en": "vs", "de": "vs" },
+
+  "story.genre.eyebrow": { "en": "Your top genre", "de": "Dein Lieblingsgenre" },
+  "story.genre.share": {
+    "en": "of everything you watched",
+    "de": "von allem, was du gesehen hast"
+  },
+
+  "story.days.eyebrow": { "en": "Your big days", "de": "Deine großen Tage" },
+  "story.days.busiest": { "en": "Busiest day", "de": "Stärkster Tag" },
+  "story.days.streak": { "en": "Longest streak", "de": "Längste Serie" },
+  "story.days.streakUnit": { "en": "days in a row", "de": "Tage in Folge" },
+
+  "story.when.eyebrow": { "en": "Your prime time", "de": "Deine Primetime" },
+  "story.when.morning": { "en": "{weekday} mornings", "de": "{weekday}morgen" },
+  "story.when.afternoon": { "en": "{weekday} afternoons", "de": "{weekday}nachmittage" },
+  "story.when.evening": { "en": "{weekday} evenings", "de": "{weekday}abende" },
+  "story.when.night": { "en": "{weekday} nights", "de": "{weekday}nächte" },
+  "story.when.peakHour": { "en": "Peak hour", "de": "Stoßzeit" },
+  "story.when.chart": { "en": "Plays by hour of day", "de": "Wiedergaben nach Tageszeit" },
+
+  "story.outro.eyebrow": { "en": "That is a wrap", "de": "Das war's" },
+  "story.outro.preview": { "en": "Your {year} summary card", "de": "Deine Zusammenfassung {year}" },
+  "story.outro.download": { "en": "Download image", "de": "Bild herunterladen" },
+  "story.outro.share": { "en": "Share", "de": "Teilen" },
+
+  "story.card.eyebrow": { "en": "Year in review", "de": "Jahresrückblick" },
+  "story.card.topTitle": { "en": "Most watched", "de": "Am meisten gesehen" },
+  "story.card.topGenre": { "en": "Top genre", "de": "Top-Genre" }
+}

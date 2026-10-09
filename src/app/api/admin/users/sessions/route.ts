@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { authSessions, users } from '@/db/schema';
+import { badBody, readBody } from '@/server/body';
 import { canSee, getSession, revokeSession } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,9 @@ export async function DELETE(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Sign in first' }, { status: 401 });
 
-  const { id } = (await request.json()) as { id?: string };
+  const body = await readBody(request, { id: 'string' });
+  if (!body) return badBody();
+  const id = body.id;
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
   const [row] = await db

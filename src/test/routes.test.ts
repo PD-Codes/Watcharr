@@ -382,6 +382,7 @@ async function main() {
       '/history',
       '/history?q=blade&type=movie&days=30',
       '/history?page=2',
+      '/history?days=1e9',
       '/history?genre=Sci-Fi',
       '/history?weekday=0&hour=12',
       '/history?date=2024-01-01',
@@ -424,6 +425,11 @@ async function main() {
       '/admin/transcoding?days=all',
       '/admin/clients',
       '/wrapped',
+      '/wrapped/story',
+      '/pick',
+      '/pick?type=movie&length=quick',
+      '/screen',
+      '/api/wrapped/card',
       '/title/Blade%20Runner',
       '/title/Firefly',
       '/title/Firefly?scope=server',
@@ -443,6 +449,31 @@ async function main() {
       const res = await fetch(base + path, { headers: { Cookie: cookie }, redirect: 'manual' });
       const ok = res.status < 400;
       console.log(`${ok ? 'ok  ' : 'FAIL'} - GET ${path} → ${res.status}`);
+      if (!ok) failures += 1;
+    }
+
+    // The healthcheck endpoint tells a stranger only whether the app is up; the detail
+    // (server names, versions) is for signed-in admins.
+    {
+      const anonymous = (await fetch(`${base}/api/health`).then((r) => r.json())) as Record<string, unknown>;
+      const admin = (await fetch(`${base}/api/health`, { headers: { Cookie: cookie } }).then((r) => r.json())) as {
+        mediaServers?: unknown[];
+      };
+      const ok =
+        JSON.stringify(Object.keys(anonymous)) === '["ok"]' && Array.isArray(admin.mediaServers);
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - /api/health detail is for admins only`);
+      if (!ok) failures += 1;
+    }
+
+    // The backup is streamed from a temporary copy; what arrives must be a whole SQLite file.
+    {
+      const res = await fetch(`${base}/api/admin/backup`, { headers: { Cookie: cookie } });
+      const bytes = Buffer.from(await res.arrayBuffer());
+      const ok =
+        res.status === 200 &&
+        bytes.subarray(0, 15).toString() === 'SQLite format 3' &&
+        Number(res.headers.get('content-length')) === bytes.length;
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - GET /api/admin/backup streams a SQLite file → ${res.status}, ${bytes.length} bytes`);
       if (!ok) failures += 1;
     }
 
@@ -540,6 +571,11 @@ async function main() {
       ['/item/lib-3', ['Every play', 'Firefly', 'Serenity']],
       ['/stats', ['/history?date=', 'weekday=', 'genre=Sci-Fi']],
       ['/wrapped', ['/history?date=']],
+      // The pages added with the redesign: each has to render its own markup, not only answer 200.
+      ['/pick', ['Pick something for me', 'pick-stage']],
+      ['/wrapped/story', ['Your year, as a story']],
+      ['/screen', ['Lobby display']],
+      ['/', ['skip-link', 'live-pill']],
       // The deep link out to the media server's own UI.
       ['/suggestions', ['Open in', `127.0.0.1:${STUB_PORT}/web/index.html#/details?id=`]],
       // Mobile chrome and the palette have to be in the markup, not only in CSS.
@@ -548,6 +584,8 @@ async function main() {
       ['/admin/graphs', ['Daily play count', 'Plays by hour of day', 'Plays by platform']],
       ['/admin/graphs', ['How streams were delivered', 'Direct play', 'Transcode', 'LAN']],
       ['/admin/streams', ['Player', 'Delivery', 'Transcodes only', 'Jellyfin Web']],
+      // Newsletter libraries are keyed by server, so two servers cannot share a checkbox.
+      ['/admin/newsletter', ['name="library.1:lib-movies"']],
       // Both halves of a transcode, which is the whole point of the source columns.
       ['/admin/streams', ['HEVC 1080p', 'H264 720p']],
       ['/api/admin/streams/export', ['Source video', 'Transcode reason']],
@@ -616,6 +654,39 @@ async function main() {
       if (!ok) failures += 1;
     }
 
+    // The redesign's pages are behind the session like every other page. The manifest and
+    // the icons are the exception: a browser fetches them without any cookie.
+    for (const path of ['/pick', '/screen', '/wrapped/story']) {
+      const res = await fetch(base + path, { redirect: 'manual' });
+      const ok = res.status === 307;
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - GET ${path} anonymous → ${res.status}`);
+      if (!ok) failures += 1;
+    }
+    for (const path of ['/manifest.webmanifest', '/icon/any-192', '/apple-icon']) {
+      const res = await fetch(base + path, { redirect: 'manual' });
+      const ok = res.status === 200;
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - GET ${path} (anonymous) → ${res.status}`);
+      if (!ok) failures += 1;
+    }
+    {
+      const res = await fetch(`${base}/api/wrapped/card`, { redirect: 'manual' });
+      const ok = res.status === 401;
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - GET /api/wrapped/card anonymous → ${res.status}`);
+      if (!ok) failures += 1;
+    }
+
+    // The share card is the one CPU-heavy endpoint: a signed-in person gets a handful per
+    // minute, then 429, so a loop in a browser tab cannot pin a core.
+    {
+      const codes: number[] = [];
+      for (let i = 0; i < 9; i++) {
+        codes.push((await fetch(`${base}/api/wrapped/card`, { headers: { Cookie: cookie } })).status);
+      }
+      const ok = codes[0] === 200 && codes.includes(429);
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - /api/wrapped/card is rate limited → ${codes.join(',')}`);
+      if (!ok) failures += 1;
+    }
+
     // Watchlist mutations.
     const add = await fetch(`${base}/api/watchlist`, {
       method: 'POST',
@@ -634,6 +705,21 @@ async function main() {
     for (const [label, res] of [['POST', add], ['PATCH', patch], ['DELETE', del]] as const) {
       const ok = res.ok;
       console.log(`${ok ? 'ok  ' : 'FAIL'} - ${label} /api/watchlist → ${res.status}`);
+      if (!ok) failures += 1;
+    }
+
+    // The proxy refuses a write that a browser marks as cross-site, even with a valid session,
+    // and lets the same page's own writes through.
+    {
+      const attempt = (headers: Record<string, string>) =>
+        fetch(`${base}/api/watchlist?itemId=lib-3`, { method: 'DELETE', headers: { Cookie: cookie, ...headers } });
+      const evil = await attempt({ Origin: 'http://evil.example' });
+      const crossSite = await attempt({ 'Sec-Fetch-Site': 'cross-site' });
+      const same = await attempt({ Origin: base, 'Sec-Fetch-Site': 'same-origin' });
+      const ok = evil.status === 403 && crossSite.status === 403 && same.status === 200;
+      console.log(
+        `${ok ? 'ok  ' : 'FAIL'} - cross-site writes are refused, same-origin ones pass → ${evil.status}/${crossSite.status}/${same.status}`,
+      );
       if (!ok) failures += 1;
     }
 
@@ -665,6 +751,12 @@ async function main() {
       csvBody.includes('Blade Runner');
     console.log(`${csvOk ? 'ok  ' : 'FAIL'} - /api/history/export returns CSV`);
     if (!csvOk) failures += 1;
+
+    // A period that is not one of the offered ones means "all time", not an empty list.
+    const wild = await fetch(`${base}/api/history/export?days=1e9`, { headers: { Cookie: cookie } });
+    const wildOk = (await wild.text()).includes('Blade Runner');
+    console.log(`${wildOk ? 'ok  ' : 'FAIL'} - /api/history/export?days=1e9 falls back to all time`);
+    if (!wildOk) failures += 1;
 
     // The palette is useless if it cannot find a title the user has actually watched.
     const search = await fetch(`${base}/api/search?q=fire`, { headers: { Cookie: cookie } });

@@ -31,14 +31,22 @@ export default function RoleToggle({
 
     setBusy(true);
     setError(null);
-    const res = await fetch('/api/admin/users/role', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, globalAdmin: !globalAdmin }),
-    });
-    setBusy(false);
-    if (res.ok) router.refresh();
-    else setError(((await res.json()) as { error?: string }).error ?? t('users.roleFailed'));
+    try {
+      const res = await fetch('/api/admin/users/role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, globalAdmin: !globalAdmin }),
+      });
+      if (res.ok) router.refresh();
+      else {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(data.error ?? t('users.roleFailed'));
+      }
+    } catch {
+      setError(t('users.roleFailed'));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

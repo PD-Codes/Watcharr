@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, eq, gte, inArray, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import { db } from '@/db';
 import { watchHistory } from '@/db/schema';
 
@@ -35,6 +35,22 @@ export interface PlayInput {
   watchedAt: Date;
   durationMs: number;
   deviceName?: string | null;
+}
+
+/**
+ * High-water mark of what the media server's own played list has already given this user, the
+ * `since` for its next fetch. Only rows the server list wrote count: a live session or the
+ * Tautulli import recorded before the user first synced would otherwise hide everything they
+ * watched earlier, because the adapters only return plays newer than this.
+ */
+export async function lastServerPlayAt(userId: number): Promise<Date | undefined> {
+  const [latest] = await db
+    .select({ watchedAt: watchHistory.watchedAt })
+    .from(watchHistory)
+    .where(and(eq(watchHistory.userId, userId), eq(watchHistory.source, 'server')))
+    .orderBy(desc(watchHistory.watchedAt))
+    .limit(1);
+  return latest?.watchedAt;
 }
 
 /**

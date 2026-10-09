@@ -8,7 +8,13 @@ import {
   StatCard,
   WeekHourGrid,
 } from '@/components/Charts';
-import { formatDate, formatDuration, formatMinutes } from '@/components/format';
+import {
+  formatDate,
+  formatDuration,
+  formatMinutes,
+  localizeMonths,
+  localizeWeekdays,
+} from '@/components/format';
 import {
   getDailyActivity,
   getHighlights,
@@ -44,7 +50,7 @@ import { CastStrip } from '@/components/TitleMeta';
 import { getSettings } from '@/server/config';
 import { reportSyncError, syncHistory } from '@/server/sync';
 import { requireUser } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,10 +66,12 @@ export default async function StatsPage({
 }) {
   const session = await requireUser();
   const t = await getT();
+  const locale = await getLocale();
   await syncHistory(session).catch(reportSyncError('history sync'));
 
   const params = await searchParams;
-  const days = Number(params.days ?? 30);
+  const requested = Number(params.days ?? 30);
+  const days = PERIOD_DAYS.includes(requested) ? requested : 30;
   const by: RankBy = params.by === 'time' ? 'time' : 'count';
   const rank =
     by === 'time' ? formatMinutes : (value: number) => t('common.plays', { count: value });
@@ -264,7 +272,7 @@ export default async function StatsPage({
         <section>
           <h2>{t('stats.byWeekday')}</h2>
           <div className="card">
-            <ColumnChart data={weekdays} format={formatMinutes} />
+            <ColumnChart data={localizeWeekdays(weekdays, t)} format={formatMinutes} />
           </div>
         </section>
       </div>
@@ -283,7 +291,7 @@ export default async function StatsPage({
       <section className="section">
         <h2>{t('stats.byMonth', { year })}</h2>
         <div className="card">
-          <ColumnChart data={monthly} format={formatMinutes} />
+          <ColumnChart data={localizeMonths(monthly, locale)} format={formatMinutes} />
         </div>
       </section>
 

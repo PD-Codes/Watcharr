@@ -1,0 +1,687 @@
+/*
+ * Wrapped story: a full-screen, phone-first playback layer. Graphite and the shell's ambient
+ * light carry it; amber appears only on the data (numbers, the share meter, the hour bars).
+ * Everything is a token, so both themes work without a second set of rules.
+ */
+
+/* The page behind is a few lines of hidden text; keep it from scrolling or rubber-banding. */
+html:has(.story) {
+  overflow: hidden;
+  overscroll-behavior: none;
+  /* The reserved gutter would show as a blank strip beside a full-bleed layer. */
+  scrollbar-gutter: auto;
+}
+
+.story,
+.main > .story {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: block;
+  overflow: hidden;
+  background:
+    radial-gradient(900px 520px at 76% -10%, color-mix(in srgb, var(--text) 6%, transparent), transparent 72%),
+    radial-gradient(760px 460px at 4% 110%, color-mix(in srgb, var(--text) 4%, transparent), transparent 72%),
+    var(--ink);
+  color: var(--text);
+  outline: none;
+  animation: story-layer-in var(--dur-medium) var(--ease-standard) both;
+}
+
+.story-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* --- Desktop: the phone column floats in the middle, arrows beside it ---------------- */
+
+.story-arrow {
+  display: none;
+}
+
+@media (min-width: 640px) and (min-height: 600px) {
+  .story,
+  .main > .story {
+    --story-w: min(480px, calc((100dvh - 32px) * 0.5625));
+    display: grid;
+    place-items: center;
+  }
+
+  .story-frame {
+    width: var(--story-w);
+    height: calc(100dvh - 32px);
+    border: 1px solid var(--line);
+    border-radius: var(--shape-xl);
+    background:
+      radial-gradient(520px 320px at 80% -8%, color-mix(in srgb, var(--text) 6%, transparent), transparent 72%),
+      var(--surface);
+    box-shadow: var(--elev-4);
+  }
+
+  .story-arrow {
+    position: absolute;
+    top: 50%;
+    display: grid;
+    width: 48px;
+    height: 48px;
+    margin-top: -24px;
+    border: 1px solid var(--line-strong);
+    color: var(--text);
+  }
+
+  .story-arrow:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .story-arrow-prev {
+    left: calc(50% - var(--story-w) / 2 - 72px);
+  }
+
+  .story-arrow-next {
+    right: calc(50% - var(--story-w) / 2 - 72px);
+  }
+}
+
+/* --- Top: progress segments and tools ------------------------------------------------ */
+
+.story-top {
+  position: relative;
+  z-index: 4;
+  flex: none;
+  padding: calc(env(safe-area-inset-top) + 12px) 14px 0;
+  pointer-events: none;
+  transition: opacity var(--dur-medium) var(--ease-standard);
+}
+
+/* Holding the screen hides the chrome, like every story player. */
+.story[data-holding] .story-top {
+  opacity: 0;
+}
+
+.story-bars {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.story-bars li {
+  flex: 1;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 20%, transparent);
+}
+
+.story-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--text);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.story-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding-left: 4px;
+}
+
+.story-pos {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.story-tools-end {
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.story-icon {
+  color: var(--text);
+}
+
+.story .story-icon:hover {
+  box-shadow: none;
+  filter: none;
+}
+
+/* --- Stage, slides, tap zones -------------------------------------------------------- */
+
+.story-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.story-slide {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  container-type: inline-size;
+  pointer-events: none;
+  animation: story-in 440ms var(--ease-emphasized) both;
+}
+
+.story-slide.is-leaving {
+  z-index: 1;
+  animation: story-out 240ms var(--ease-standard) both;
+}
+
+.story-slide [data-story-ui] {
+  pointer-events: auto;
+}
+
+.story-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  padding: 10px 24px calc(env(safe-area-inset-bottom) + 28px);
+}
+
+.story .story-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  filter: none;
+  cursor: pointer;
+}
+
+.story .story-zone-prev {
+  left: 0;
+  width: 33.333%;
+}
+
+.story .story-zone-next {
+  right: 0;
+  width: 66.667%;
+}
+
+/* Faint year behind the content; its corner changes every slide. */
+.story-mark {
+  position: absolute;
+  z-index: 0;
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 125;
+  font-weight: 800;
+  font-size: 58cqw;
+  line-height: 0.8;
+  letter-spacing: -0.05em;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--text) 4%, transparent);
+  /* Dark-on-paper reads stronger than light-on-graphite, so the light scheme gets less. */
+  color: light-dark(
+    color-mix(in srgb, var(--text) 3%, transparent),
+    color-mix(in srgb, var(--text) 4.5%, transparent)
+  );
+  user-select: none;
+}
+
+.story-slide[data-pos='0'] .story-mark {
+  right: -9cqw;
+  bottom: 5%;
+}
+.story-slide[data-pos='1'] .story-mark {
+  left: -11cqw;
+  top: 12%;
+}
+.story-slide[data-pos='2'] .story-mark {
+  right: -15cqw;
+  top: 24%;
+}
+.story-slide[data-pos='3'] .story-mark {
+  left: -7cqw;
+  bottom: 9%;
+}
+
+/* The year is the whole point of these two slides; a ghost copy behind it only muddies it. */
+.story-slide[data-kind='intro'] .story-mark,
+.story-slide[data-kind='outro'] .story-mark {
+  display: none;
+}
+
+/* --- Type ---------------------------------------------------------------------------- */
+
+.story-eyebrow {
+  position: relative;
+  margin: 0;
+  font-family: var(--font-body-stack);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.story-kicker {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.story-center {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  min-height: 0;
+}
+
+.story-year {
+  position: relative;
+  margin: auto 0 0;
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 125;
+  font-size: calc((100cqw - 48px) / 3.2);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 0.85;
+}
+
+.story-lede {
+  position: relative;
+  margin: 0;
+  max-width: 24ch;
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.story-hint {
+  position: relative;
+  margin: 24px 0 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+/* The one big figure of a slide, sized so its widest form fits whatever the digit count. */
+.story-big {
+  position: relative;
+  margin: 0;
+  font-size: min(210px, calc((100cqw - 48px) / (var(--n) * 0.62)));
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 0.92;
+  color: var(--beam);
+}
+
+.story-big.is-small {
+  font-size: min(124px, calc((100cqw - 48px) / (var(--n) * 0.62)));
+}
+
+/* The projector spill behind a figure: this number is data, so it may glow. */
+.story-big::before {
+  content: '';
+  position: absolute;
+  inset: -0.35em -0.45em;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(closest-side, var(--beam-wash), transparent);
+}
+
+.story-unit {
+  position: relative;
+  margin: 0;
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 125;
+  font-size: clamp(24px, 9cqw, 40px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.story-cap {
+  position: relative;
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-dim);
+}
+
+.story-part + .story-part {
+  margin-left: 0.18em;
+}
+
+.story-mid {
+  position: relative;
+  margin: 0;
+  font-size: clamp(40px, 15cqw, 64px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--beam);
+}
+
+.story-rule {
+  width: 100%;
+  margin: 22px 0 14px;
+  border: 0;
+  border-top: 1px solid var(--line-strong);
+}
+
+.story-name {
+  position: relative;
+  margin: 0;
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 118;
+  font-size: clamp(24px, 8cqw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.story-name.is-large {
+  font-size: clamp(34px, 12cqw, 56px);
+}
+
+.story-name.is-huge {
+  font-variation-settings: 'wdth' 125;
+  font-size: clamp(36px, 14cqw, 72px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+/* --- Slide specifics ------------------------------------------------------------------ */
+
+.story-poster-wrap {
+  position: relative;
+  flex: none;
+  width: min(52cqw, calc(34dvh * 0.6667));
+}
+
+.story-poster-wrap.is-small {
+  width: min(26cqw, 104px);
+}
+
+.story-poster {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: var(--shape-md);
+  background: var(--surface-container);
+  box-shadow: var(--elev-3);
+}
+
+.story-center.has-poster {
+  gap: 14px;
+}
+
+.story-pair {
+  position: relative;
+  display: flex;
+  gap: 28px;
+  margin: 6px 0 0;
+}
+
+.story-pair > div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+}
+
+.story-pair dd {
+  margin: 0;
+  font-size: clamp(26px, 8.5cqw, 36px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--beam);
+}
+
+.story-pair dt {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.story-versus {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.story-half {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 0;
+}
+
+.story-half-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.story-vs {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.story-vs span {
+  padding: 4px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-full);
+  background: var(--surface-container-high);
+  font-family: var(--font-mono-stack);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.story-meter {
+  height: 6px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: var(--shape-full);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.story-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--beam);
+  transform-origin: left;
+  animation: story-grow 900ms 250ms var(--ease-emphasized) both;
+}
+
+.story-split {
+  gap: 30px;
+  justify-content: space-evenly;
+}
+
+.story-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.story-chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.story-chain span {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--beam);
+  opacity: 0.85;
+}
+
+.story-hours {
+  display: flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: clamp(88px, 18dvh, 160px);
+  margin-top: 18px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.story-hours span {
+  flex: 1;
+  min-width: 0;
+  border-radius: 2px 2px 0 0;
+  background: var(--beam);
+}
+
+.story-hours-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.story-card-frame {
+  position: relative;
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  /* The card's 4:5 box is the largest one that fits this frame, whatever the screen. */
+  container-type: size;
+}
+
+.story-card-frame img,
+.story-card-frame:not([data-ready])::before {
+  grid-area: 1 / 1;
+  width: min(100cqw, 100cqh * 0.8);
+  aspect-ratio: 4 / 5;
+  border: 1px solid var(--line);
+  border-radius: var(--shape-lg);
+}
+
+.story-card-frame img {
+  display: block;
+  object-fit: contain;
+  box-shadow: var(--elev-3);
+  animation: story-in 400ms var(--ease-emphasized) both;
+}
+
+.story-card-frame:not([data-ready])::before {
+  content: '';
+  background: var(--surface-container);
+}
+
+.story-actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.story-actions .btn {
+  flex: 1 1 auto;
+}
+
+.story-actions .btn:first-child {
+  flex-basis: 100%;
+}
+
+.story-actions .btn:disabled {
+  opacity: 0.5;
+}
+
+/* --- Motion --------------------------------------------------------------------------- */
+
+@keyframes story-layer-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes story-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes story-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes story-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Static ticks instead of filling bars: the current one is taller, the finished ones dimmer. */
+@media (prefers-reduced-motion: reduce) {
+  .story,
+  .main > .story,
+  .story-slide,
+  .story-meter span,
+  .story-card-frame img {
+    animation: none !important;
+  }
+
+  .story-top {
+    transition: none;
+  }
+
+  .story-bars li.is-now {
+    height: 5px;
+  }
+
+  .story-bars li:not(.is-now) .story-fill {
+    opacity: 0.55;
+  }
+}

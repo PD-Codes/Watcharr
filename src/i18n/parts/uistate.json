@@ -1,0 +1,26 @@
+{
+  "chart.describeHeatmap": {
+    "en": "Activity over {days} days: {active} with plays, {total} in total. Busiest day {day} with {value}.",
+    "de": "Aktivität über {days} Tage: an {active} davon Wiedergaben, insgesamt {total}. Aktivster Tag {day} mit {value}."
+  },
+  "chart.describeWeek": {
+    "en": "Weekday and hour grid, {total} in total. Busiest slot {day} at {hour}:00 with {value}.",
+    "de": "Raster aus Wochentag und Uhrzeit, insgesamt {total}. Aktivster Zeitraum {day} um {hour}:00 Uhr mit {value}."
+  },
+  "watchlist.noResults": {
+    "en": "No title in the library matches “{query}”.",
+    "de": "Kein Titel in der Bibliothek passt zu „{query}“."
+  },
+  "watchlist.emptyAction": {
+    "en": "Search the library",
+    "de": "Bibliothek durchsuchen"
+  },
+  "watchlist.searchFailed": {
+    "en": "The library search failed. Try again.",
+    "de": "Die Bibliothekssuche ist fehlgeschlagen. Versuche es erneut."
+  },
+  "watchlist.actionFailed": {
+    "en": "The watchlist could not be updated. Try again.",
+    "de": "Die Merkliste konnte nicht aktualisiert werden. Versuche es erneut."
+  }
+}

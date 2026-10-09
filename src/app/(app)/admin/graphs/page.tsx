@@ -6,7 +6,7 @@ import {
   DonutChart,
   StackedColumnChart,
 } from '@/components/Charts';
-import { formatMinutes } from '@/components/format';
+import { formatMinutes, localizeWeekdays } from '@/components/format';
 import {
   getDailyActivity,
   getDailyPlays,
@@ -121,7 +121,7 @@ export default async function AdminGraphsPage({
         <section>
           <h2>{t('graphs.playsByWeekday')}</h2>
           <div className="card">
-            <ColumnChart data={weekdayPlays} format={plays} />
+            <ColumnChart data={localizeWeekdays(weekdayPlays, t)} format={plays} />
           </div>
         </section>
         <section>

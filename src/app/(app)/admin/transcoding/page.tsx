@@ -1,5 +1,5 @@
 import { BarChart, DonutChart, StatCard } from '@/components/Charts';
-import { formatDuration, percent } from '@/components/format';
+import { firstParam, formatDuration, percent } from '@/components/format';
 import {
   getAudioCodecs,
   getBitrateBuckets,
@@ -10,7 +10,7 @@ import {
   getTranscodeReasons,
   getVideoCodecs,
 } from '@/server/playback';
-import { requireAdmin } from '@/server/session';
+import { adminScope, requireAdmin } from '@/server/session';
 import { getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
@@ -18,23 +18,27 @@ export const dynamic = 'force-dynamic';
 export default async function AdminTranscodingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string }>;
+  searchParams: Promise<{ days?: string | string[] }>;
 }) {
-  await requireAdmin();
+  const session = await requireAdmin();
   const t = await getT();
-  const raw = (await searchParams).days;
-  const days = raw === 'all' ? undefined : Number(raw ?? 30);
+  const requested = firstParam((await searchParams).days);
+  // Whitelisted against the period select; `abc` would be NaN, which `since()` reads as all time.
+  const raw = requested === 'all' || ['7', '30', '90'].includes(requested ?? '') ? requested : '30';
+  const days = raw === 'all' ? undefined : Number(raw);
+  // A server admin only sees their own server's streams, like every other admin page.
+  const scope = adminScope(session.user);
 
   const [totals, methods, reasons, video, audio, containers, resolutions, bitrates] =
     await Promise.all([
-      getPlaybackTotals(days),
-      getPlayMethods(days),
-      getTranscodeReasons(days),
-      getVideoCodecs(days),
-      getAudioCodecs(days),
-      getContainers(days),
-      getResolutions(days),
-      getBitrateBuckets(days),
+      getPlaybackTotals(days, scope),
+      getPlayMethods(days, scope),
+      getTranscodeReasons(days, scope),
+      getVideoCodecs(days, scope),
+      getAudioCodecs(days, scope),
+      getContainers(days, scope),
+      getResolutions(days, scope),
+      getBitrateBuckets(days, scope),
     ]);
 
   const directPlay = totals.sessions - totals.transcodes;
@@ -48,7 +52,7 @@ export default async function AdminTranscodingPage({
       <form className="filters">
         <label>
           {t('serverstats.period')}
-          <select name="days" defaultValue={raw ?? '30'}>
+          <select name="days" defaultValue={raw}>
             <option value="7">{t('serverstats.last7')}</option>
             <option value="30">{t('serverstats.last30')}</option>
             <option value="90">{t('serverstats.last90')}</option>

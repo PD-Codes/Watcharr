@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -195,6 +196,52 @@ async function main() {
   assert.equal(lookupSection(index, { itemId: 'x-1', title: 'Orphan' }), null);
   assert.equal(lookupSection(index, { itemId: 'never-seen', title: 'Just added' }), null);
   console.log('ok - an item resolves to its library without asking the media server');
+
+  // Slack treats <!channel>, <@U123> and <url|label> in text as live markup, and titles come
+  // from media servers. The payload values must arrive escaped; the channel is a local server.
+  const received: { text?: string }[] = [];
+  const sink = createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => (raw += chunk));
+    req.on('end', () => {
+      received.push(JSON.parse(raw));
+      res.end('ok');
+    });
+  });
+  await new Promise<void>((resolve) => sink.listen(0, '127.0.0.1', resolve));
+  const { port } = sink.address() as { port: number };
+  await createChannel({
+    type: 'slack',
+    name: 'slack',
+    config: { url: `http://127.0.0.1:${port}/hook` },
+    events: ['media.added'],
+  });
+  await dispatch('media.added', { title: '<!channel> A & B', server: { label: 'S', id: 1 } });
+  sink.close();
+  assert.equal(received.length, 1, 'the slack channel was delivered to once');
+  assert.ok(received[0].text?.includes('&lt;!channel&gt; A &amp; B'), received[0].text);
+  assert.ok(!received[0].text?.includes('<!channel>'), 'no live Slack markup survives from a title');
+  console.log('ok - slack message values are escaped, not interpreted');
+
+  // A username is only unique within one server, and a server admin sees only their own.
+  const { mayReceive } = await import('../server/notifications');
+  const other = { server: { id: 2 }, user: 'john' };
+  assert.ok(!mayReceive('playback.start', { isAdmin: false, username: 'john', serverId: 1 }, other));
+  assert.ok(!mayReceive('media.added', { isAdmin: false, username: 'john', serverId: 1 }, other));
+  assert.ok(!mayReceive('server.down', { isAdmin: true, username: 'a', serverId: 1 }, other));
+  assert.ok(mayReceive('server.down', { isAdmin: true, username: 'a', serverId: 2 }, other));
+  assert.ok(mayReceive('server.down', { isAdmin: true, username: 'a', serverId: 1, globalAdmin: true }, other));
+  assert.ok(mayReceive('playback.start', { isAdmin: false, username: 'john', serverId: 2 }, other));
+  console.log('ok - personal notifications stay on the recipient\'s own server');
+
+  // GCM must reject a shortened tag; Node would otherwise accept a 4-byte one.
+  const { encryptSecret, decryptSecret } = await import('../server/crypto');
+  const sealed = encryptSecret('token');
+  const [iv, tag, data] = sealed.slice(3).split(':');
+  const shortTag = Buffer.from(tag, 'base64').subarray(0, 4).toString('base64');
+  assert.throws(() => decryptSecret(`v1:${iv}:${shortTag}:${data}`), 'a truncated auth tag must fail');
+  assert.equal(decryptSecret(sealed), 'token');
+  console.log('ok - a truncated encryption tag is rejected');
 }
 
 void main();

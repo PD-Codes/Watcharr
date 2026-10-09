@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { csvResponse, toCsv } from '@/server/csv';
+import { HISTORY_PERIODS } from '@/server/history';
 import { listSessionHistory } from '@/server/playback';
 import { adminScope, getSession, isAdmin } from '@/server/session';
 
@@ -18,11 +19,14 @@ export async function GET(request: Request) {
   }
 
   const sp = new URL(request.url).searchParams;
-  const days = sp.get('days') ? Number(sp.get('days')) : undefined;
+  // Whitelisted like the page: `1e9` makes SQLite's unixepoch() return NULL and the export an
+  // empty file at 200, where the page would have fallen back to all time.
+  const requested = Number(sp.get('days'));
+  const days = HISTORY_PERIODS.includes(requested) ? requested : undefined;
 
   const { rows } = await listSessionHistory({
     scope: adminScope(session.user),
-    days: Number.isFinite(days) ? days : undefined,
+    days,
     limit: MAX_ROWS,
     transcodesOnly: sp.get('transcodes') === '1',
   });

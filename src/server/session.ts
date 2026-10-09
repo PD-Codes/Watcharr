@@ -1,8 +1,8 @@
 import 'server-only';
 import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { and, desc, eq, gt, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, lt, notExists, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { authSessions, loginHistory, users } from '@/db/schema';
 import { isLocale } from '@/i18n';
@@ -33,6 +33,21 @@ function unsign(value: string): string | null {
   const a = Buffer.from(mac, 'hex');
   const b = Buffer.from(expected, 'hex');
   return a.length === b.length && timingSafeEqual(a, b) ? id : null;
+}
+
+/**
+ * Whether the session cookie may carry the Secure flag.
+ *
+ * Tying this to NODE_ENV is wrong: a browser silently discards a Secure cookie sent over
+ * plain HTTP, and a self-hosted deployment on a LAN is plain HTTP far more often than not.
+ * The symptom is vicious: the login request answers 200, the redirect fires, the next page
+ * finds no session and bounces back to the login screen, with no error logged anywhere. So
+ * the flag follows the scheme the request really arrived with. Next sets X-Forwarded-Proto
+ * itself ("http" when nothing in front sent one), so a TLS-terminating proxy has to send
+ * "https" for the flag to be set. (http://localhost is a secure context either way.)
+ */
+async function useSecureCookie(): Promise<boolean> {
+  return (await headers()).get('x-forwarded-proto')?.split(',')[0]?.trim() === 'https';
 }
 
 export type SessionUser = typeof users.$inferSelect;
@@ -138,8 +153,7 @@ export async function createSession(
   // Bootstrapping the global admin. The person who ran setup owns the server token, so
   // they are an admin on that server — and only a server admin can claim the role, which
   // is why "whoever signs in first" cannot be hijacked by an ordinary user.
-  if (row.isAdmin && !row.globalAdmin && (await countGlobalAdmins()) === 0) {
-    await db.update(users).set({ globalAdmin: true }).where(eq(users.id, row.id));
+  if (row.isAdmin && !row.globalAdmin && (await claimGlobalAdmin(row.id))) {
     row.globalAdmin = true;
   }
 
@@ -157,7 +171,7 @@ export async function createSession(
   (await cookies()).set(COOKIE, sign(id), {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: await useSecureCookie(),
     path: '/',
     maxAge: MAX_AGE_SECONDS,
   });
@@ -229,6 +243,25 @@ export function adminScope(user: SessionUser): Scope {
 /** Whether an admin may look at another user's data. */
 export function canSee(admin: SessionUser, target: { serverId: number }): boolean {
   return admin.globalAdmin || (admin.isAdmin && admin.serverId === target.serverId);
+}
+
+/**
+ * Makes `userId` the global admin if there is none yet. "Is there one?" and the update are
+ * one statement: with a check first and an update after, two admins signing in at the same
+ * moment could both find the role free and both take it.
+ */
+export async function claimGlobalAdmin(userId: number): Promise<boolean> {
+  const claimed = await db
+    .update(users)
+    .set({ globalAdmin: true })
+    .where(
+      and(
+        eq(users.id, userId),
+        notExists(db.select({ one: sql`1` }).from(users).where(eq(users.globalAdmin, true))),
+      ),
+    )
+    .returning({ id: users.id });
+  return claimed.length > 0;
 }
 
 /**

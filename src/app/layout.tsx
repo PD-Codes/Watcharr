@@ -33,6 +33,10 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Watcharr',
   description: 'Companion app for Plex, Jellyfin and Emby',
+  applicationName: 'Watcharr',
+  // Black keeps the iOS status bar from overlapping the page once it is on the home screen.
+  appleWebApp: { capable: true, title: 'Watcharr', statusBarStyle: 'black' },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
@@ -48,12 +52,12 @@ export const viewport: Viewport = {
 };
 
 /*
- * Applies the stored scheme before the first paint. Doing this in an effect instead would
- * render one dark frame for a light-theme user on every navigation — the flash people
- * always notice. Kept to one statement and wrapped, because localStorage throws outright
- * in some embedded webviews.
+ * Applies the stored scheme and the collapsed-sidebar choice before the first paint. Doing
+ * this in an effect instead would render one dark frame for a light-theme user on every
+ * navigation — the flash people always notice. Wrapped, because localStorage throws
+ * outright in some embedded webviews.
  */
-const THEME_BOOT = `try{var t=localStorage.getItem('watcharr-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}`;
+const THEME_BOOT = `try{var d=document.documentElement,t=localStorage.getItem('watcharr-theme');if(t)d.dataset.theme=t;if(localStorage.getItem('watcharr-rail')==='1')d.dataset.rail='1'}catch(e){}`;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // Resolved here rather than in the app group so the login and setup screens, which sit
@@ -61,7 +65,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const locale = await getLocale();
 
   return (
-    <html lang={locale} className={`${display.variable} ${body.variable} ${mono.variable}`}>
+    <html
+      lang={locale}
+      className={`${display.variable} ${body.variable} ${mono.variable}`}
+      // The boot script below sets data-theme before React hydrates, so the attribute
+      // differs from the server markup by design; without this the dev console reports a
+      // hydration mismatch on every load.
+      suppressHydrationWarning
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
       </head>

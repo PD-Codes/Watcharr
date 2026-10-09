@@ -34,7 +34,7 @@
   "ip.noGeo": { "en": "No geolocation data. Country lookup is off, or the provider returned nothing — see Settings.", "de": "Keine Geodaten. Die Länderabfrage ist deaktiviert, oder der Anbieter hat nichts geliefert — siehe Einstellungen." },
   "ip.network": { "en": "Network", "de": "Netzwerk" },
   "ip.isp": { "en": "ISP", "de": "Provider" },
-  "ip.organisation": { "en": "Organisation", "de": "Organisation" },
+  "ip.organisation": { "en": "Organization", "de": "Organisation" },
   "ip.asn": { "en": "ASN", "de": "ASN" },
 
   "server.openIn": { "en": "Open in {name}", "de": "In {name} öffnen" },
@@ -70,6 +70,9 @@
   "stream.delivery": { "en": "Delivery", "de": "Auslieferung" },
 
   "activity.nothingPlaying": { "en": "Nothing is playing right now.", "de": "Gerade läuft nichts." },
+  "activity.state.playing": { "en": "Playing", "de": "Läuft" },
+  "activity.state.paused": { "en": "Paused", "de": "Pausiert" },
+  "activity.state.buffering": { "en": "Buffering", "de": "Puffert" },
   "activity.progress": { "en": "Progress", "de": "Fortschritt" },
   "activity.client": { "en": "Client", "de": "Client" },
   "activity.stream": { "en": "Stream", "de": "Stream" },
@@ -91,6 +94,7 @@
   "chart.empty": { "en": "Chart with no data.", "de": "Diagramm ohne Daten." },
   "chart.describe": { "en": "Chart of {count} values, total {total}, highest {peak} at {value}.", "de": "Diagramm mit {count} Werten, insgesamt {total}, höchster Wert {peak} mit {value}." },
   "chart.describeStacked": { "en": "Stacked chart of {series} over {count} buckets, peak {peak}.", "de": "Gestapeltes Diagramm mit {series} über {count} Intervalle, Spitzenwert {peak}." },
+  "chart.legendTip": { "en": "{value} of {total}", "de": "{value} von {total}" },
   "chart.barTip": { "en": "{label} — {value} · {share}% of shown", "de": "{label} — {value} · {share}% der Auswahl" },
   "weekday.mon": { "en": "Mon", "de": "Mo" },
   "weekday.tue": { "en": "Tue", "de": "Di" },

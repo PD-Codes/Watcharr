@@ -13,16 +13,21 @@ concurrency:
 
 jobs:
   test:
-    name: Typecheck and tests
+    name: Typecheck and tests (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # package.json promises >=22, the Docker image ships 24.
+        node: ['22', '24']
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
           cache: npm
 
       - run: npm ci
@@ -42,14 +47,14 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       # amd64 only here: this is a "does it still build" check, and emulating arm64 on
       # every pull request costs far more than it catches. The release workflow builds
       # both architectures for real.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64

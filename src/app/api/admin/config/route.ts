@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { badBody, readBody } from '@/server/body';
 import { updateSettings } from '@/server/config';
 import { getSession } from '@/server/session';
 
@@ -11,61 +12,57 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
   }
 
-  const body = (await request.json()) as {
-    tmdbApiKey?: string;
-    defaultLocale?: string;
-    features?: Record<string, boolean>;
-    watchedThreshold?: number;
-    webhookUrl?: string;
-    webhookEvents?: string[];
-    geoipEnabled?: boolean;
-    geoipUrl?: string;
-    monitorMaxStreamsPerUser?: number | null;
-    monitorBandwidthMbps?: number | null;
-    monitorTranscodeAlert?: boolean;
-    monitorFailedLoginThreshold?: number | null;
-    monitorFailedLoginWindowMin?: number;
-    monitorNewAddressAlert?: boolean;
-    digestEnabled?: boolean;
-    digestFrequency?: string;
-    backupAutoEnabled?: boolean;
-    backupIntervalHours?: number;
-    backupRetention?: number;
-    timezone?: string;
-    retentionSessionDays?: number | null;
-    retentionLogDays?: number | null;
-    retentionHistoryDays?: number | null;
-  };
+  const body = await readBody(request, {
+    tmdbApiKey: 'string',
+    defaultLocale: 'string',
+    features: 'flags',
+    watchedThreshold: 'number',
+    webhookUrl: 'string',
+    webhookEvents: 'strings',
+    geoipEnabled: 'boolean',
+    geoipUrl: 'string',
+    monitorMaxStreamsPerUser: 'number',
+    monitorBandwidthMbps: 'number',
+    monitorTranscodeAlert: 'boolean',
+    monitorFailedLoginThreshold: 'number',
+    monitorFailedLoginWindowMin: 'number',
+    monitorNewAddressAlert: 'boolean',
+    digestEnabled: 'boolean',
+    digestFrequency: 'string',
+    backupAutoEnabled: 'boolean',
+    backupIntervalHours: 'number',
+    backupRetention: 'number',
+    timezone: 'string',
+    retentionSessionDays: 'number',
+    retentionLogDays: 'number',
+    retentionHistoryDays: 'number',
+  });
+  if (!body) return badBody();
 
   const threshold = Number(body.watchedThreshold);
   await updateSettings({
     tmdbApiKey: body.tmdbApiKey === undefined ? undefined : body.tmdbApiKey || null,
-    defaultLocale: body.defaultLocale,
-    features: body.features,
+    defaultLocale: body.defaultLocale ?? undefined,
+    features: body.features ?? undefined,
     watchedThreshold: Number.isFinite(threshold) ? threshold : undefined,
     webhookUrl: body.webhookUrl === undefined ? undefined : body.webhookUrl || null,
-    webhookEvents: Array.isArray(body.webhookEvents)
-      ? body.webhookEvents.filter((e): e is string => typeof e === 'string')
-      : undefined,
-    geoipEnabled: typeof body.geoipEnabled === 'boolean' ? body.geoipEnabled : undefined,
+    webhookEvents: body.webhookEvents ?? undefined,
+    geoipEnabled: body.geoipEnabled ?? undefined,
     geoipUrl: body.geoipUrl === undefined ? undefined : body.geoipUrl || null,
     monitorMaxStreamsPerUser:
       body.monitorMaxStreamsPerUser === undefined ? undefined : body.monitorMaxStreamsPerUser,
     monitorBandwidthMbps:
       body.monitorBandwidthMbps === undefined ? undefined : body.monitorBandwidthMbps,
-    monitorTranscodeAlert:
-      typeof body.monitorTranscodeAlert === 'boolean' ? body.monitorTranscodeAlert : undefined,
+    monitorTranscodeAlert: body.monitorTranscodeAlert ?? undefined,
     monitorFailedLoginThreshold:
       body.monitorFailedLoginThreshold === undefined ? undefined : body.monitorFailedLoginThreshold,
-    monitorFailedLoginWindowMin:
-      body.monitorFailedLoginWindowMin === undefined ? undefined : body.monitorFailedLoginWindowMin,
-    monitorNewAddressAlert:
-      typeof body.monitorNewAddressAlert === 'boolean' ? body.monitorNewAddressAlert : undefined,
-    digestEnabled: typeof body.digestEnabled === 'boolean' ? body.digestEnabled : undefined,
-    digestFrequency: body.digestFrequency,
-    backupAutoEnabled: typeof body.backupAutoEnabled === 'boolean' ? body.backupAutoEnabled : undefined,
-    backupIntervalHours: body.backupIntervalHours,
-    backupRetention: body.backupRetention,
+    monitorFailedLoginWindowMin: body.monitorFailedLoginWindowMin ?? undefined,
+    monitorNewAddressAlert: body.monitorNewAddressAlert ?? undefined,
+    digestEnabled: body.digestEnabled ?? undefined,
+    digestFrequency: body.digestFrequency ?? undefined,
+    backupAutoEnabled: body.backupAutoEnabled ?? undefined,
+    backupIntervalHours: body.backupIntervalHours ?? undefined,
+    backupRetention: body.backupRetention ?? undefined,
     // The empty option means "follow the container", so an empty string is a value here
     // rather than an omission — hence null instead of undefined.
     timezone: body.timezone === undefined ? undefined : body.timezone || null,

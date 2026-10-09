@@ -3,8 +3,12 @@
 // against the generated route types. No 'server-only' import: this is pure string work.
 
 function cell(value: unknown): string {
-  const text = value === null || value === undefined ? '' : String(value);
-  return /["\n,]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  let text = value === null || value === undefined ? '' : String(value);
+  // Titles, device names and usernames come from the media server (or a client) and open in
+  // Excel/Sheets: a leading = + - @ turns the cell into a formula. Strings only, so real
+  // negative numbers stay numbers.
+  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return /["\r\n,]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 /** Header row plus data rows, joined. Values are stringified and quoted as needed. */

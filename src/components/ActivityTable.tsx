@@ -50,6 +50,17 @@ const PLAY_METHOD_KEYS = {
   transcode: 'stream.transcode',
 } as const;
 
+const STATE_KEYS = {
+  playing: 'activity.state.playing',
+  paused: 'activity.state.paused',
+  buffering: 'activity.state.buffering',
+} as const;
+
+function stateLabel(t: Translate, state: string): string {
+  const key = STATE_KEYS[state as keyof typeof STATE_KEYS];
+  return key ? t(key) : state;
+}
+
 /** Translated label for a play method, falling back to the shared "Unknown". */
 function playMethodLabel(t: Translate, playMethod?: string | null): string {
   const key = PLAY_METHOD_KEYS[playMethod as keyof typeof PLAY_METHOD_KEYS];
@@ -135,7 +146,7 @@ export default async function ActivityTable({
               <td>
                 {formatDuration(row.progressMs)} / {formatDuration(row.durationMs)}
                 <br />
-                <span className={`badge ${row.state === 'playing' ? 'live' : ''}`}>{row.state}</span>
+                <span className={`badge ${row.state === 'playing' ? 'live' : ''}`}>{stateLabel(t, row.state)}</span>
               </td>
               <td className="secondary-col">
                 {row.clientName ?? '—'}

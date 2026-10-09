@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Icon } from '@/components/Icons';
 import { StatCard } from '@/components/Charts';
 import StreamTable from '@/components/StreamTable';
-import { formatDuration } from '@/components/format';
+import { firstParam, formatDuration, intParam } from '@/components/format';
 import { getPlaybackTotals, listSessionHistory } from '@/server/playback';
 import { adminScope, requireAdmin } from '@/server/session';
 import { getT } from '@/i18n/server';
@@ -27,13 +27,16 @@ const PERIODS: [string, (t: Translate) => string][] = [
 export default async function AdminStreamsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string; page?: string; transcodes?: string }>;
+  searchParams: Promise<{ days?: string | string[]; page?: string | string[]; transcodes?: string }>;
 }) {
   const session = await requireAdmin();
   const t = await getT();
   const params = await searchParams;
-  const days = params.days ? Number(params.days) : undefined;
-  const page = Math.max(1, Number(params.page ?? 1));
+  // Whitelisted against the period links: a free number would reach the SQL window and the export link.
+  const requested = firstParam(params.days) ?? '';
+  const daysValue = PERIODS.some(([value]) => value === requested) ? requested : '';
+  const days = daysValue ? Number(daysValue) : undefined;
+  const page = intParam(params.page, 1);
   const transcodesOnly = params.transcodes === '1';
   const scope = adminScope(session.user);
 
@@ -52,7 +55,7 @@ export default async function AdminStreamsPage({
   const query = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
     for (const [key, value] of Object.entries({
-      days: params.days,
+      days: daysValue || undefined,
       transcodes: transcodesOnly ? '1' : undefined,
       page: undefined as string | undefined,
       ...patch,
@@ -64,7 +67,7 @@ export default async function AdminStreamsPage({
   };
 
   const exportSearch = new URLSearchParams();
-  if (params.days) exportSearch.set('days', params.days);
+  if (daysValue) exportSearch.set('days', daysValue);
   if (transcodesOnly) exportSearch.set('transcodes', '1');
 
   return (
@@ -79,7 +82,7 @@ export default async function AdminStreamsPage({
             <Link
               key={value}
               href={query({ days: value || undefined })}
-              className={(params.days ?? '') === value ? 'on' : undefined}
+              className={daysValue === value ? 'on' : undefined}
             >
               {label(t)}
             </Link>

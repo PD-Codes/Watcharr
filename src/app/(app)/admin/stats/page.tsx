@@ -1,5 +1,5 @@
 import { AreaChart, BarChart, ColumnChart, DonutChart, StatCard, WeekHourGrid } from '@/components/Charts';
-import { formatDuration, formatMinutes } from '@/components/format';
+import { formatDuration, formatMinutes, localizeWeekdays } from '@/components/format';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { users } from '@/db/schema';
@@ -44,7 +44,9 @@ export default async function AdminStatsPage({
   const settings = await getSettings();
   if (!isEnabled(settings.features, 'serverWideStats')) notFound();
   const params = await searchParams;
-  const days = Number(params.days ?? 30);
+  const requested = Number(params.days ?? 30);
+  // The period select is the only producer; any other number would size the calendar CTE.
+  const days = [7, 30, 90, 365].includes(requested) ? requested : 30;
   const by: RankBy = params.by === 'time' ? 'time' : 'count';
   const rank =
     by === 'time' ? formatMinutes : (value: number) => t('common.plays', { count: value });
@@ -273,7 +275,7 @@ export default async function AdminStatsPage({
       <section className="section">
         <h2>{t('stats.byWeekday')}</h2>
         <div className="card">
-          <ColumnChart data={weekdays} format={formatMinutes} />
+          <ColumnChart data={localizeWeekdays(weekdays, t)} format={formatMinutes} />
         </div>
       </section>
     </>

@@ -25,7 +25,16 @@ export type IconName =
   | 'back'
   | 'film'
   | 'tv'
-  | 'bell';
+  | 'bell'
+  | 'panel'
+  | 'dice'
+  | 'monitor'
+  | 'sparkles'
+  | 'keyboard'
+  | 'trophy'
+  | 'share'
+  | 'chevron'
+  | 'logout';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   film: (
@@ -111,6 +120,44 @@ const PATHS: Record<IconName, React.ReactNode> = {
   external: <path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />,
   download: <path d="M12 4v10m0 0 4-4m-4 4-4-4M4 18h16" />,
   back: <path d="M15 5l-7 7 7 7" />,
+  panel: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M9 4v16" />
+    </>
+  ),
+  dice: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="3.5" />
+      <path d="M8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01" />
+    </>
+  ),
+  monitor: (
+    <>
+      <rect x="2.5" y="4" width="19" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </>
+  ),
+  sparkles: (
+    <>
+      <path d="M12 3.5 13.7 9l5.8 1.7-5.8 1.7L12 18l-1.7-5.6L4.5 10.7 10.3 9z" />
+      <path d="M19 3v3M17.5 4.5h3" />
+    </>
+  ),
+  keyboard: (
+    <>
+      <rect x="2.5" y="6" width="19" height="12" rx="2" />
+      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
+    </>
+  ),
+  trophy: (
+    <>
+      <path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H4.5v1.5A3 3 0 0 0 8 10.5M16 6h3.5v1.5a3 3 0 0 1-3.5 3M12 13v4M8.5 20h7M10 17h4" />
+    </>
+  ),
+  share: <path d="M12 15V4m0 0L8 8m4-4 4 4M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6" />,
+  chevron: <path d="m9 6 6 6-6 6" />,
+  logout: <path d="M10 4H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4M15 8l4 4-4 4M19 12H9" />,
 };
 
 export function Icon({ name, className }: { name: IconName; className?: string }) {

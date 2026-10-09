@@ -74,22 +74,34 @@ export default function NotificationsManager({
   const [busy, setBusy] = useState(false);
   const [newType, setNewType] = useState(channelTypes[0]?.type ?? '');
 
-  async function send(method: 'POST' | 'PATCH' | 'DELETE', body: unknown, done: string) {
+  async function send(
+    method: 'POST' | 'PATCH' | 'DELETE',
+    body: unknown,
+    done: string,
+  ): Promise<boolean> {
     setBusy(true);
     setError(null);
     setMessage(null);
-    const res = await fetch('/api/admin/notifications', {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    setBusy(false);
-    if (res.ok) {
-      setMessage(done);
-      router.refresh();
-    } else {
-      setError(((await res.json()) as { error?: string }).error ?? t('error.generic'));
+    // try/finally: a dropped connection must not leave every button disabled for good.
+    try {
+      const res = await fetch('/api/admin/notifications', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setMessage(done);
+        router.refresh();
+        return true;
+      }
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(data.error ?? t('error.generic'));
+    } catch {
+      setError(t('error.generic'));
+    } finally {
+      setBusy(false);
     }
+    return false;
   }
 
   function readConfig(form: FormData, fields: readonly ChannelField[]): Record<string, string> {
@@ -125,8 +137,10 @@ export default function NotificationsManager({
 
   async function onAdd(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await send(
+    // currentTarget is null again after the first await, and a failed add keeps what was typed.
+    const element = event.currentTarget;
+    const form = new FormData(element);
+    const added = await send(
       'POST',
       {
         type: newType,
@@ -138,7 +152,7 @@ export default function NotificationsManager({
       },
       t('notifications.channelAdded'),
     );
-    event.currentTarget.reset();
+    if (added) element.reset();
   }
 
   async function onDelete(channel: ChannelCard) {
@@ -150,15 +164,20 @@ export default function NotificationsManager({
     setBusy(true);
     setError(null);
     setMessage(null);
-    const res = await fetch('/api/admin/notifications/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    });
-    setBusy(false);
-    const body = (await res.json()) as { ok?: boolean; error?: string };
-    if (res.ok && body.ok) setMessage(t('notifications.testSent'));
-    else setError(body.error ?? t('notifications.testFailed'));
+    try {
+      const res = await fetch('/api/admin/notifications/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (res.ok && body.ok) setMessage(t('notifications.testSent'));
+      else setError(body.error ?? t('notifications.testFailed'));
+    } catch {
+      setError(t('notifications.testFailed'));
+    } finally {
+      setBusy(false);
+    }
   }
 
   /**

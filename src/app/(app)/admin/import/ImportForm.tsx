@@ -35,28 +35,33 @@ export default function ImportForm({ servers }: { servers: { id: number; label: 
     setError(null);
     if (dryRun) setDone(null);
 
-    const res = await fetch('/api/admin/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        path: String(form.get('path') ?? ''),
-        serverId: Number(form.get('serverId')),
-        days: form.get('days') ? Number(form.get('days')) : undefined,
-        dryRun,
-      }),
-    });
-    setBusy(false);
-    const body = (await res.json()) as Summary & { error?: string };
-    if (!res.ok) {
-      setError(body.error ?? t('error.generic'));
-      return;
-    }
-    if (dryRun) {
-      setPreview(body);
-    } else {
-      setDone(body);
-      setPreview(null);
-      router.refresh();
+    try {
+      const res = await fetch('/api/admin/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path: String(form.get('path') ?? ''),
+          serverId: Number(form.get('serverId')),
+          days: form.get('days') ? Number(form.get('days')) : undefined,
+          dryRun,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as Summary & { error?: string };
+      if (!res.ok) {
+        setError(body.error ?? t('error.generic'));
+        return;
+      }
+      if (dryRun) {
+        setPreview(body);
+      } else {
+        setDone(body);
+        setPreview(null);
+        router.refresh();
+      }
+    } catch {
+      setError(t('error.generic'));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -79,7 +84,13 @@ export default function ImportForm({ servers }: { servers: { id: number; label: 
 
   return (
     <>
-      <form className="card" onSubmit={onSubmit} style={{ maxWidth: 520 }}>
+      {/* A changed field invalidates the preview: "Run" must import what was previewed. */}
+      <form
+        className="card"
+        onSubmit={onSubmit}
+        onChange={() => setPreview(null)}
+        style={{ maxWidth: 520 }}
+      >
         <label>
           {t('import.server')}
           <select name="serverId" defaultValue={servers[0]?.id}>

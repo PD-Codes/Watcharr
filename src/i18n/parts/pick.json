@@ -1,0 +1,83 @@
+{
+  "pick.eyebrow": { "en": "Movie night", "de": "Filmabend" },
+  "pick.title": { "en": "Pick something for me", "de": "Such mir etwas aus" },
+  "pick.subtitle": {
+    "en": "Can't decide? Spin the reel and let your watchlist and library choose.",
+    "de": "Keine Entscheidung in Sicht? Dreh die Walze und lass Merkliste und Bibliothek entscheiden."
+  },
+
+  "pick.emptyTitle": { "en": "Nothing to pick from yet", "de": "Noch nichts zum Auswählen" },
+  "pick.emptyBody": {
+    "en": "Add a few titles to your watchlist, or look at suggestions based on what you watch, then come back.",
+    "de": "Setz ein paar Titel auf deine Merkliste oder sieh dir die Vorschläge zu deinem Sehverhalten an und komm dann wieder."
+  },
+  "pick.openWatchlist": { "en": "Open watchlist", "de": "Merkliste öffnen" },
+  "pick.openSuggestions": { "en": "See suggestions", "de": "Vorschläge ansehen" },
+
+  "pick.filterType": { "en": "Type", "de": "Typ" },
+  "pick.typeAny": { "en": "Any", "de": "Alle" },
+  "pick.typeMovie": { "en": "Movies", "de": "Filme" },
+  "pick.typeSeries": { "en": "Series", "de": "Serien" },
+  "pick.filterLength": { "en": "Length", "de": "Länge" },
+  "pick.lengthAny": { "en": "Any", "de": "Egal" },
+  "pick.lengthQuick": { "en": "Quick", "de": "Kurz" },
+  "pick.lengthLong": { "en": "Long", "de": "Lang" },
+  "pick.quickHint": {
+    "en": "Up to {minutes} minutes, or an episode",
+    "de": "Bis zu {minutes} Minuten oder eine Folge"
+  },
+  "pick.longHint": { "en": "Longer than {minutes} minutes", "de": "Länger als {minutes} Minuten" },
+
+  "pick.pool": { "en": "In the hat", "de": "Im Topf" },
+  "pick.skipped": { "en": "Skipped", "de": "Übersprungen" },
+  "pick.startOver": { "en": "Start over", "de": "Von vorn" },
+  "pick.spin": { "en": "Surprise me", "de": "Überrasch mich" },
+  "pick.spinning": { "en": "Spinning…", "de": "Dreht sich…" },
+  "pick.notTonight": { "en": "Not tonight", "de": "Nicht heute Abend" },
+  "pick.hint": {
+    "en": "Titles you have started, and ones that have waited longest on your watchlist, get better odds.",
+    "de": "Titel, die du schon angefangen hast, und solche, die am längsten auf deiner Merkliste warten, haben bessere Chancen."
+  },
+
+  "pick.resultEyebrow": { "en": "Tonight's pick", "de": "Dein Pick für heute Abend" },
+  "pick.kindMovie": { "en": "Movie", "de": "Film" },
+  "pick.kindSeries": { "en": "Series", "de": "Serie" },
+  "pick.perEpisode": { "en": "{time} per episode", "de": "{time} pro Folge" },
+
+  "pick.reason.watching": { "en": "You are in the middle of it.", "de": "Du steckst schon mittendrin." },
+  "pick.reason.today": {
+    "en": "You put it on your watchlist today.",
+    "de": "Du hast es heute auf deine Merkliste gesetzt."
+  },
+  "pick.reason.waiting": {
+    "en": "On your watchlist since {text}.",
+    "de": "Seit dem {text} auf deiner Merkliste."
+  },
+  "pick.reason.library": {
+    "en": "Unwatched in your library and close to your taste.",
+    "de": "In deiner Bibliothek noch ungesehen und nah an deinem Geschmack."
+  },
+
+  "pick.openTitle": { "en": "Open title", "de": "Titel öffnen" },
+  "pick.markWatching": { "en": "Mark as watching", "de": "Als „wird gesehen“ markieren" },
+  "pick.marking": { "en": "Saving…", "de": "Speichern…" },
+  "pick.marked": { "en": "Marked as watching", "de": "Als „wird gesehen“ markiert" },
+  "pick.markError": {
+    "en": "Could not update your watchlist. Try again.",
+    "de": "Die Merkliste konnte nicht aktualisiert werden. Versuch es noch einmal."
+  },
+  "pick.announce": { "en": "Your pick: {title}. {reason}", "de": "Dein Pick: {title}. {reason}" },
+  "pick.announceMarked": {
+    "en": "{title} is now marked as watching.",
+    "de": "{title} ist jetzt als „wird gesehen“ markiert."
+  },
+
+  "pick.exhaustedTitle": { "en": "That was everything", "de": "Das war alles" },
+  "pick.exhaustedBody": {
+    "en": "You have said no to every title in the hat for these filters. Start over to see them again.",
+    "de": "Du hast zu jedem Titel im Topf Nein gesagt, jedenfalls mit diesen Filtern. Fang von vorn an, um sie wieder zu sehen."
+  },
+  "pick.noMatchTitle": { "en": "Nothing matches", "de": "Nichts passt" },
+  "pick.noMatchBody": { "en": "No title fits these filters.", "de": "Kein Titel passt zu diesen Filtern." },
+  "pick.resetFilters": { "en": "Reset filters", "de": "Filter zurücksetzen" }
+}

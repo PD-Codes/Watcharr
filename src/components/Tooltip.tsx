@@ -7,6 +7,8 @@ interface Tip {
   x: number;
   y: number;
   below: boolean;
+  /** Beside the target instead of above it: the icon rail's labels, next to a left edge. */
+  right: boolean;
 }
 
 /**
@@ -28,12 +30,17 @@ export default function Tooltip() {
       if (!text) return;
 
       const box = target.getBoundingClientRect();
+      if (target.getAttribute('data-tip-side') === 'right') {
+        setTip({ text, x: box.right + MARGIN, y: box.top + box.height / 2, below: false, right: true });
+        return;
+      }
       const below = box.top < 90;
       setTip({
         text,
         x: Math.min(Math.max(box.left + box.width / 2, 90), window.innerWidth - 90),
         y: below ? box.bottom + MARGIN : box.top - MARGIN,
         below,
+        right: false,
       });
     }
 
@@ -53,13 +60,15 @@ export default function Tooltip() {
     document.addEventListener('pointerout', hide, true);
     document.addEventListener('focusin', show, true);
     document.addEventListener('focusout', hide, true);
-    window.addEventListener('scroll', () => setTip(null), true);
+    const clear = () => setTip(null);
+    window.addEventListener('scroll', clear, true);
 
     return () => {
       document.removeEventListener('pointerover', show, true);
       document.removeEventListener('pointerout', hide, true);
       document.removeEventListener('focusin', show, true);
       document.removeEventListener('focusout', hide, true);
+      window.removeEventListener('scroll', clear, true);
     };
   }, []);
 
@@ -72,7 +81,9 @@ export default function Tooltip() {
       style={{
         left: tip.x,
         top: tip.y,
-        transform: `translate(-50%, ${tip.below ? '0' : '-100%'})`,
+        transform: tip.right
+          ? 'translate(0, -50%)'
+          : `translate(-50%, ${tip.below ? '0' : '-100%'})`,
       }}
     >
       {tip.text}

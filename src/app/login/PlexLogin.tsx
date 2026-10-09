@@ -6,6 +6,10 @@ import { useT } from '@/i18n/client';
 
 type Pin = { pinId: string; code: string; authUrl: string };
 
+const POLL_MS = 2000;
+// plex.tv lets a PIN expire after about fifteen minutes; polling past that can never succeed.
+const POLL_DEADLINE_MS = 15 * 60_000;
+
 /** Plex PIN OAuth: open plex.tv, approve the code, poll until a token comes back. */
 export default function PlexLogin({ serverId }: { serverId: number }) {
   const t = useT();
@@ -16,30 +20,63 @@ export default function PlexLogin({ serverId }: { serverId: number }) {
 
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
-  async function start() {
-    setError(null);
-    const res = await fetch('/api/auth/plex/pin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ serverId }),
-    });
-    if (!res.ok) return setError(t('login.plexFailed'));
-    const next = (await res.json()) as Pin;
-    setPin(next);
-    window.open(next.authUrl, '_blank', 'noopener');
+  function stop() {
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+  }
 
-    timer.current = setInterval(async () => {
-      const poll = await fetch('/api/auth/plex/check', {
+  // Ends the flow with a message and brings the button back, so the user can start over.
+  function giveUp(message: string) {
+    stop();
+    setPin(null);
+    setError(message);
+  }
+
+  async function start() {
+    stop(); // a second click must not leave the first poller running unreachable
+    setError(null);
+    try {
+      const res = await fetch('/api/auth/plex/pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pinId: next.pinId, serverId }),
+        body: JSON.stringify({ serverId }),
       });
-      const data = (await poll.json()) as { ok?: boolean; pending?: boolean };
-      if (data.ok) {
-        if (timer.current) clearInterval(timer.current);
-        router.push('/watchlist');
-      }
-    }, 2000);
+      if (!res.ok) return setError(t('login.plexFailed'));
+      const next = (await res.json()) as Pin;
+      setPin(next);
+      window.open(next.authUrl, '_blank', 'noopener');
+
+      const deadline = Date.now() + POLL_DEADLINE_MS;
+      let inFlight = false;
+      timer.current = setInterval(async () => {
+        if (inFlight) return; // a slow answer must not stack requests behind itself
+        if (Date.now() > deadline) return giveUp(t('login.plexExpired'));
+        inFlight = true;
+        try {
+          const poll = await fetch('/api/auth/plex/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pinId: next.pinId, serverId }),
+          });
+          const data = (await poll.json().catch(() => ({}))) as { ok?: boolean };
+          if (data.ok) {
+            stop();
+            router.push('/watchlist');
+          } else if (poll.status === 403) {
+            giveUp(t('login.plexNoAccess')); // approved, but by an account this server does not list
+          } else if (poll.status === 400) {
+            giveUp(t('login.plexFailed')); // the request itself is wrong; asking again changes nothing
+          }
+          // Anything else (pending, 429, 5xx, a dropped connection) is retried on the next tick.
+        } catch {
+          // Network error: same as above.
+        } finally {
+          inFlight = false;
+        }
+      }, POLL_MS);
+    } catch {
+      setError(t('login.plexFailed'));
+    }
   }
 
   return (

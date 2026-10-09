@@ -181,15 +181,17 @@ async function runScript(
   const { execFile } = await import('node:child_process');
   const { resolve, join } = await import('node:path');
 
-  const dir = resolve(SCRIPTS_DIR);
-  const file = join(dir, command);
+  // The turbopackIgnore markers keep the bundler from tracing the whole project into the
+  // standalone output because of a path that is only known at runtime.
+  const dir = resolve(/* turbopackIgnore: true */ SCRIPTS_DIR);
+  const file = join(/* turbopackIgnore: true */ dir, command);
   // Belt and braces: the pattern above already rules out separators, but the resolved path
   // is what actually gets executed, so that is what gets checked.
   if (!file.startsWith(dir)) return { ok: false, error: 'Script is outside the scripts folder' };
 
   return new Promise<Result>((done) => {
     execFile(
-      file,
+      /* turbopackIgnore: true */ file,
       [],
       {
         timeout: SCRIPT_TIMEOUT_MS,
@@ -226,12 +228,21 @@ async function send(
   payload: Record<string, unknown>,
   t: Translate,
 ): Promise<Result> {
+  // Slack reads <!channel>, <@U123> and <url|label> in message text as live markup, and
+  // titles, user and device names come from media servers and their clients. The values are
+  // escaped (& < >, Slack's own rule); a template's own markup stays the admin's to write.
+  const values =
+    channel.type === 'slack'
+      ? JSON.parse(JSON.stringify(payload), (_key, value) =>
+          typeof value === 'string' ? escapeHtml(value) : value,
+        )
+      : payload;
   // A template replaces the built-in sentence entirely; an empty one keeps it. Falling
   // back when the rendered result is blank means a template made only of placeholders the
   // event does not carry sends the normal wording instead of an empty message.
   const text =
-    (channel.template ? renderTemplate(channel.template, { event, ...payload }) : '') ||
-    describe(t, event, payload);
+    (channel.template ? renderTemplate(channel.template, { event, ...values }) : '') ||
+    describe(t, event, values);
   const image = posterFor(payload);
   const { config } = channel;
   switch (channel.type as ChannelType | 'webhook') {
@@ -411,9 +422,20 @@ export async function setUserPrefs(userId: number, prefs: UserPrefs): Promise<vo
  */
 export function mayReceive(
   event: NotificationEvent,
-  user: { isAdmin: boolean; username: string },
+  user: { isAdmin: boolean; username: string; globalAdmin?: boolean; serverId?: number },
   payload: Record<string, unknown>,
 ): boolean {
+  // A server's events belong to that server's people, and a username is only unique within
+  // one server: "john" on server B is not the "john" who signed up on server A.
+  const eventServer = (payload.server as { id?: number } | undefined)?.id;
+  if (
+    !user.globalAdmin &&
+    user.serverId !== undefined &&
+    eventServer !== undefined &&
+    eventServer !== user.serverId
+  ) {
+    return false;
+  }
   if (user.isAdmin) return true;
   if (event === 'media.added') return true;
   if (event.startsWith('playback.')) return payload.user === user.username;
@@ -443,6 +465,7 @@ async function mailSubscribers(
       isAdmin: users.isAdmin,
       globalAdmin: users.globalAdmin,
       username: users.username,
+      serverId: users.serverId,
     })
     .from(users)
     .where(isNotNull(users.notifyEmail))
@@ -452,7 +475,16 @@ async function mailSubscribers(
     .filter(
       (row) =>
         row.events.includes(event) &&
-        mayReceive(event, { isAdmin: row.isAdmin || row.globalAdmin, username: row.username }, payload),
+        mayReceive(
+          event,
+          {
+            isAdmin: row.isAdmin || row.globalAdmin,
+            globalAdmin: row.globalAdmin,
+            username: row.username,
+            serverId: row.serverId,
+          },
+          payload,
+        ),
     )
     .map((row) => row.email as string);
   if (!recipients.length) return;

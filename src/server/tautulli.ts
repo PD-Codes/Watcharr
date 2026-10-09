@@ -42,6 +42,7 @@ type Row = {
   id: number;
   started: number | null;
   stopped: number | null;
+  paused_counter: number | null;
   user: string | null;
   rating_key: string | null;
   media_type: string | null;
@@ -116,6 +117,11 @@ export async function importFromTautulli(
       }
     }
     const hasMediaInfo = tables.has('session_history_media_info');
+    // Older Tautulli schemas lack paused_counter; select NULL there instead of failing.
+    const hasPaused = source
+      .prepare('PRAGMA table_info(session_history)')
+      .all()
+      .some((col) => (col as { name: string }).name === 'paused_counter');
 
     // LEFT JOIN throughout: a history row whose metadata Tautulli lost is still a play,
     // and dropping it would quietly shrink the very numbers this import exists to restore.
@@ -124,6 +130,7 @@ export async function importFromTautulli(
         `SELECT h.id           AS id,
                 h.started      AS started,
                 h.stopped      AS stopped,
+                ${hasPaused ? 'h.paused_counter' : 'NULL'} AS paused_counter,
                 h.user         AS user,
                 h.rating_key   AS rating_key,
                 h.media_type   AS media_type,
@@ -180,9 +187,12 @@ export async function importFromTautulli(
       candidates += 1;
 
       const startedMs = (row.started ?? 0) * 1000;
-      const stoppedMs = (row.stopped ?? row.started ?? 0) * 1000;
-      // What was actually watched, the same figure a finished session contributes today.
-      const watchedMs = Math.max(0, stoppedMs - startedMs);
+      // Tautulli writes stopped = 0 for a play it never closed; `??` would keep that 0 and
+      // turn the row into a 1970 stream with no watch time, so fall back on any falsy value.
+      const stoppedMs = (row.stopped || row.started || 0) * 1000;
+      // What was actually watched, the same figure a finished session contributes today:
+      // wall-clock span minus the time spent paused (paused_counter is seconds, like started).
+      const watchedMs = Math.max(0, stoppedMs - startedMs - (row.paused_counter ?? 0) * 1000);
       const title = row.title ?? 'Unknown';
 
       const plays = playsByUser.get(userId) ?? [];

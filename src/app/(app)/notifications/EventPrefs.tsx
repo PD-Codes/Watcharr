@@ -34,19 +34,24 @@ export default function EventPrefs({
     setBusy(true);
     setError(null);
     setMessage(null);
-    const res = await fetch('/api/notifications', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    setBusy(false);
-    const result = (await res.json()) as { ok?: boolean; error?: string };
-    if (!res.ok || result.error) {
-      setError(result.error ?? t('error.generic'));
-      return;
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const result = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || result.error) {
+        setError(result.error ?? t('error.generic'));
+        return;
+      }
+      setMessage(t('notifyMe.saved'));
+      router.refresh();
+    } catch {
+      setError(t('error.generic'));
+    } finally {
+      setBusy(false);
     }
-    setMessage(t('notifyMe.saved'));
-    router.refresh();
   }
 
   return (

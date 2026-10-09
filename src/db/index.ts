@@ -88,10 +88,12 @@ function connect(): Database.Database {
   return sqlite;
 }
 
-// One connection per process; Next.js dev reloads would otherwise open a new handle each time.
+// One connection per process. Kept on globalThis in production too, not only in development:
+// Next bundles instrumentation.ts and the request handlers as separate module graphs, and each
+// graph used to open its own handle (and print the migration warning and open the settings row
+// once more).
 const globalForDb = globalThis as unknown as { sqlite?: Database.Database };
-const sqlite = globalForDb.sqlite ?? connect();
-if (process.env.NODE_ENV !== 'production') globalForDb.sqlite = sqlite;
+const sqlite = (globalForDb.sqlite ??= connect());
 
 export const db = drizzle(sqlite, { schema });
 

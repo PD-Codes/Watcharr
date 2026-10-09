@@ -19,7 +19,8 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const days = daysParam(request, 7);
   const requested = Number(params.get('limit'));
-  const limit = Number.isFinite(requested) && requested > 0 ? Math.min(MAX_LIMIT, requested) : 100;
+  // Whole numbers only: SQLite rejects a fractional LIMIT with "datatype mismatch".
+  const limit = Number.isFinite(requested) && requested >= 1 ? Math.min(MAX_LIMIT, Math.floor(requested)) : 100;
   const username = params.get('user');
 
   const filters = [gte(watchHistory.watchedAt, new Date(Date.now() - days * 86_400_000))];

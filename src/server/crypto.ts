@@ -21,7 +21,8 @@ export function encryptSecret(plain: string): string {
 export function decryptSecret(stored: string): string {
   if (!stored.startsWith(PREFIX)) return stored; // value written before encryption existed
   const [iv, tag, data] = stored.slice(PREFIX.length).split(':').map((p) => Buffer.from(p, 'base64'));
-  const decipher = createDecipheriv('aes-256-gcm', key(), iv);
+  // Pinned: without it Node accepts a truncated tag, which weakens what GCM guarantees.
+  const decipher = createDecipheriv('aes-256-gcm', key(), iv, { authTagLength: 16 });
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
 }

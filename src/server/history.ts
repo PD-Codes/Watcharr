@@ -6,6 +6,15 @@ import { watchHistory } from '@/db/schema';
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
+/** The periods the history page offers. Anything else means "all time", like on the other pages. */
+export const HISTORY_PERIODS = [7, 30, 365];
+
+// 2026-02-30 matches the pattern and date() would quietly roll it over or match nothing.
+function isRealDay(value: string): boolean {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return ISO_DAY.test(value) && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 export interface HistoryFilterParams {
   q?: string;
   type?: string;
@@ -30,8 +39,11 @@ export function historyFilters(userId: number, params: HistoryFilterParams): SQL
   // SQLite's LIKE is already case-insensitive for ASCII, so no ILIKE is needed.
   if (params.q) filters.push(like(watchHistory.title, `%${params.q}%`));
   if (params.type) filters.push(eq(watchHistory.mediaType, params.type));
-  if (params.days) {
-    filters.push(gte(watchHistory.watchedAt, new Date(Date.now() - Number(params.days) * 86400000)));
+  // Whitelisted, not coerced: `1e9` made an invalid Date and `abc` made NaN, and both ended in an
+  // empty list at 200 instead of the unfiltered one every other page falls back to.
+  const days = Number(params.days);
+  if (HISTORY_PERIODS.includes(days)) {
+    filters.push(gte(watchHistory.watchedAt, new Date(Date.now() - days * 86400000)));
   }
   if (params.genre) {
     filters.push(
@@ -39,7 +51,7 @@ export function historyFilters(userId: number, params: HistoryFilterParams): SQL
     );
   }
   // Rejected rather than coerced: the value goes into a date() comparison.
-  if (params.date && ISO_DAY.test(params.date)) {
+  if (params.date && isRealDay(params.date)) {
     filters.push(sql`date(${LOCAL_TS}) = ${params.date}`);
   }
   // strftime('%w') counts from Sunday; the grid counts from Monday, hence the shift.

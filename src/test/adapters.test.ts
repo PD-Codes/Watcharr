@@ -264,6 +264,85 @@ async function testUnauthorizedDetection() {
   }
 }
 
+/**
+ * A library past the page size must come back whole. A single capped request used to drop
+ * the tail without any sign of it, and the counts on the libraries page (which come from
+ * the server's own total) then disagreed with the table built from the truncated list.
+ */
+async function testLibraryIsPaged() {
+  const total = 5003;
+  const page = <T>(start: number, limit: number, make: (n: number) => T): T[] =>
+    Array.from({ length: Math.max(0, Math.min(limit, total - start)) }, (_, i) => make(start + i));
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/Library/VirtualFolders') {
+      return Response.json([{ Name: 'Movies', ItemId: 'lib', CollectionType: 'movies' }]);
+    }
+    if (url.searchParams.get('Limit') === '0') return Response.json({ TotalRecordCount: total });
+    const items = page(Number(url.searchParams.get('StartIndex') ?? 0), Number(url.searchParams.get('Limit')), (n) => ({
+      Id: `m${n}`,
+      Name: `Movie ${n}`,
+      Type: 'Movie',
+    }));
+    return Response.json({ Items: items });
+  }) as typeof fetch;
+  const jellyfin = await createAdapter('jellyfin', 'http://jf:8096', 'tok').getLibrary();
+  assert.equal(jellyfin.length, total);
+  assert.equal(new Set(jellyfin.map((i) => i.itemId)).size, total, 'no page is fetched twice');
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/library/sections') {
+      return Response.json({ MediaContainer: { Directory: [{ key: '1', type: 'movie', title: 'Movies' }] } });
+    }
+    const metadata = page(
+      Number(url.searchParams.get('X-Plex-Container-Start') ?? 0),
+      Number(url.searchParams.get('X-Plex-Container-Size')),
+      (n) => ({ ratingKey: `m${n}`, title: `Movie ${n}`, type: 'movie' }),
+    );
+    return Response.json({ MediaContainer: { Metadata: metadata } });
+  }) as typeof fetch;
+  const plex = await createAdapter('plex', 'http://plex:32400', 'tok').getLibrary();
+  assert.equal(plex.length, total);
+  assert.equal(new Set(plex.map((i) => i.itemId)).size, total, 'no page is fetched twice');
+}
+
+/**
+ * plex.tv hands a valid token to every Plex account there is. Signing in must additionally
+ * require that plex.tv lists this very server for the account, or any stranger could browse
+ * the library through the app's admin token.
+ */
+async function testPlexSignInRequiresServerAccess() {
+  const { isUnauthorized } = await import('../server/adapters/http');
+  const serve = (resources: unknown) => {
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('plex.tv/api/v2/user')) return Response.json({ id: 9, username: 'frank' });
+      if (url.includes('plex.tv/api/v2/resources')) return Response.json(resources);
+      if (url === 'http://plex:32400/') {
+        return Response.json({ MediaContainer: { machineIdentifier: 'abc', myPlexUsername: 'owner' } });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    }) as typeof fetch;
+  };
+  const plex = createAdapter('plex', 'http://plex:32400', 'admin-token');
+
+  serve([{ clientIdentifier: 'other-server' }, { clientIdentifier: 'abc' }]);
+  const user = await plex.getUser('user-token');
+  assert.equal(user.username, 'frank');
+  assert.equal(user.isAdmin, false);
+
+  for (const resources of [[{ clientIdentifier: 'other-server' }], [], { error: 'nope' }]) {
+    serve(resources);
+    const denied = await plex.getUser('user-token').then(
+      () => null,
+      (e: unknown) => e,
+    );
+    assert.ok(isUnauthorized(denied), `an account without this server is refused (${JSON.stringify(resources)})`);
+  }
+}
+
 /** The address a session is attributed to must not carry the client's source port. */
 async function testEndpointAddress() {
   const { endpointAddress } = await import('../server/adapters/jellyfin');
@@ -280,6 +359,8 @@ async function main() {
   for (const test of [
   testUnauthorizedDetection,
   testEndpointAddress,
+  testLibraryIsPaged,
+  testPlexSignInRequiresServerAccess,
   testJellyfinSessions,
   testJellyfinDirectPlayUsesSourceStreams,
   testJellyfinHistoryFiltersBySince,

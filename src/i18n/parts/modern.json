@@ -1,0 +1,130 @@
+{
+  "shell.expandNav": {
+    "en": "Expand sidebar",
+    "de": "Seitenleiste ausklappen"
+  },
+  "shell.collapseNav": {
+    "en": "Collapse sidebar",
+    "de": "Seitenleiste einklappen"
+  },
+  "dash.greeting.morning": {
+    "en": "Good morning, {name}",
+    "de": "Guten Morgen, {name}"
+  },
+  "dash.greeting.afternoon": {
+    "en": "Good afternoon, {name}",
+    "de": "Guten Tag, {name}"
+  },
+  "dash.greeting.evening": {
+    "en": "Good evening, {name}",
+    "de": "Guten Abend, {name}"
+  },
+  "dash.greeting.night": {
+    "en": "Still up, {name}?",
+    "de": "Noch wach, {name}?"
+  },
+  "dash.heroLive": {
+    "en": "Now playing",
+    "de": "Läuft gerade"
+  },
+  "dash.heroMore": {
+    "en": "+{count} more streaming",
+    "de": "+{count} weitere Streams"
+  },
+  "dash.heroIdle": {
+    "en": "The projector is resting",
+    "de": "Der Projektor ruht"
+  },
+  "dash.heroIdleBody": {
+    "en": "Nothing is streaming at the moment. Last time the lights went down:",
+    "de": "Gerade läuft nichts. Zuletzt wurde das Licht gedimmt für:"
+  },
+  "dash.heroNeverPlayed": {
+    "en": "No plays yet — start something and it shows up here.",
+    "de": "Noch keine Wiedergaben — starte etwas, und es erscheint hier."
+  },
+  "dash.pickForMe": {
+    "en": "Pick something for me",
+    "de": "Such mir etwas aus"
+  },
+  "dash.openHistory": {
+    "en": "Open history",
+    "de": "Verlauf öffnen"
+  },
+  "dash.kpiPlays": {
+    "en": "Plays",
+    "de": "Wiedergaben"
+  },
+  "dash.kpiTime": {
+    "en": "Watch time",
+    "de": "Sehzeit"
+  },
+  "dash.kpiDays": {
+    "en": "Active days",
+    "de": "Aktive Tage"
+  },
+  "dash.kpiStreak": {
+    "en": "Day streak",
+    "de": "Tage in Folge"
+  },
+  "dash.vsPrevious": {
+    "en": "vs. previous {days} days",
+    "de": "ggü. den {days} Tagen davor"
+  },
+  "dash.streakBest": {
+    "en": "best {days} days",
+    "de": "Bestwert {days} Tage"
+  },
+  "dash.calendar": {
+    "en": "Your year in frames",
+    "de": "Dein Jahr in Bildern"
+  },
+  "dash.calendarServer": {
+    "en": "The server's year in frames",
+    "de": "Das Jahr des Servers in Bildern"
+  },
+  "dash.calendarSummary": {
+    "en": "{days} active days · busiest {day}",
+    "de": "{days} aktive Tage · stärkster Tag {day}"
+  },
+  "dash.less": {
+    "en": "Less",
+    "de": "Weniger"
+  },
+  "dash.more": {
+    "en": "More",
+    "de": "Mehr"
+  },
+  "dash.swipeCalendar": {
+    "en": "Swipe sideways to see the whole year.",
+    "de": "Seitwärts wischen, um das ganze Jahr zu sehen."
+  },
+  "dash.recentRail": {
+    "en": "Recently watched",
+    "de": "Zuletzt gesehen"
+  },
+  "nav.pick": {
+    "en": "Pick for me",
+    "de": "Such mir was aus"
+  },
+  "shell.paused": {
+    "en": "{count} paused",
+    "de": "{count} pausiert"
+  },
+  "dash.pausedNow": {
+    "en": "{count} paused right now",
+    "de": "{count} gerade pausiert"
+  },
+  "dash.heroPaused": {
+    "en": "On pause",
+    "de": "Gerade pausiert"
+  },
+  "shell.skip": {
+    "en": "Skip to content",
+    "de": "Zum Inhalt springen"
+  },
+  "dash.peakDay": {
+    "en": "Busiest day",
+    "de": "Aktivster Tag"
+  }
+}

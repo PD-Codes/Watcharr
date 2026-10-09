@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useT } from '@/i18n/client';
 
@@ -25,36 +25,73 @@ export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
   const t = useT();
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [query, setQuery] = useState('');
+  // The query the current `hits` answer, so "nothing found" can name it and stays quiet
+  // before the first search.
+  const [searched, setSearched] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const searchField = useRef<HTMLInputElement>(null);
 
   async function search(event: React.FormEvent) {
     event.preventDefault();
-    const res = await fetch(`/api/library/search?q=${encodeURIComponent(query)}`);
-    setHits(res.ok ? ((await res.json()) as { items: SearchHit[] }).items : []);
+    setError(null);
+    try {
+      const res = await fetch(`/api/library/search?q=${encodeURIComponent(query)}`);
+      if (!res.ok) throw new Error(String(res.status));
+      setHits(((await res.json()) as { items: SearchHit[] }).items);
+      setSearched(query);
+    } catch {
+      setHits([]);
+      setSearched(null);
+      setError(t('watchlist.searchFailed'));
+    }
+  }
+
+  /**
+   * Every write goes through here. A refused or unreachable request used to refresh the
+   * page as if it had worked, so the row snapped back with no word on why.
+   */
+  async function write(request: () => Promise<Response>): Promise<boolean> {
+    setError(null);
+    try {
+      const res = await request();
+      if (!res.ok) throw new Error(String(res.status));
+      router.refresh();
+      return true;
+    } catch {
+      setError(t('watchlist.actionFailed'));
+      return false;
+    }
   }
 
   async function add(hit: SearchHit) {
-    await fetch('/api/watchlist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(hit),
-    });
+    const ok = await write(() =>
+      fetch('/api/watchlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(hit),
+      }),
+    );
+    // On failure the results stay, so the same click can simply be repeated.
+    if (!ok) return;
     setHits([]);
+    setSearched(null);
     setQuery('');
-    router.refresh();
   }
 
-  async function setStatus(itemId: string, status: string) {
-    await fetch('/api/watchlist', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ itemId, status }),
-    });
-    router.refresh();
+  function setStatus(itemId: string, status: string) {
+    return write(() =>
+      fetch('/api/watchlist', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId, status }),
+      }),
+    );
   }
 
-  async function remove(itemId: string) {
-    await fetch(`/api/watchlist?itemId=${encodeURIComponent(itemId)}`, { method: 'DELETE' });
-    router.refresh();
+  function remove(itemId: string) {
+    return write(() =>
+      fetch(`/api/watchlist?itemId=${encodeURIComponent(itemId)}`, { method: 'DELETE' }),
+    );
   }
 
   return (
@@ -63,6 +100,7 @@ export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
         <label>
           {t('watchlist.addFromLibrary')}
           <input
+            ref={searchField}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t('watchlist.searchPlaceholder')}
@@ -70,6 +108,18 @@ export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
         </label>
         <button>{t('action.search')}</button>
       </form>
+
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+
+      {searched !== null && hits.length === 0 && (
+        <p className="muted" role="status">
+          {t('watchlist.noResults', { query: searched })}
+        </p>
+      )}
 
       {hits.length > 0 && (
         <div className="card section" style={{ marginTop: 0 }}>
@@ -85,7 +135,12 @@ export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
       )}
 
       {items.length === 0 ? (
-        <p className="muted">{t('watchlist.empty')}</p>
+        <div className="card empty">
+          <p>{t('watchlist.empty')}</p>
+          <button type="button" className="tonal" onClick={() => searchField.current?.focus()}>
+            {t('watchlist.emptyAction')}
+          </button>
+        </div>
       ) : (
         <div className="table-wrap card">
           <table>

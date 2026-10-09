@@ -15,14 +15,22 @@ export default function SetupForm() {
     setBusy(true);
     setError(null);
     const form = new FormData(event.currentTarget);
-    const res = await fetch('/api/setup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.fromEntries(form)),
-    });
-    setBusy(false);
-    if (res.ok) router.push('/login');
-    else setError(((await res.json()) as { error?: string }).error ?? t('setup.failed'));
+    try {
+      const res = await fetch('/api/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.fromEntries(form)),
+      });
+      if (res.ok) router.push('/login');
+      else {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(data.error ?? t('setup.failed'));
+      }
+    } catch {
+      setError(t('setup.failed'));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

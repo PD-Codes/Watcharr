@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, desc, eq, gte, like, lt, ne, notInArray, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, like, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appConfig, playbackSessions, users, watchHistory, watchlist } from '@/db/schema';
 import { createAdapter, type ServerType } from './adapters';
@@ -12,18 +12,35 @@ import { checkDigest } from './digest';
 import { checkThresholds } from './monitor';
 import { checkNewsletter } from './newsletter';
 import { checkRetention } from './retention';
-import { recordPlays, type PlayInput } from './plays';
+import { lastServerPlayAt, recordPlays, type PlayInput } from './plays';
 import { cachedSectionName, getLibrary, resolveSectionKey, warmLibraryCache } from './library';
 import { prefetchTitleMeta } from './tmdb';
 import { revokeSession, type Session } from './session';
 import { notify } from './notifications';
+import { globalState } from './state';
+
+// Shared across Next's module graphs (see state.ts): the throttles and the failed-server memory
+// below used to exist once for the background tick and once for page renders, and one server
+// going down was announced once per graph.
+interface SyncState {
+  reported: Map<string, number>;
+  lastRun: Map<string, number>;
+  reachable: Map<number, boolean>;
+  downUntil: Map<number, number>;
+}
+const state = globalState<SyncState>('sync', () => ({
+  reported: new Map(),
+  lastRun: new Map(),
+  reachable: new Map(),
+  downUntil: new Map(),
+}));
 
 /**
  * A sync failure must never take a page down with it — but swallowing it whole means the
  * only trace left is a line in the media server's own log, which is a terrible place to
  * have to go looking. Repeats are collapsed so one broken token cannot fill the log.
  */
-const reported = new Map<string, number>();
+const reported = state.reported;
 
 export function reportSyncError(what: string) {
   return (error: unknown) => {
@@ -43,7 +60,7 @@ export function reportSyncError(what: string) {
 
 // ponytail: in-process throttle instead of a job scheduler. One app container is the
 // documented deployment; move to a queue if the app is ever scaled out.
-const lastRun = new Map<string, number>();
+const lastRun = state.lastRun;
 
 function throttled(key: string, everyMs: number): boolean {
   const previous = lastRun.get(key) ?? 0;
@@ -58,16 +75,9 @@ export async function syncHistory(session: Session) {
   const userId = user.id;
   if (throttled(`history:${userId}`, 60_000)) return;
 
-  const [latest] = await db
-    .select({ watchedAt: watchHistory.watchedAt })
-    .from(watchHistory)
-    .where(eq(watchHistory.userId, userId))
-    .orderBy(desc(watchHistory.watchedAt))
-    .limit(1);
-
   const adapter = await getAdapter(user.serverId);
   const entries = await adapter
-    .getHistory(session.serverToken, user.serverUserId, latest?.watchedAt)
+    .getHistory(session.serverToken, user.serverUserId, await lastServerPlayAt(userId))
     .catch(async (error: unknown) => {
       // A 401 for a user token is not transient: the media server dropped it (a restart,
       // a password change, a purged device) and it will never work again. The token lives
@@ -176,10 +186,10 @@ async function prefetchArtwork() {
 }
 
 /** Last known reachability per server, so server.down fires on the edge, not every poll. */
-const reachable = new Map<number, boolean>();
+const reachable = state.reachable;
 
 const DOWN_BACKOFF_MS = 60_000;
-const downUntil = new Map<number, number>();
+const downUntil = state.downUntil;
 
 const RECENT_WINDOW = 20;
 
@@ -271,6 +281,25 @@ async function syncServerActivity(server: ServerRow) {
     .where(and(ne(playbackSessions.state, 'ended'), ownRows));
   const previousProgress = new Map(existing.map((row) => [row.sessionKey, row.progressMs]));
 
+  // Rows this app already closed that the server still lists with the same item at the same
+  // position: a client that vanished, or a pause nobody came back to. Treating them as new
+  // reopened the stale stream every few minutes with a fresh start time and another
+  // playback.start / playback.stop pair. They come back as soon as the position moves.
+  const reportedKeys = sessions.map((session) => sessionRowKey(server.id, session.sessionKey));
+  const closed = new Map(
+    (reportedKeys.length
+      ? await db
+          .select({
+            sessionKey: playbackSessions.sessionKey,
+            itemId: playbackSessions.itemId,
+            progressMs: playbackSessions.progressMs,
+          })
+          .from(playbackSessions)
+          .where(and(eq(playbackSessions.state, 'ended'), inArray(playbackSessions.sessionKey, reportedKeys)))
+      : []
+    ).map((row) => [row.sessionKey, row] as const),
+  );
+
   const seen: string[] = [];
 
   for (const session of sessions) {
@@ -279,6 +308,8 @@ async function syncServerActivity(server: ServerRow) {
       continue;
     }
     const rowKey = sessionRowKey(server.id, session.sessionKey);
+    const before = closed.get(rowKey);
+    if (before && before.itemId === session.itemId && before.progressMs === session.progressMs) continue;
     seen.push(rowKey);
     if (!previousProgress.has(rowKey)) {
       notify('playback.start', {

@@ -62,34 +62,42 @@ export default function NewsletterForm({
     setMessage(null);
 
     const data = new FormData(form);
-    const res = await fetch('/api/admin/newsletter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        enabled: data.get('enabled') === 'on',
-        dayOfWeek: Number(data.get('dayOfWeek')),
-        hour: Number(data.get('hour')),
-        days: Number(data.get('days')),
-        libraries: libraries.filter((l) => data.get(`library.${l.id}`) === 'on').map((l) => l.id),
-        subject: String(data.get('subject') ?? ''),
-        intro: String(data.get('intro') ?? ''),
-        uniqueId: String(data.get('uniqueId') ?? ''),
-        sendNow,
-      }),
-    });
-    setBusy(false);
-
-    const body = (await res.json()) as { ok?: boolean; sent?: number; error?: string };
-    if (!res.ok || body.error) {
-      setError(body.error ?? t('adminNewsletter.saveFailed'));
-      return;
+    try {
+      const res = await fetch('/api/admin/newsletter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: data.get('enabled') === 'on',
+          dayOfWeek: Number(data.get('dayOfWeek')),
+          hour: Number(data.get('hour')),
+          days: Number(data.get('days')),
+          libraries: libraries.filter((l) => data.get(`library.${l.id}`) === 'on').map((l) => l.id),
+          subject: String(data.get('subject') ?? ''),
+          intro: String(data.get('intro') ?? ''),
+          uniqueId: String(data.get('uniqueId') ?? ''),
+          sendNow,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        sent?: number;
+        error?: string;
+      };
+      if (!res.ok || body.error) {
+        setError(body.error ?? t('adminNewsletter.saveFailed'));
+        return;
+      }
+      setMessage(
+        sendNow
+          ? t('adminNewsletter.sent', { count: body.sent ?? 0 })
+          : t('action.saved'),
+      );
+      router.refresh();
+    } catch {
+      setError(t('adminNewsletter.saveFailed'));
+    } finally {
+      setBusy(false);
     }
-    setMessage(
-      sendNow
-        ? t('adminNewsletter.sent', { count: body.sent ?? 0 })
-        : t('action.saved'),
-    );
-    router.refresh();
   }
 
   return (

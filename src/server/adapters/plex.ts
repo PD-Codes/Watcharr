@@ -18,6 +18,9 @@ const PLEX_TV = 'https://plex.tv/api/v2';
 const PLEX_METADATA = 'https://metadata.provider.plex.tv';
 const PRODUCT = 'Watcharr';
 const CLIENT_ID = 'watcharr-server';
+/** Items per library request, and the ceiling that keeps a runaway server from filling memory. */
+const LIBRARY_PAGE = 5000;
+const MAX_LIBRARY_ITEMS = 200_000;
 
 // Plex numbers stream types: 1 = video, 2 = audio, 3 = subtitle.
 type PlexStream = {
@@ -77,6 +80,7 @@ type PlexContainer = {
     size?: number;
     myPlexUsername?: string;
     friendlyName?: string;
+    machineIdentifier?: string;
     version?: string;
   };
 };
@@ -142,7 +146,7 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
   }
 
   async pollPinAuth(pinId: string): Promise<AuthResult | null> {
-    const pin = await apiFetch<{ authToken: string | null }>(`${PLEX_TV}/pins/${pinId}`, {
+    const pin = await apiFetch<{ authToken: string | null }>(`${PLEX_TV}/pins/${encodeURIComponent(pinId)}`, {
       headers: this.plexHeaders(),
     });
     if (!pin.authToken) return null;
@@ -154,9 +158,21 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
       `${PLEX_TV}/user`,
       { headers: this.plexHeaders(token) },
     );
+    const [root, resources] = await Promise.all([
+      this.server<PlexContainer>('/'),
+      apiFetch<{ clientIdentifier?: string }[]>(`${PLEX_TV}/resources?includeHttps=1&includeRelay=1`, {
+        headers: this.plexHeaders(token),
+      }),
+    ]);
+    // plex.tv issues a valid token to every Plex account there is, so a valid token proves
+    // nothing about this server. Only an account that plex.tv lists this server for may sign
+    // in; everyone else would otherwise browse the library through this app's admin token.
+    const machineId = root.MediaContainer.machineIdentifier;
+    if (!machineId || !Array.isArray(resources) || !resources.some((r) => r.clientIdentifier === machineId)) {
+      throw Object.assign(new Error('This Plex account has no access to the server'), { status: 403 });
+    }
     // ponytail: server ownership is derived from the root endpoint's myPlexUsername.
     // Swap for /api/v2/resources ownership check if shared-admin setups need it.
-    const root = await this.server<PlexContainer>('/');
     return {
       serverUserId: String(me.id),
       username: me.username,
@@ -264,10 +280,21 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     const wanted = (sections.MediaContainer.Directory ?? []).filter(
       (d) => d.type === 'movie' || d.type === 'show',
     );
+    // Paged: a single capped request would silently drop everything past the cap from
+    // search, the library table and the "never started" list.
     const pages = await Promise.all(
-      wanted.map((d) =>
-        this.server<PlexContainer>(`/library/sections/${d.key}/all?X-Plex-Container-Size=5000`),
-      ),
+      wanted.map(async (d) => {
+        const Metadata: PlexMeta[] = [];
+        for (let start = 0; start < MAX_LIBRARY_ITEMS; start += LIBRARY_PAGE) {
+          const page = await this.server<PlexContainer>(
+            `/library/sections/${d.key}/all?X-Plex-Container-Start=${start}&X-Plex-Container-Size=${LIBRARY_PAGE}`,
+          );
+          const batch = page.MediaContainer.Metadata ?? [];
+          Metadata.push(...batch);
+          if (batch.length < LIBRARY_PAGE) break;
+        }
+        return { MediaContainer: { Metadata } } as PlexContainer;
+      }),
     );
     // ponytail: Plex omits genres in section listings; scoring falls back to year/type.
     // Fetch /library/metadata/{key} per item if genre-accurate suggestions matter.

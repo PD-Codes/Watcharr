@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { badBody, readBody } from '@/server/body';
 import { selectableEvents, setUserPrefs } from '@/server/notifications';
 import { getSession } from '@/server/session';
 
@@ -13,7 +14,8 @@ export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Sign in first' }, { status: 401 });
 
-  const body = (await request.json()) as { email?: string | null; events?: string[] };
+  const body = await readBody(request, { email: 'string', events: 'strings' });
+  if (!body) return badBody();
   const address = body.email?.trim() || null;
   if (address && !EMAIL.test(address)) {
     return NextResponse.json({ error: 'That does not look like an email address' }, { status: 400 });

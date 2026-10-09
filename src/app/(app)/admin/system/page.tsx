@@ -6,7 +6,8 @@ import { formatDate } from '@/components/format';
 import { createAdapter, type ServerType } from '@/server/adapters';
 import { listAutoBackups } from '@/server/autobackup';
 import { getSettings, listServers } from '@/server/config';
-import { requireAdmin } from '@/server/session';
+import { adminScope, requireAdmin } from '@/server/session';
+import { getSystemCounts } from '@/server/stats';
 import { getUpdateStatus, RELEASES_PAGE } from '@/server/update';
 import { getT } from '@/i18n/server';
 
@@ -41,17 +42,7 @@ export default async function AdminSystemPage() {
     database = false;
   }
 
-  const [counts] = await db.all<{
-    history: number;
-    sessions: number;
-    activity: number;
-    last_play: number | null;
-  }>(sql`
-    SELECT (SELECT count(*) FROM watch_history) AS history,
-           (SELECT count(*) FROM playback_sessions) AS sessions,
-           (SELECT count(*) FROM playback_sessions WHERE state != 'ended') AS activity,
-           (SELECT max(watched_at) FROM watch_history) AS last_play
-  `);
+  const counts = await getSystemCounts(adminScope(session.user));
 
   return (
     <>
@@ -74,11 +65,11 @@ export default async function AdminSystemPage() {
           label={t('system.database')}
           value={database ? t('system.statusOnline') : t('system.statusUnreachable')}
         />
-        <StatCard label={t('system.historyEntries')} value={String(counts?.history ?? 0)} />
+        <StatCard label={t('system.historyEntries')} value={String(counts.history)} />
         <StatCard
           label={t('system.liveSessions')}
-          value={String(counts?.activity ?? 0)}
-          hint={t('system.recordedTotal', { count: counts?.sessions ?? 0 })}
+          value={String(counts.activity)}
+          hint={t('system.recordedTotal', { count: counts.sessions })}
           info={t('system.liveSessionsInfo')}
         />
       </div>
@@ -122,7 +113,7 @@ export default async function AdminSystemPage() {
             <tr>
               <th scope="row">{t('system.lastPlay')}</th>
               <td>
-                {counts?.last_play ? formatDate(new Date(counts.last_play)) : t('system.noneYet')}
+                {counts.lastPlay ? formatDate(new Date(counts.lastPlay)) : t('system.noneYet')}
               </td>
             </tr>
             <tr>

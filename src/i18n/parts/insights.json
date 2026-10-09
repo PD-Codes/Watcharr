@@ -1,0 +1,246 @@
+{
+  "ins.stripTitle": {
+    "en": "Little discoveries",
+    "de": "Kleine Entdeckungen"
+  },
+  "ins.shelfTitle": {
+    "en": "Badges",
+    "de": "Abzeichen"
+  },
+  "ins.shelfSummary": {
+    "en": "{done} of {total} badges earned",
+    "de": "{done} von {total} Abzeichen erreicht"
+  },
+  "ins.eyebrow.onThisDay": {
+    "en": "On this day",
+    "de": "An diesem Tag"
+  },
+  "ins.eyebrow.binge": {
+    "en": "Longest binge",
+    "de": "Längster Binge"
+  },
+  "ins.eyebrow.comfort": {
+    "en": "Comfort title",
+    "de": "Wohlfühltitel"
+  },
+  "ins.eyebrow.chronotype": {
+    "en": "Chronotype",
+    "de": "Chronotyp"
+  },
+  "ins.eyebrow.weekend": {
+    "en": "Weekend vs weekday",
+    "de": "Wochenende gegen Werktag"
+  },
+  "ins.eyebrow.momentum": {
+    "en": "Momentum",
+    "de": "Schwung"
+  },
+  "ins.onThisDay.text": {
+    "en": "Same date, earlier years. This is what was on.",
+    "de": "Gleiches Datum, frühere Jahre. Das lief damals."
+  },
+  "ins.binge.text": {
+    "en": "The most episodes of one show in a single day, on {date}.",
+    "de": "Die meisten Folgen einer Serie an einem einzigen Tag, am {date}."
+  },
+  "ins.comfort.text": {
+    "en": "The most replayed title. Some stories are simply home.",
+    "de": "Der am häufigsten wiederholte Titel. Manche Geschichten sind einfach Zuhause."
+  },
+  "ins.chrono.night.label": {
+    "en": "Night owl",
+    "de": "Nachteule"
+  },
+  "ins.chrono.night.text": {
+    "en": "Most plays start between 23:00 and 05:00, long after the lights are out elsewhere.",
+    "de": "Die meisten Wiedergaben starten zwischen 23:00 und 05:00, wenn anderswo längst das Licht aus ist."
+  },
+  "ins.chrono.early.label": {
+    "en": "Early bird",
+    "de": "Frühaufsteher"
+  },
+  "ins.chrono.early.text": {
+    "en": "Most plays start between 05:00 and 11:00, while the day is still young.",
+    "de": "Die meisten Wiedergaben starten zwischen 05:00 und 11:00, solange der Tag noch jung ist."
+  },
+  "ins.chrono.daylight.label": {
+    "en": "Daylight viewer",
+    "de": "Tagseher"
+  },
+  "ins.chrono.daylight.text": {
+    "en": "Most plays start between 11:00 and 17:00, in broad daylight.",
+    "de": "Die meisten Wiedergaben starten zwischen 11:00 und 17:00, bei hellem Tageslicht."
+  },
+  "ins.chrono.prime.label": {
+    "en": "Primetime",
+    "de": "Primetime"
+  },
+  "ins.chrono.prime.text": {
+    "en": "Most plays start between 17:00 and 23:00, right when the evening begins.",
+    "de": "Die meisten Wiedergaben starten zwischen 17:00 und 23:00, genau wenn der Abend beginnt."
+  },
+  "ins.weekend.weekend.label": {
+    "en": "More on weekends",
+    "de": "Mehr am Wochenende"
+  },
+  "ins.weekend.weekend.text": {
+    "en": "Per calendar day, weekends bring {ratio} times the watch time of weekdays.",
+    "de": "Pro Kalendertag bringen Wochenenden das {ratio}-Fache der Sehzeit von Werktagen."
+  },
+  "ins.weekend.weekday.label": {
+    "en": "More on weekdays",
+    "de": "Mehr unter der Woche"
+  },
+  "ins.weekend.weekday.text": {
+    "en": "Per calendar day, weekdays bring {ratio} times the watch time of weekends.",
+    "de": "Pro Kalendertag bringen Werktage das {ratio}-Fache der Sehzeit von Wochenenden."
+  },
+  "ins.weekend.even.label": {
+    "en": "Evenly spread",
+    "de": "Gleichmäßig verteilt"
+  },
+  "ins.weekend.even.text": {
+    "en": "Per calendar day, weekends and weekdays bring about the same watch time.",
+    "de": "Pro Kalendertag bringen Wochenenden und Werktage etwa dieselbe Sehzeit."
+  },
+  "ins.momentum.label": {
+    "en": "plays, last 30 days",
+    "de": "Wiedergaben, letzte 30 Tage"
+  },
+  "ins.momentum.text": {
+    "en": "{current} now against {previous} in the 30 days before.",
+    "de": "{current} jetzt gegenüber {previous} in den 30 Tagen davor."
+  },
+  "ins.badgeLocked": {
+    "en": "Locked",
+    "de": "Gesperrt"
+  },
+  "ins.badgeEarned": {
+    "en": "Earned",
+    "de": "Erreicht"
+  },
+  "ins.badgeTier": {
+    "en": "Tier {tier} of {tiers}",
+    "de": "Stufe {tier} von {tiers}"
+  },
+  "ins.ach.plays.name": {
+    "en": "Spectator",
+    "de": "Zuschauer"
+  },
+  "ins.ach.plays.goal": {
+    "en": "Plays logged: {count}",
+    "de": "Wiedergaben: {count}"
+  },
+  "ins.ach.hours.name": {
+    "en": "Long Haul",
+    "de": "Langstrecke"
+  },
+  "ins.ach.hours.goal": {
+    "en": "Hours watched: {count}",
+    "de": "Stunden geschaut: {count}"
+  },
+  "ins.ach.regular.name": {
+    "en": "Regular",
+    "de": "Stammgast"
+  },
+  "ins.ach.regular.goal": {
+    "en": "Days with a play: {count}",
+    "de": "Tage mit Wiedergabe: {count}"
+  },
+  "ins.ach.streak.name": {
+    "en": "On a Roll",
+    "de": "Auf Kurs"
+  },
+  "ins.ach.streak.goal": {
+    "en": "Longest streak in days: {count}",
+    "de": "Längste Serie in Tagen: {count}"
+  },
+  "ins.ach.binge.name": {
+    "en": "Binge Boss",
+    "de": "Binge-Boss"
+  },
+  "ins.ach.binge.goal": {
+    "en": "Episodes of one show in a day: {count}",
+    "de": "Folgen einer Serie an einem Tag: {count}"
+  },
+  "ins.ach.marathoner.name": {
+    "en": "Marathoner",
+    "de": "Marathonläufer"
+  },
+  "ins.ach.marathoner.goal": {
+    "en": "Hours in a single day: {count}",
+    "de": "Stunden an einem einzigen Tag: {count}"
+  },
+  "ins.ach.rewatcher.name": {
+    "en": "Rewatcher",
+    "de": "Wiederholungstäter"
+  },
+  "ins.ach.rewatcher.goal": {
+    "en": "Plays of a single title: {count}",
+    "de": "Wiedergaben desselben Titels: {count}"
+  },
+  "ins.ach.cinephile.name": {
+    "en": "Cinephile",
+    "de": "Cineast"
+  },
+  "ins.ach.cinephile.goal": {
+    "en": "Different movies: {count}",
+    "de": "Verschiedene Filme: {count}"
+  },
+  "ins.ach.explorer.name": {
+    "en": "Genre Explorer",
+    "de": "Genre-Entdecker"
+  },
+  "ins.ach.explorer.goal": {
+    "en": "Different genres: {count}",
+    "de": "Verschiedene Genres: {count}"
+  },
+  "ins.ach.nightOwl.name": {
+    "en": "Night Owl",
+    "de": "Nachteule"
+  },
+  "ins.ach.nightOwl.goal": {
+    "en": "Plays between 00:00 and 05:00: {count}",
+    "de": "Wiedergaben zwischen 00:00 und 05:00: {count}"
+  },
+  "ins.ach.earlyBird.name": {
+    "en": "Early Bird",
+    "de": "Frühaufsteher"
+  },
+  "ins.ach.earlyBird.goal": {
+    "en": "Plays between 05:00 and 08:00: {count}",
+    "de": "Wiedergaben zwischen 05:00 und 08:00: {count}"
+  },
+  "ins.ach.weekendWarrior.name": {
+    "en": "Weekend Warrior",
+    "de": "Wochenend-Kämpfer"
+  },
+  "ins.ach.weekendWarrior.goal": {
+    "en": "Plays on a Saturday or Sunday: {count}",
+    "de": "Wiedergaben an Samstag oder Sonntag: {count}"
+  },
+  "ins.ach.doubleFeature.name": {
+    "en": "Double Feature",
+    "de": "Doppelvorstellung"
+  },
+  "ins.ach.doubleFeature.goal": {
+    "en": "Days with two different movies: {count}",
+    "de": "Tage mit zwei verschiedenen Filmen: {count}"
+  },
+  "ins.ach.timeTraveler.name": {
+    "en": "Time Traveler",
+    "de": "Zeitreisender"
+  },
+  "ins.ach.timeTraveler.goal": {
+    "en": "Decades of release years: {count}",
+    "de": "Jahrzehnte bei den Erscheinungsjahren: {count}"
+  },
+  "ins.ach.friday13.name": {
+    "en": "Friday the 13th",
+    "de": "Freitag der 13."
+  },
+  "ins.ach.friday13.goal": {
+    "en": "Plays on a Friday the 13th: {count}",
+    "de": "Wiedergaben an einem Freitag, dem 13.: {count}"
+  }
+}

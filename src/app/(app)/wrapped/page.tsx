@@ -1,7 +1,14 @@
 import Link from 'next/link';
 import { BarChart, ColumnChart, DonutChart, Heatmap, StatCard } from '@/components/Charts';
-import { formatDate, formatDuration, formatMinutes } from '@/components/format';
+import {
+  formatDate,
+  formatDuration,
+  formatMinutes,
+  localizeWeekdays,
+  weekdayName,
+} from '@/components/format';
 import { CastStrip } from '@/components/TitleMeta';
+import { Icon } from '@/components/Icons';
 import { getTopCast } from '@/server/tmdb';
 import { getWrapped, getWrappedYears } from '@/server/wrapped';
 import { reportSyncError, syncHistory } from '@/server/sync';
@@ -26,9 +33,10 @@ export default async function WrappedPage({
   // Cache-only, like on the statistics page: nothing here waits on TMDB.
   const topCast = await getTopCast({ userId: session.user.id }).catch(() => []);
 
+  // Index, not label: the server's labels are English, the names shown are translated.
   const topWeekday = wrapped.weekdays.reduce(
-    (best, day) => (day.value > best.value ? day : best),
-    wrapped.weekdays[0],
+    (best, day, index) => (day.value > wrapped.weekdays[best].value ? index : best),
+    0,
   );
 
   return (
@@ -50,6 +58,23 @@ export default async function WrappedPage({
                 </Link>
               ))}
             </div>
+          </div>
+        )}
+        {wrapped.plays > 0 && (
+          <div className="row" style={{ justifyContent: 'center', marginTop: 20 }}>
+            <Link className="btn" href={`/wrapped/story?year=${year}`}>
+              <Icon name="sparkles" />
+              {t('story.playAsStory')}
+            </Link>
+            <a
+              className="btn ghost"
+              href={`/api/wrapped/card?year=${year}`}
+              target="_blank"
+              rel="noopener"
+            >
+              <Icon name="share" />
+              {t('story.shareCard')}
+            </a>
           </div>
         )}
       </div>
@@ -173,9 +198,9 @@ export default async function WrappedPage({
 
           <div className="grid cols-2 section">
             <section>
-              <h2>{t('wrapped.weekdayCrown', { weekday: topWeekday?.label ?? '' })}</h2>
+              <h2>{t('wrapped.weekdayCrown', { weekday: weekdayName(topWeekday, t) })}</h2>
               <div className="card">
-                <ColumnChart data={wrapped.weekdays} format={formatMinutes} />
+                <ColumnChart data={localizeWeekdays(wrapped.weekdays, t)} format={formatMinutes} />
               </div>
             </section>
             <section>

@@ -21,27 +21,26 @@
     "i18n:build": "node scripts/build-i18n.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/test/adapters.test.ts && tsx src/test/http.test.ts && tsx src/test/suggestions.test.ts && tsx src/test/net.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/update.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/db.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/notifications.test.ts",
+    "test": "tsx src/test/adapters.test.ts && tsx src/test/http.test.ts && tsx src/test/suggestions.test.ts && tsx src/test/net.test.ts && tsx src/test/sameorigin.test.ts && tsx src/test/body.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/ratelimit.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/setup.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/update.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/db.test.ts && tsx --require ./src/test/server-only-shim.cjs src/test/notifications.test.ts && tsx src/test/insights.test.ts && tsx src/test/pick.test.ts && tsx src/test/shortcuts.test.ts && tsx src/test/story.test.ts && tsx src/test/screen.test.ts",
     "test:routes": "next build && tsx --require ./src/test/server-only-shim.cjs src/test/routes.test.ts",
     "preview": "next build && tsx --require ./src/test/server-only-shim.cjs src/test/preview.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
-    "drizzle-orm": "^0.45.2",
-    "next": "^16.3.2",
-    "nodemailer": "^6.9.16",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "drizzle-orm": "^0.45.4",
+    "next": "^16.4.0",
+    "nodemailer": "^10.0.16",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
-    "@types/node": "^22.10.2",
-    "@types/nodemailer": "^6.4.17",
-    "@types/react": "^19.0.1",
-    "@types/react-dom": "^19.0.2",
-    "drizzle-kit": "^0.31.10",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }

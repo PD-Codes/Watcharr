@@ -1,6 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { NextResponse } from 'next/server';
 import { backupTo } from '@/db';
 import { getSession } from '@/server/session';
@@ -19,17 +21,24 @@ export async function GET() {
 
   const dir = await mkdtemp(join(tmpdir(), 'watcharr-backup-'));
   const file = join(dir, 'watcharr.db');
+  const cleanup = () => rm(dir, { recursive: true, force: true });
   try {
     await backupTo(file);
-    const data = await readFile(file);
+    const { size } = await stat(file);
+    // Streamed, not read into memory: a database with years of history is hundreds of MB.
+    const stream = createReadStream(file);
+    // The snapshot goes when the download ends, whether it finished or the client left.
+    stream.once('close', () => void cleanup());
     const stamp = new Date().toISOString().slice(0, 10);
-    return new NextResponse(new Uint8Array(data), {
+    return new NextResponse(Readable.toWeb(stream) as unknown as ReadableStream, {
       headers: {
         'Content-Type': 'application/vnd.sqlite3',
+        'Content-Length': String(size),
         'Content-Disposition': `attachment; filename="watcharr-${stamp}.db"`,
       },
     });
-  } finally {
-    await rm(dir, { recursive: true, force: true });
+  } catch (error) {
+    await cleanup();
+    throw error;
   }
 }

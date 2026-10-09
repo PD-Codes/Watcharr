@@ -2,6 +2,7 @@ import 'server-only';
 import { createAdapter, supportsLiveSocket, type ServerType } from './adapters';
 import { getSettings, listServers } from './config';
 import { isEnabled } from './features';
+import { globalState } from './state';
 import { syncActivity } from './sync';
 
 /**
@@ -34,10 +35,21 @@ const MAX_BACKOFF_MS = 5 * 60_000;
 
 type Listener = { socket: WebSocket; serverId: number };
 
-const listeners = new Map<number, Listener>();
-const backoff = new Map<number, number>();
-let timer: NodeJS.Timeout | null = null;
-let started = false;
+// Process-wide (see state.ts): only the instrumentation graph imports this module today, but
+// liveServerIds() is exported for pages, and a development reload re-runs register() against a
+// fresh copy of the module — without shared state that starts a second tick and a second set
+// of sockets next to the first.
+const live = globalState('live', () => ({
+  listeners: new Map<number, Listener>(),
+  backoff: new Map<number, number>(),
+  // At most one pending retry per server. Every failed attempt used to add a timer of its own
+  // and the 30 s tick dialled on top of that, so a media server that was down for the night
+  // collected more and more retry chains (thousands of attempts in a couple of hours).
+  retryTimers: new Map<number, NodeJS.Timeout>(),
+  timer: null as NodeJS.Timeout | null,
+  started: false,
+}));
+const { listeners, backoff, retryTimers } = live;
 
 function onEvent(label: string) {
   // Errors are swallowed on purpose: this runs outside any request, so an unhandled
@@ -54,7 +66,7 @@ function connect(serverId: number, label: string, url: string, hello?: string) {
     // Global WebSocket, no dependency: Node has shipped one since 22.
     socket = new WebSocket(url);
   } catch {
-    scheduleReconnect(serverId, label, url, hello);
+    scheduleReconnect(serverId);
     return;
   }
   listeners.set(serverId, { socket, serverId });
@@ -71,21 +83,34 @@ function connect(serverId: number, label: string, url: string, hello?: string) {
   // guaranteed. Without onerror the failure would surface as an unhandled event instead.
   socket.onerror = () => {};
   socket.onclose = () => {
-    if (listeners.get(serverId)?.socket === socket) listeners.delete(serverId);
-    scheduleReconnect(serverId, label, url, hello);
+    // Only the current listener reconnects. A removed server and a switched-off socket
+    // feature delete the listener before closing it, and that close has to stay closed.
+    if (listeners.get(serverId)?.socket !== socket) return;
+    listeners.delete(serverId);
+    scheduleReconnect(serverId);
   };
 }
 
-function scheduleReconnect(serverId: number, label: string, url: string, hello?: string) {
+function scheduleReconnect(serverId: number) {
+  if (retryTimers.has(serverId)) return;
   const wait = Math.min(MAX_BACKOFF_MS, backoff.get(serverId) ?? RECONNECT_MS);
   // Doubles until the ceiling: a server that is down for the night must not be dialled
   // every fifteen seconds until morning.
   backoff.set(serverId, Math.min(MAX_BACKOFF_MS, wait * 2));
-  setTimeout(() => {
-    if (!started) return;
-    if (listeners.has(serverId)) return;
-    connect(serverId, label, url, hello);
-  }, wait).unref?.();
+  const timer = setTimeout(() => {
+    retryTimers.delete(serverId);
+    // Reconnecting goes through the same path as the tick, so it reads the server's current
+    // address and token and honours the feature flag, instead of redialling what was
+    // configured when the connection broke.
+    if (live.started) {
+      void refreshListeners().catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[watcharr] live listeners could not be refreshed: ${message}`);
+      });
+    }
+  }, wait);
+  timer.unref?.();
+  retryTimers.set(serverId, timer);
 }
 
 /** Opens a socket for every configured server that offers one. Safe to call repeatedly. */
@@ -105,13 +130,21 @@ export async function refreshListeners(): Promise<void> {
   // belongs to this deployment, so its listener goes first.
   for (const [serverId, listener] of listeners) {
     if (!wanted.has(serverId)) {
-      listener.socket.close();
       listeners.delete(serverId);
+      listener.socket.close();
+    }
+  }
+  for (const [serverId, timer] of retryTimers) {
+    if (!wanted.has(serverId)) {
+      clearTimeout(timer);
+      retryTimers.delete(serverId);
+      backoff.delete(serverId);
     }
   }
 
   for (const server of servers) {
-    if (listeners.has(server.id)) continue;
+    // A pending retry is the backoff: the tick must not dial around it.
+    if (listeners.has(server.id) || retryTimers.has(server.id)) continue;
     const adapter = createAdapter(
       server.serverType as ServerType,
       server.serverUrl,
@@ -129,8 +162,8 @@ export async function refreshListeners(): Promise<void> {
  * run the instrumentation hook more than once in development.
  */
 export function startLive(): void {
-  if (started) return;
-  started = true;
+  if (live.started) return;
+  live.started = true;
 
   const tick = () => {
     void refreshListeners().catch((error: unknown) => {
@@ -142,21 +175,26 @@ export function startLive(): void {
     void syncActivity().catch(() => {});
   };
 
-  timer = setInterval(tick, FALLBACK_MS);
+  live.timer = setInterval(tick, FALLBACK_MS);
   // Never the reason the process stays alive; Next.js owns the event loop.
-  timer.unref?.();
+  live.timer.unref?.();
   tick();
 }
 
 function closeSockets(): void {
-  for (const [, listener] of listeners) listener.socket.close();
+  // Cleared before closing, so the close events find no current listener and do not retry.
+  const open = [...listeners.values()];
   listeners.clear();
+  for (const timer of retryTimers.values()) clearTimeout(timer);
+  retryTimers.clear();
+  backoff.clear();
+  for (const listener of open) listener.socket.close();
 }
 
 export function stopLive(): void {
-  started = false;
-  if (timer) clearInterval(timer);
-  timer = null;
+  live.started = false;
+  if (live.timer) clearInterval(live.timer);
+  live.timer = null;
   closeSockets();
 }
 

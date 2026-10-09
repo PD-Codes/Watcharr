@@ -66,23 +66,71 @@ export async function getTotals(scope: Scope, days?: number): Promise<Totals> {
   };
 }
 
-/** One bucket per day for the last `days` days, including days without any play. */
-export async function getDailyActivity(scope: Scope, days = 30): Promise<LabelledValue[]> {
-  const rows = await db.all<{ day: string; minutes: number }>(sql`
+export interface SystemCounts {
+  history: number;
+  sessions: number;
+  /** Sessions not yet ended; the sync closes the ones that stalled. */
+  activity: number;
+  lastPlay: number | null;
+}
+
+/**
+ * Row counts for the system page, in the caller's scope. The page used to count the whole
+ * database, so a server admin saw other servers' totals and their last play.
+ */
+export async function getSystemCounts(scope: Scope): Promise<SystemCounts> {
+  const [row] = await db.all<{
+    history: number;
+    sessions: number;
+    activity: number;
+    last_play: number | null;
+  }>(sql`
+    SELECT (SELECT count(*) FROM watch_history WHERE ${scopeFilter(scope)}) AS history,
+           (SELECT count(*) FROM playback_sessions WHERE ${scopeFilter(scope)}) AS sessions,
+           (SELECT count(*) FROM playback_sessions
+             WHERE state != 'ended' AND ${scopeFilter(scope)}) AS activity,
+           (SELECT max(watched_at) FROM watch_history WHERE ${scopeFilter(scope)}) AS last_play
+  `);
+  return {
+    history: Number(row?.history ?? 0),
+    sessions: Number(row?.sessions ?? 0),
+    activity: Number(row?.activity ?? 0),
+    lastPlay: row?.last_play == null ? null : Number(row.last_play),
+  };
+}
+
+/**
+ * One bucket per local day for the last `days` days, including days without a row. The history
+ * is grouped by day in a single scan and the calendar is joined to that result. Joining the
+ * calendar to the raw rows instead evaluates the date expression for every row once per
+ * calendar day, because no index can serve it: a year over 25k rows took seconds.
+ */
+async function dailySeries(scope: Scope, days: number, measure: SQL): Promise<LabelledValue[]> {
+  const rows = await db.all<{ day: string; value: number }>(sql`
     WITH RECURSIVE calendar(day) AS (
       SELECT date('now', 'localtime', ${`-${days - 1} days`})
       UNION ALL
       SELECT date(day, '+1 day') FROM calendar WHERE day < date('now', 'localtime')
+    ),
+    played(local_day, value) AS (
+      SELECT ${localDay('watched_at')}, ${measure}
+      FROM watch_history
+      -- One day more than the calendar covers: a pure prefilter, the join below is exact. It
+      -- keeps a user's year on the (user_id, watched_at) index instead of the whole history.
+      WHERE ${scopeFilter(scope)} AND ${sinceFilter(days + 1)}
+      GROUP BY 1
     )
-    SELECT calendar.day AS day,
-           coalesce(sum(h.duration_ms), 0) / 60000 AS minutes
+    SELECT calendar.day AS day, coalesce(played.value, 0) AS value
     FROM calendar
-    LEFT JOIN watch_history h
-      ON ${localDay('h.watched_at')} = calendar.day AND ${scopeFilter(scope, 'h.')}
-    GROUP BY calendar.day
+    LEFT JOIN played ON played.local_day = calendar.day
     ORDER BY calendar.day
   `);
-  return rows.map((r) => ({ label: r.day, value: Number(r.minutes) }));
+  return rows.map((r) => ({ label: r.day, value: Number(r.value) }));
+}
+
+/** Minutes watched per day for the last `days` days. */
+export function getDailyActivity(scope: Scope, days = 30): Promise<LabelledValue[]> {
+  return dailySeries(scope, days, sql`sum(duration_ms) / 60000`);
 }
 
 /**
@@ -90,21 +138,8 @@ export async function getDailyActivity(scope: Scope, days = 30): Promise<Labelle
  * a watch-time chart: an evening of five sitcom episodes outranks a single long film on
  * count and loses on time, and both answers are worth having.
  */
-export async function getDailyPlays(scope: Scope, days = 30): Promise<LabelledValue[]> {
-  const rows = await db.all<{ day: string; plays: number }>(sql`
-    WITH RECURSIVE calendar(day) AS (
-      SELECT date('now', 'localtime', ${`-${days - 1} days`})
-      UNION ALL
-      SELECT date(day, '+1 day') FROM calendar WHERE day < date('now', 'localtime')
-    )
-    SELECT calendar.day AS day, count(h.id) AS plays
-    FROM calendar
-    LEFT JOIN watch_history h
-      ON ${localDay('h.watched_at')} = calendar.day AND ${scopeFilter(scope, 'h.')}
-    GROUP BY calendar.day
-    ORDER BY calendar.day
-  `);
-  return rows.map((r) => ({ label: r.day, value: Number(r.plays) }));
+export function getDailyPlays(scope: Scope, days = 30): Promise<LabelledValue[]> {
+  return dailySeries(scope, days, sql`count(*)`);
 }
 
 /** Plays per weekday, Monday first — the count counterpart to getWeekdayActivity. */
@@ -391,12 +426,14 @@ export async function getPeakHours(scope: Scope): Promise<LabelledValue[]> {
 
 /** Consecutive days with at least one play, counting back from today. */
 export async function getStreak(scope: Scope): Promise<number> {
+  // No LIMIT: DISTINCT and ORDER BY read the whole history before any limit applies, so the old
+  // cap of 400 days saved nothing and stopped a longer streak at exactly 400. The result is one
+  // short string per active day, a few thousand at the very most.
   const rows = await db.all<{ day: string }>(sql`
     SELECT DISTINCT ${localDay('watched_at')} AS day
     FROM watch_history
     WHERE ${scopeFilter(scope)}
     ORDER BY day DESC
-    LIMIT 400
   `);
 
   // 'en-CA' formats as YYYY-MM-DD in the local time zone, matching SQLite's date().
@@ -546,4 +583,42 @@ export async function getTrend(scope: Scope, days: number): Promise<number | nul
   const previous = Number(row?.previous ?? 0);
   if (previous === 0) return null;
   return Math.round(((Number(row?.current ?? 0) - previous) / previous) * 100);
+}
+
+export interface PeriodComparison {
+  plays: { current: number; previous: number };
+  watchtimeMs: { current: number; previous: number };
+  activeDays: { current: number; previous: number };
+}
+
+/**
+ * The last `days` days next to the `days` before them, in one pass. The dashboard puts a
+ * trend on every headline number, and four separate windowed queries would scan
+ * watch_history four times for it.
+ */
+export async function getPeriodComparison(scope: Scope, days: number): Promise<PeriodComparison> {
+  const current = sql`(unixepoch('now', ${`-${days} days`}) * 1000)`;
+  const previous = sql`(unixepoch('now', ${`-${days * 2} days`}) * 1000)`;
+  // Active days are counted on calendar days, not on the rolling 24-hour windows above: a
+  // window of N x 24 h touches N + 1 calendar dates, which made "31 of 30 days" possible.
+  const day = localDay('watched_at');
+  const firstDay = sql`date('now', 'localtime', ${`-${days - 1} days`})`;
+  const prevFirstDay = sql`date('now', 'localtime', ${`-${days * 2 - 1} days`})`;
+  const [row] = await db.all<Record<string, number>>(sql`
+    SELECT
+      count(*) FILTER (WHERE watched_at >= ${current}) AS plays_cur,
+      count(*) FILTER (WHERE watched_at < ${current}) AS plays_prev,
+      coalesce(sum(duration_ms) FILTER (WHERE watched_at >= ${current}), 0) AS time_cur,
+      coalesce(sum(duration_ms) FILTER (WHERE watched_at < ${current}), 0) AS time_prev,
+      count(DISTINCT CASE WHEN ${day} >= ${firstDay} THEN ${day} END) AS days_cur,
+      count(DISTINCT CASE WHEN ${day} >= ${prevFirstDay} AND ${day} < ${firstDay} THEN ${day} END) AS days_prev
+    FROM watch_history
+    WHERE ${scopeFilter(scope)} AND watched_at >= ${previous}
+  `);
+  const n = (key: string) => Number(row?.[key] ?? 0);
+  return {
+    plays: { current: n('plays_cur'), previous: n('plays_prev') },
+    watchtimeMs: { current: n('time_cur'), previous: n('time_prev') },
+    activeDays: { current: n('days_cur'), previous: n('days_prev') },
+  };
 }
