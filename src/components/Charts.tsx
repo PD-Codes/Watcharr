@@ -313,7 +313,7 @@ export async function AreaChart({
       <Scale width={width} base={padTop + plot} plot={plot} max={max} format={format} />
 
       <path className="area-fill" d={`${path} L ${width} ${padTop + plot} L 0 ${padTop + plot} Z`} fill="url(#area-fill)" />
-      <path className="area-line" d={path} fill="none" stroke="var(--beam)" strokeWidth="2" strokeLinecap="round" />
+      <path className="area-line" d={path} pathLength={1} fill="none" stroke="var(--beam)" strokeWidth="2" strokeLinecap="round" />
 
       {data.map((d, index) => (
         <g key={d.label} className="area-point">
@@ -618,7 +618,12 @@ export async function Heatmap({
   const perforations = Math.ceil(cells.length / 7);
 
   return (
-    <div className="filmstrip" role={hrefFor ? 'group' : 'img'} aria-label={summary}>
+    <div
+      className="filmstrip"
+      role={hrefFor ? 'group' : 'img'}
+      aria-label={summary}
+      style={{ ['--weeks' as string]: perforations }}
+    >
       <div className="perf" aria-hidden>
         {Array.from({ length: perforations }, (_, index) => (
           <span key={index} />

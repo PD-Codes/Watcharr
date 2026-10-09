@@ -12,5 +12,11 @@ export async function POST(request: Request) {
   if (!supportsPinAuth(adapter)) {
     return NextResponse.json({ error: 'PIN auth is not supported' }, { status: 400 });
   }
-  return NextResponse.json(await adapter.startPinAuth());
+  // The browser's own origin (a same-origin POST always carries it) beats APP_URL, which may
+  // name another address than the one this person is using right now.
+  const base = (request.headers.get('origin') ?? process.env.APP_URL ?? '').trim().replace(/\/$/, '');
+  const forward = /^https?:\/\/[^\s/]+$/.test(base)
+    ? (pinId: string) => `${base}/login/plex-done?pin=${pinId}&server=${server.id}`
+    : undefined;
+  return NextResponse.json(await adapter.startPinAuth(forward));
 }

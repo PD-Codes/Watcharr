@@ -213,7 +213,8 @@ export function supportsTerminate(
 
 /** Plex uses a PIN-based OAuth flow instead of username/password. */
 export interface PinAuthAdapter {
-  startPinAuth(): Promise<{ pinId: string; code: string; authUrl: string }>;
+  /** `forwardUrl` is where plex.tv sends the browser after approval; it gets the new pin id. */
+  startPinAuth(forwardUrl?: (pinId: string) => string): Promise<{ pinId: string; code: string; authUrl: string }>;
   pollPinAuth(pinId: string): Promise<AuthResult | null>;
 }
 

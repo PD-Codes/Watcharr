@@ -50,6 +50,7 @@ export function adminNav(t: Translate, serverStatsEnabled: boolean, globalAdmin 
           { href: '/admin/servers', label: t('nav.adminServers'), icon: 'server' as const },
           { href: '/admin/notifications', label: t('nav.adminNotifications'), icon: 'activity' as const },
           { href: '/admin/newsletter', label: t('nav.adminNewsletter'), icon: 'wrapped' as const },
+          { href: '/admin/badges', label: t('nav.adminBadges'), icon: 'wrapped' as const },
           { href: '/admin/import', label: t('nav.adminImport'), icon: 'server' as const },
           { href: '/admin/backups', label: t('nav.adminBackups'), icon: 'server' as const },
           { href: '/admin/caches', label: t('nav.adminCaches'), icon: 'server' as const },

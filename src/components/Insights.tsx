@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { getAchievements, getInsights } from '@/server/insights';
+import type { TranslationKey } from '@/i18n';
+import { levelOf } from '@/server/insights-core';
 import type { Achievement, AchievementId, Insight } from '@/server/insights-core';
 import type { Scope } from '@/server/stats';
 import type { Translate } from '@/i18n';
@@ -179,6 +181,36 @@ export async function InsightsStrip({ scope }: { scope: Scope }) {
 
 // 24x24, stroked, round caps: the same hand as Icons.tsx. Neutral graphite, never a hue.
 const GLYPHS: Record<AchievementId, ReactNode> = {
+  // Added later, same hand: a screen, a stack of screens, a ticket stub and so on.
+  seriesFan: (
+    <>
+      <rect x="3.5" y="5" width="17" height="11.5" rx="2" />
+      <path d="M8.5 20h7M12 16.5V20" />
+    </>
+  ),
+  deepDive: <path d="M3 9c3-3 6 3 9 0s6 3 9 0M3 14c3-3 6 3 9 0s6 3 9 0M3 19c3-3 6 3 9 0s6 3 9 0" />,
+  tripleFeature: (
+    <>
+      <rect x="3" y="9" width="10" height="11" rx="1.8" />
+      <path d="M6 6h10a2 2 0 0 1 2 2M9 3h10a2 2 0 0 1 2 2v9" />
+    </>
+  ),
+  busyDay: <path d="M4 20V12M9 20V6M14 20V9M19 20V4" />,
+  weeklyHabit: (
+    <>
+      <rect x="4" y="5" width="16" height="15" rx="2" />
+      <path d="M4 10h16M8 3.5v3M16 3.5v3M8 14h2M12 14h2M16 14h.01" />
+    </>
+  ),
+  classics: <path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.5 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z" />,
+  lunchBreak: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" />
+    </>
+  ),
+  festive: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 16l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" />,
+  leapDay: <path d="M5 9a3.5 3.5 0 0 1 7 0v10M5 19h14M12 14h6" />,
   plays: (
     <>
       <circle cx="12" cy="12" r="8.5" />
@@ -266,6 +298,10 @@ function Badge({ a, t }: { a: Achievement; t: Translate }) {
       ? t('ins.badgeEarned')
       : t('ins.badgeTier', { tier: a.tier, tiers: a.tiers });
   const shown = Math.min(Math.floor(a.value), a.target);
+  const name = a.custom ? a.custom.name : t(`ins.ach.${a.id}.name` as TranslationKey);
+  const goal = a.custom
+    ? a.custom.description || t('ins.customGoal', { count: a.target })
+    : t(`ins.ach.${a.id}.goal` as TranslationKey, { count: a.target });
 
   return (
     <li className={`ins-badge${a.unlocked ? ' on' : ''}`}>
@@ -273,28 +309,32 @@ function Badge({ a, t }: { a: Achievement; t: Translate }) {
         <svg className="ins-ring" viewBox="0 0 64 64">
           <Ring tiers={a.tiers} tier={a.tier} />
         </svg>
-        <svg
-          className="ins-glyph"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          focusable="false"
-        >
-          {GLYPHS[a.id]}
-        </svg>
+        {a.custom ? (
+          <span className="ins-emoji">{a.custom.icon}</span>
+        ) : (
+          <svg
+            className="ins-glyph"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            focusable="false"
+          >
+            {GLYPHS[a.id as AchievementId]}
+          </svg>
+        )}
       </span>
-      <span className="ins-badge-name">{t(`ins.ach.${a.id}.name`)}</span>
+      <span className="ins-badge-name">{name}</span>
       <span className="ins-badge-caption">{caption}</span>
-      <span className="ins-badge-goal">{t(`ins.ach.${a.id}.goal`, { count: a.target })}</span>
+      <span className="ins-badge-goal">{goal}</span>
       {!maxed && (
         <>
           <span
             className="ins-meter"
             role="progressbar"
-            aria-label={t(`ins.ach.${a.id}.name`)}
+            aria-label={name}
             aria-valuemin={0}
             aria-valuemax={a.target}
             aria-valuenow={shown}
@@ -322,10 +362,37 @@ export async function BadgeShelf({ scope }: { scope: Scope }) {
     (a, b) => Number(b.unlocked) - Number(a.unlocked) || (a.unlocked ? 0 : b.progress - a.progress),
   );
   const done = achievements.filter((a) => a.unlocked).length;
+  const level = levelOf(achievements);
+  // The unfinished badge that is furthest along: the one worth going for next.
+  const next = achievements
+    .filter((a) => a.tier < a.tiers && a.progress > 0)
+    .sort((a, b) => b.progress - a.progress)[0];
+  const nextName = next ? (next.custom ? next.custom.name : t(`ins.ach.${next.id}.name` as TranslationKey)) : null;
 
   return (
     <div className="ins-shelf">
-      <p className="muted ins-shelf-sum">{t('ins.shelfSummary', { done, total: achievements.length })}</p>
+      <div className="ins-level">
+        <strong>{t('ins.level', { level: level.level, title: t(`ins.level.${level.level}` as TranslationKey) })}</strong>
+        <span className="muted num">
+          {level.to === null
+            ? t('ins.levelMax', { xp: level.xp })
+            : t('ins.levelNext', { xp: level.xp, to: level.to })}
+        </span>
+        <span
+          className="ins-meter"
+          role="progressbar"
+          aria-label={t('ins.levelLabel')}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(level.progress * 100)}
+        >
+          <span style={{ width: `${Math.round(level.progress * 100)}%` }} />
+        </span>
+      </div>
+      <p className="muted ins-shelf-sum">
+        {t('ins.shelfSummary', { done, total: achievements.length })}
+        {nextName && ` · ${t('ins.nextUp', { name: nextName, percent: Math.round(next.progress * 100) })}`}
+      </p>
       <ul className="ins-badges">
         {ordered.map((a) => (
           <Badge key={a.id} a={a} t={t} />

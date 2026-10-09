@@ -257,6 +257,23 @@ export const users = sqliteTable(
   }),
 );
 
+/**
+ * Badges a global admin defined on top of the built-in ones. The rule is data, not code:
+ * what to count (`metric`), optionally only for one genre or a text in the title, and the
+ * tier thresholds. Evaluated per viewer in insights-core.ts, so nothing is stored per user.
+ */
+export const customBadges = sqliteTable('custom_badges', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  icon: text('icon').notNull(),
+  metric: text('metric').notNull(),
+  filter: text('filter').notNull().default('none'),
+  filterValue: text('filter_value').notNull().default(''),
+  tiers: text('tiers', { mode: 'json' }).$type<number[]>().notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(now),
+});
+
 /** Server-side session store. The cookie only carries a signed session id. */
 export const authSessions = sqliteTable(
   'auth_sessions',

@@ -153,7 +153,7 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     return { user: await this.getUser(credentials.token), token: credentials.token };
   }
 
-  async startPinAuth() {
+  async startPinAuth(forwardUrl?: (pinId: string) => string) {
     const pin = await apiFetch<{ id: number; code: string }>(`${PLEX_TV}/pins?strong=true`, {
       method: 'POST',
       headers: this.plexHeaders(),
@@ -163,6 +163,9 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
       code: pin.code,
       'context[device][product]': PRODUCT,
     });
+    // Without it the plex.tv tab just stays open after approval (and on a phone the first tab
+    // sleeps in the background), so the browser is sent back to a page that finishes the login.
+    if (forwardUrl) params.set('forwardUrl', forwardUrl(String(pin.id)));
     return {
       pinId: String(pin.id),
       code: pin.code,

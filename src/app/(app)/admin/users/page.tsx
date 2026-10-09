@@ -7,6 +7,7 @@ import { requireAdmin } from '@/server/session';
 import { getT } from '@/i18n/server';
 import SyncUsersButton from './SyncUsersButton';
 import RoleToggle from './RoleToggle';
+import DeleteUserButton from './DeleteUserButton';
 import ViewAsButton from '../../ViewAsButton';
 
 export const dynamic = 'force-dynamic';
@@ -45,6 +46,20 @@ export default async function AdminUsersPage() {
       </p>
       <SyncUsersButton />
 
+      {global && (
+        <details className="card section">
+          <summary>{t('users.globalInfoTitle')}</summary>
+          <p>{t('users.globalInfoIntro')}</p>
+          <ul>
+            <li>{t('users.globalInfo1')}</li>
+            <li>{t('users.globalInfo2')}</li>
+            <li>{t('users.globalInfo3')}</li>
+            <li>{t('users.globalInfo4')}</li>
+          </ul>
+          <p className="muted">{t('users.globalInfoNote')}</p>
+        </details>
+      )}
+
       <div className="table-wrap card section">
         <table>
           <thead>
@@ -56,6 +71,7 @@ export default async function AdminUsersPage() {
               <th scope="col">{t('common.watchTime')}</th>
               <th scope="col">{t('users.colLastSeen')}</th>
               <th scope="col">{t('viewAs.column')}</th>
+              <th scope="col">{t('users.colDelete')}</th>
               {global && <th scope="col">{t('users.colGlobalAdmin')}</th>}
             </tr>
           </thead>
@@ -79,6 +95,12 @@ export default async function AdminUsersPage() {
                   {row.lastSeenAt ? formatDate(row.lastSeenAt) : t('common.never')}
                 </td>
                 <td>{row.id !== session.user.id && <ViewAsButton userId={row.id} />}</td>
+                <td>
+                  {/* A global admin has to lose the role first; yourself you cannot delete. */}
+                  {row.id !== session.user.id && !row.globalAdmin && (
+                    <DeleteUserButton userId={row.id} username={row.username} plays={Number(row.plays)} />
+                  )}
+                </td>
                 {global && (
                   <td>
                     <RoleToggle

@@ -30,11 +30,13 @@ export function isLocale(value: unknown): value is Locale {
 /** Values substituted into a string are formatted by the caller, so this stays a plain swap. */
 export type Vars = Record<string, string | number>;
 
-function interpolate(template: string, vars?: Vars): string {
+export function interpolate(template: string, vars?: Vars): string {
   if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (match, name: string) =>
-    name in vars ? String(vars[name]) : match,
-  );
+  // `{count|one|other}` picks a form by the number, so "1 plays" cannot happen.
+  return template.replace(/\{(\w+)(?:\|([^|{}]*)\|([^|{}]*))?\}/g, (match, name: string, one?: string, other?: string) => {
+    if (!(name in vars)) return match;
+    return one === undefined ? String(vars[name]) : (Number(vars[name]) === 1 ? one : (other ?? ''));
+  });
 }
 
 /**

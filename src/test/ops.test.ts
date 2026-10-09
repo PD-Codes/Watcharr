@@ -411,6 +411,57 @@ async function main() {
     console.log('ok - the newsletter preview renders unsaved form values');
   }
 
+  /* ---------- newsletter layout ---------- */
+  {
+    const { buildNewsletterHtml, formatRuntime, truncate } = await import('../server/newsletter-html');
+    const { renderNewsletter } = await import('../server/newsletter');
+    const { translator } = await import('../i18n');
+    assert.equal(formatRuntime(45), '45 min');
+    assert.equal(formatRuntime(135), '2 h 15 min');
+    assert.equal(formatRuntime(120), '2 h');
+    assert.ok(truncate('word '.repeat(100), 50).endsWith('…') && truncate('word '.repeat(100), 50).length <= 51);
+
+    const html = buildNewsletterHtml(
+      {
+        subject: 'S',
+        intro: 'Line one\nLine <two>',
+        days: 7,
+        stats: { movies: 2, series: 1, episodes: 5 },
+        topGenres: ['Drama'],
+        hero: { title: 'Hero <b>', kind: 'movie', episodes: 0, genres: ['Drama'], backdrop: 'https://img/b.jpg', rating: 7.84, runtimeMinutes: 135, overview: 'Plot <script>x</script>', tagline: 'Tag' },
+        highlights: [{ title: 'Show', kind: 'series', episodes: 5, genres: [], poster: 'https://img/p.jpg', href: 'https://app/title/Show' }],
+        sections: [{ server: 'Srv', cards: [{ title: 'Tile', kind: 'movie', episodes: 0, genres: [] }], hidden: 3 }],
+        popular: [{ title: 'Top', plays: 9 }],
+        openUrl: 'https://app',
+      },
+      translator('de-DE'),
+      'de-DE',
+    );
+    assert.ok(html.includes('Hero &lt;b&gt;') && !html.includes('<script>'), 'titles and overviews are escaped');
+    assert.ok(html.includes('★ 7.8') && html.includes('2 h 15 min'), 'rating and runtime show');
+    assert.ok(html.includes('5 neue Folgen') && html.includes('Tipp der Ausgabe'), 'texts follow the locale');
+    assert.ok(html.includes('https://img/b.jpg') && html.includes('href="https://app/title/Show"'), 'images and links are used');
+    assert.ok(html.includes('weitere') && html.includes('Top') && html.includes('9 Wiedergaben'));
+    assert.ok(html.includes('Line one<br>Line &lt;two&gt;'), 'the intro keeps its line breaks, escaped');
+
+    const bare = await renderNewsletter(
+      [{ serverLabel: 'Srv', serverSlug: 'srv', items: [
+        { itemId: '1', title: 'Show', mediaType: 'episode', genres: ['Drama'] },
+        { itemId: '2', title: 'Show', mediaType: 'episode', genres: ['Drama'] },
+        { itemId: '3', title: 'Film', mediaType: 'movie', year: 2020, genres: [] },
+      ] }],
+      'en-US',
+    );
+    assert.ok(bare.includes('2 new episodes'), 'episodes of one show become one card');
+    const en = translator('en-US');
+    const de = translator('de-DE');
+    assert.equal(en('common.plays', { count: 1 }), '1 play');
+    assert.equal(en('common.plays', { count: 2 }), '2 plays');
+    assert.equal(de('common.plays', { count: 1 }), '1 Wiedergabe');
+    assert.equal(de('common.plays', { count: 0 }), '0 Wiedergaben');
+    console.log('ok - the newsletter layout escapes, localizes and folds episodes');
+  }
+
   /* ---------- preview guard ---------- */
   {
     const { NextRequest } = await import('next/server');

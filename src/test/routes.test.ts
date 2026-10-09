@@ -540,6 +540,49 @@ async function main() {
       if (!ok) failures += 1;
     }
 
+    // Custom badges are global-admin work and show up on the profile shelf; deleting a person
+    // takes the data with it, but never an admin, yourself, or someone out of reach.
+    {
+      const { db } = await import('../db');
+      const { users, watchHistory, playbackSessions } = await import('../db/schema');
+      const json = { 'Content-Type': 'application/json', Cookie: cookie };
+      const badge = await fetch(`${base}/api/admin/badges`, {
+        method: 'POST',
+        headers: json,
+        body: JSON.stringify({ name: 'Scary Night', description: 'Horror after dark', icon: '\u{1F47B}', metric: 'plays', filter: 'genre', filterValue: 'Horror', tiers: '1, 5' }),
+      });
+      const rejected = await fetch(`${base}/api/admin/badges`, { method: 'POST', headers: json, body: JSON.stringify({ name: 'x', metric: 'plays', tiers: 'nope' }) });
+      const page = await fetch(`${base}/admin/badges`, { headers: { Cookie: cookie } }).then((r) => r.text());
+      const profile = await fetch(`${base}/profile`, { headers: { Cookie: cookie } }).then((r) => r.text());
+      const created = (await badge.json()) as { id?: number };
+      const edited = await fetch(`${base}/api/admin/badges`, {
+        method: 'PATCH',
+        headers: json,
+        body: JSON.stringify({ id: created.id, name: 'Scary Dawn', description: '', icon: '\u{1F47B}', metric: 'hours', filter: 'none', filterValue: '', tiers: '2, 8' }),
+      });
+      const editedPage = await fetch(`${base}/admin/badges?edit=${created.id}`, { headers: { Cookie: cookie } }).then((r) => r.text());
+      const editMissing = await fetch(`${base}/api/admin/badges`, { method: 'PATCH', headers: json, body: JSON.stringify({ id: 999999, name: 'x', metric: 'plays', tiers: '1' }) });
+      const removeBadge = await fetch(`${base}/api/admin/badges`, { method: 'DELETE', headers: json, body: JSON.stringify({ id: created.id }) });
+      const anonymousBadge = await fetch(`${base}/api/admin/badges`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+
+      const [gone] = await db.insert(users).values({ serverId: 1, serverUserId: 'gone', username: 'gone-user' }).returning();
+      await db.insert(watchHistory).values({ userId: gone.id, itemId: 'x', title: 'X', mediaType: 'movie', watchedAt: new Date(), durationMs: 1000 });
+      await db.insert(playbackSessions).values({ sessionKey: '1:gone', userId: gone.id, itemId: 'x', title: 'X', mediaType: 'movie', state: 'ended', startedAt: new Date(), lastSeenAt: new Date() });
+      const [adminRow] = await db.select().from(users).where((await import('drizzle-orm')).eq(users.globalAdmin, true));
+      const self = await fetch(`${base}/api/admin/users/delete`, { method: 'POST', headers: json, body: JSON.stringify({ userId: adminRow.id }) });
+      const removed = await fetch(`${base}/api/admin/users/delete`, { method: 'POST', headers: json, body: JSON.stringify({ userId: gone.id }) });
+      const again = await fetch(`${base}/api/admin/users/delete`, { method: 'POST', headers: json, body: JSON.stringify({ userId: gone.id }) });
+      const left = await db.select().from(watchHistory).where((await import('drizzle-orm')).eq(watchHistory.userId, gone.id));
+      const streams = await db.select().from(playbackSessions).where((await import('drizzle-orm')).eq(playbackSessions.sessionKey, '1:gone'));
+      const ok =
+        badge.status === 200 && rejected.status === 400 && anonymousBadge.status === 403 && removeBadge.status === 200 &&
+        page.includes('Scary Night') && profile.includes('Level') &&
+        edited.status === 200 && editedPage.includes('Scary Dawn') && editedPage.includes('2, 8') && editMissing.status === 404 &&
+        self.status === 400 && removed.status === 200 && again.status === 404 && left.length === 0 && streams.length === 0;
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - custom badges + deleting a person (${badge.status}/${rejected.status}/${self.status}/${removed.status}/${again.status}, ${left.length}+${streams.length} left)`);
+      if (!ok) failures += 1;
+    }
+
     // The artwork proxy must not let the item id steer the upstream request:
     // dot segments are normalised away by fetch and would otherwise reach arbitrary
     // media server endpoints, with the admin token attached on Plex.

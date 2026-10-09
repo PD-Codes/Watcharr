@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { users, watchHistory } from '@/db/schema';
 import { BarChart, ColumnChart, StackedColumnChart, StatCard } from '@/components/Charts';
@@ -28,6 +28,7 @@ import {
 } from '@/server/playback';
 import { canSee, listUserSessions, requireAdmin } from '@/server/session';
 import ViewAsButton from '../../../ViewAsButton';
+import DeleteUserButton from '../DeleteUserButton';
 import type { TranslationKey } from '@/i18n';
 import { getT } from '@/i18n/server';
 
@@ -72,6 +73,11 @@ export default async function AdminUserDetailPage({
   const tab = activeTab(TABS, (await searchParams).tab);
   const scope = { userId };
 
+  const [{ plays: playCount }] = await db
+    .select({ plays: sql<number>`count(*)` })
+    .from(watchHistory)
+    .where(eq(watchHistory.userId, userId));
+
   const head = (
     <>
       <h1>{user.username}</h1>
@@ -81,7 +87,19 @@ export default async function AdminUserDetailPage({
           ? t('users.lastSeen', { date: formatDate(user.lastSeenAt) })
           : t('users.neverSignedIn')}
       </p>
-      {user.id !== session.user.id && <ViewAsButton userId={user.id} />}
+      {user.id !== session.user.id && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <ViewAsButton userId={user.id} />
+          {!user.globalAdmin && (
+            <DeleteUserButton
+              userId={user.id}
+              username={user.username}
+              plays={Number(playCount)}
+              redirectTo="/admin/users"
+            />
+          )}
+        </div>
+      )}
       <Tabs tabs={TABS} current={tab} hrefFor={(key) => `/admin/users/${userId}?tab=${key}`} />
     </>
   );

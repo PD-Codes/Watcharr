@@ -1,5 +1,5 @@
 import 'server-only';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { newsletterSubscriptions, users } from '@/db/schema';
 import type { LibraryItem } from './adapters';
@@ -10,6 +10,8 @@ import { DEFAULT_LOCALE, isLocale, translator, type Locale } from '@/i18n';
 import { getDefaultLocale } from '@/i18n/server';
 import { sectionKey } from './library';
 import { sendMail } from './notifications';
+import { buildNewsletterHtml, type MailCard, type MailModel } from './newsletter-html';
+import { cachedMeta, getTitleMeta, type TmdbMeta } from './tmdb';
 import { globalState } from './state';
 
 // The recently-added newsletter. Two owners on purpose: a global admin decides the
@@ -23,15 +25,6 @@ export interface NewsletterEntry {
   serverLabel: string;
   serverSlug: string;
   items: LibraryItem[];
-}
-
-/** Escapes text that goes into the rendered HTML — titles come from the media server. */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 /**
@@ -130,9 +123,74 @@ export async function collectNewsletter(draft: NewsletterDraft = {}): Promise<Ne
   return entries.filter((entry) => entry.items.length > 0);
 }
 
+// Titles looked up on TMDB for a fresh issue; the rest read the cache only. A weekly job can
+// afford a few dozen requests, a preview click should not wait on hundreds.
+const ENRICH_LIMIT = 14;
+const HIGHLIGHTS = 5;
+const GRID_PER_SERVER = 24;
+const POPULAR_LIMIT = 5;
+
+const kindOf = (mediaType: string): 'movie' | 'series' => (mediaType === 'movie' ? 'movie' : 'series');
+
+/** Folds episodes of one show (Plex lists them one by one) into a single card per server. */
+function toCards(entries: NewsletterEntry[], appUrl: string | undefined) {
+  const cards = new Map<string, MailCard & { server: string; slug: string; itemId: string }>();
+  for (const entry of entries) {
+    for (const item of entry.items) {
+      const kind = kindOf(item.mediaType);
+      const key = `${entry.serverSlug}|${kind}|${item.title.toLowerCase()}|${kind === 'movie' ? (item.year ?? '') : ''}`;
+      const isEpisode = item.mediaType === 'episode';
+      const known = cards.get(key);
+      if (known) {
+        if (isEpisode) known.episodes += 1;
+        continue;
+      }
+      cards.set(key, {
+        title: item.title,
+        year: item.year,
+        kind,
+        episodes: isEpisode ? 1 : 0,
+        genres: item.genres,
+        addedAt: item.addedAt,
+        poster: publicArtUrl(entry.serverSlug, item.itemId) ?? undefined,
+        href: appUrl ? `${appUrl}/title/${encodeURIComponent(item.title)}` : undefined,
+        server: entry.serverLabel,
+        slug: entry.serverSlug,
+        itemId: item.itemId,
+      });
+    }
+  }
+  return [...cards.values()].sort((a, b) => (b.addedAt?.getTime() ?? 0) - (a.addedAt?.getTime() ?? 0));
+}
+
+function applyMeta(card: MailCard, meta: TmdbMeta | null | undefined) {
+  if (!meta) return;
+  // TMDB images are public, so they reach every mail client; the signed media-server link only
+  // works while APP_URL is reachable from outside.
+  card.poster = meta.posterUrl ?? card.poster;
+  card.backdrop = meta.backdropUrl;
+  card.rating = meta.voteAverage && meta.voteCount && meta.voteCount >= 20 ? meta.voteAverage : undefined;
+  card.runtimeMinutes = meta.runtimeMinutes || undefined;
+  card.tagline = meta.tagline;
+  card.overview = meta.overview;
+  if (!card.genres.length) card.genres = meta.genres;
+}
+
+/** The titles watched most inside the period — counts only, never who watched. */
+async function mostWatched(since: Date) {
+  const rows = await db.all<{ label: string; plays: number }>(sql`
+    SELECT coalesce(grandparent_title, title) AS label, count(*) AS plays
+    FROM watch_history
+    WHERE watched_at >= ${since.getTime()} AND duration_ms >= 60000
+    GROUP BY label
+    ORDER BY plays DESC, label
+    LIMIT ${POPULAR_LIMIT}`);
+  return rows.filter((row) => row.plays >= 2);
+}
+
 /**
- * Renders one issue. Table-based and inline-styled on purpose: mail clients ignore most of
- * a stylesheet, and this has to survive Gmail as well as it survives the static URL.
+ * Renders one issue: a pick of the issue, highlights with synopsis, what was watched most,
+ * and the remaining arrivals as a poster grid per server.
  */
 export async function renderNewsletter(
   entries: NewsletterEntry[],
@@ -140,57 +198,69 @@ export async function renderNewsletter(
   draft: NewsletterDraft = {},
 ): Promise<string> {
   const settings = await getSettings();
-  const t = translator(locale);
-  const intro = (draft.intro ?? settings.newsletterIntro).trim();
-  const subject = draft.subject ?? settings.newsletterSubject;
   const days = draft.days ?? settings.newsletterDays;
+  const appUrl = process.env.APP_URL?.trim().replace(/\/$/, '') || undefined;
+  const cards = toCards(entries, appUrl);
+
+  // Metadata for the newest titles is fetched (and cached); the rest only reads the cache.
+  const apiKey = settings.tmdbApiKey;
+  const head = cards.slice(0, ENRICH_LIMIT);
+  const asRef = (c: (typeof cards)[number]) => ({ itemId: c.itemId, title: c.title, mediaType: c.kind === 'movie' ? 'movie' : 'show', year: c.year });
+  const fetched = await Promise.all(
+    head.map((c) => getTitleMeta(apiKey, c.title, c.kind === 'movie' ? 'movie' : 'show', c.year).catch(() => null)),
+  );
+  head.forEach((c, i) => applyMeta(c, fetched[i]));
+  const rest = cards.slice(ENRICH_LIMIT);
+  const cached = await cachedMeta(rest.map(asRef));
+  for (const c of rest) applyMeta(c, cached.get(c.itemId));
+
+  // The pick is the best-rated of the newest titles that has a wide image; without ratings
+  // (no TMDB key) it is simply the newest one.
+  const candidates = head.filter((c) => c.backdrop || c.poster);
+  const hero =
+    [...candidates].sort((a, b) => (b.backdrop ? 1 : 0) - (a.backdrop ? 1 : 0) || (b.rating ?? 0) - (a.rating ?? 0))[0] ??
+    cards[0];
+  const others = cards.filter((c) => c !== hero);
+  const highlights = others.slice(0, HIGHLIGHTS);
+  const grid = others.slice(HIGHLIGHTS);
 
   const sections = entries
     .map((entry) => {
-      const cards = entry.items
-        .map((item) => {
-          const poster = publicArtUrl(entry.serverSlug, item.itemId);
-          const year = item.year ? ` (${item.year})` : '';
-          return `
-            <td style="padding:8px;vertical-align:top;width:150px">
-              ${
-                poster
-                  ? `<img src="${escapeHtml(poster)}" alt="" width="140" style="border-radius:8px;display:block">`
-                  : ''
-              }
-              <p style="margin:8px 0 0;font-size:13px;color:#e9e6e1">${escapeHtml(item.title)}${year}</p>
-              <p style="margin:2px 0 0;font-size:11px;color:#9b958c">${escapeHtml(item.mediaType)}</p>
-            </td>`;
-        })
-        .join('');
-
-      // Four per row keeps the table inside a phone's mail view.
-      const rows: string[] = [];
-      const cells = cards.split('</td>').filter((c) => c.trim());
-      for (let i = 0; i < cells.length; i += 4) {
-        rows.push(`<tr>${cells.slice(i, i + 4).join('</td>')}</td></tr>`);
-      }
-
-      return `
-        <h2 style="font-size:16px;color:#e9e6e1;margin:28px 0 6px">${escapeHtml(entry.serverLabel)}</h2>
-        <table cellpadding="0" cellspacing="0" style="border-collapse:collapse">${rows.join('')}</table>`;
+      const own = grid.filter((c) => c.slug === entry.serverSlug);
+      return { server: entry.serverLabel, cards: own.slice(0, GRID_PER_SERVER), hidden: Math.max(0, own.length - GRID_PER_SERVER) };
     })
-    .join('');
+    .filter((s) => s.cards.length > 0);
 
-  return `<!doctype html>
-<html><body style="margin:0;padding:24px;background:#131211;font-family:system-ui,-apple-system,'Segoe UI',sans-serif">
-  <div style="max-width:640px;margin:0 auto">
-    <h1 style="font-size:20px;color:#ffb020;margin:0 0 4px">${escapeHtml(subject)}</h1>
-    <p style="font-size:12px;color:#9b958c;margin:0">
-      ${escapeHtml(t('newsletterMail.period', { days }))}
-    </p>
-    ${intro ? `<p style="font-size:13px;color:#e9e6e1;margin:16px 0 0">${escapeHtml(intro)}</p>` : ''}
-    ${sections || `<p style="color:#9b958c;font-size:13px;margin-top:20px">${escapeHtml(t('newsletterMail.nothing'))}</p>`}
-    <p style="font-size:11px;color:#6f6a63;margin-top:32px">
-      ${escapeHtml(t('newsletterMail.footer'))}
-    </p>
-  </div>
-</body></html>`;
+  const genreCount = new Map<string, number>();
+  for (const c of cards) for (const g of c.genres) genreCount.set(g, (genreCount.get(g) ?? 0) + 1);
+  const topGenres = [...genreCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([g]) => g);
+
+  const popularRows = cards.length || entries.length ? await mostWatched(new Date(Date.now() - days * 86_400_000)) : [];
+  const popularMeta = await cachedMeta(popularRows.map((r) => ({ itemId: r.label, title: r.label, mediaType: 'show' })));
+  const popularMovieMeta = await cachedMeta(popularRows.map((r) => ({ itemId: r.label, title: r.label, mediaType: 'movie' })));
+
+  const model: MailModel = {
+    subject: draft.subject ?? settings.newsletterSubject,
+    intro: (draft.intro ?? settings.newsletterIntro).trim(),
+    days,
+    stats: {
+      movies: cards.filter((c) => c.kind === 'movie').length,
+      series: cards.filter((c) => c.kind === 'series').length,
+      episodes: cards.reduce((sum, c) => sum + c.episodes, 0),
+    },
+    topGenres,
+    hero,
+    highlights,
+    sections,
+    popular: popularRows.map((r) => ({
+      title: r.label,
+      plays: r.plays,
+      poster: (popularMeta.get(r.label) ?? popularMovieMeta.get(r.label))?.posterUrl,
+      href: appUrl ? `${appUrl}/title/${encodeURIComponent(r.label)}` : undefined,
+    })),
+    openUrl: appUrl,
+  };
+  return buildNewsletterHtml(model, translator(locale), locale);
 }
 
 /** Everyone who asked for it. */

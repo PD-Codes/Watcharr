@@ -1,6 +1,6 @@
 {
   "title.backToStats": { "en": "Back to statistics", "de": "Zurück zur Statistik" },
-  "title.episodesWatched": { "en": "{count} episodes watched", "de": "{count} Episoden angesehen" },
+  "title.episodesWatched": { "en": "{count} {count|episode|episodes} watched", "de": "{count} {count|Episode|Episoden} angesehen" },
   "title.showMine": { "en": "Show only my plays", "de": "Nur meine Wiedergaben zeigen" },
   "title.showServerWide": { "en": "Show server-wide", "de": "Serverweit zeigen" },
   "title.plays": { "en": "Plays", "de": "Wiedergaben" },

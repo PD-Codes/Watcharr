@@ -1,4 +1,6 @@
 import {
+  accessSync,
+  constants,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -6,6 +8,7 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -21,6 +24,36 @@ try {
 
 const dbPath = process.env.DATABASE_PATH ?? './data/watcharr.db';
 mkdirSync(dirname(dbPath), { recursive: true });
+
+/**
+ * SQLite reports an unwritable volume as "attempt to write a readonly database" from deep inside
+ * the first migration, which says nothing about the cause. In a container it is almost always
+ * ownership: a volume or bind mount created by root, while the image runs as the node user.
+ * The directory matters as much as the file (SQLite creates the -wal/-shm/-journal files next to it).
+ */
+function assertWritable() {
+  const targets = [dirname(dbPath), dbPath, `${dbPath}-wal`, `${dbPath}-shm`].filter(
+    (path, index) => index === 0 || existsSync(path),
+  );
+  for (const path of targets) {
+    try {
+      accessSync(path, constants.W_OK);
+    } catch (error) {
+      const uid = typeof process.getuid === 'function' ? process.getuid() : '?';
+      console.error(
+        `\nCannot write to ${path} (${error.code}). Running as uid ${uid}.\n` +
+          'The database folder must be writable by the user the container runs as (node, uid 1000).\n' +
+          'Fix the owner of the data volume or folder, for example:\n' +
+          '  docker compose down\n' +
+          '  docker run --rm -v <volume-or-folder>:/data busybox chown -R 1000:1000 /data\n' +
+          '  docker compose up -d\n' +
+          'A read-only mount (":ro") on the data folder causes the same error.\n',
+      );
+      process.exit(1);
+    }
+  }
+}
+assertWritable();
 
 /**
  * A restore staged from the Backups page. The swap has to happen here, before anything holds
@@ -70,32 +103,64 @@ function applyStagedRestore() {
 }
 applyStagedRestore();
 
-const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
-db.exec('CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)');
-
-const applied = new Set(db.prepare('SELECT name FROM _migrations').all().map((r) => r.name));
-const dir = join(process.cwd(), 'drizzle');
-let changed = false;
-
-for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
-  if (applied.has(file)) continue;
-  const statements = readFileSync(join(dir, file), 'utf8').split('--> statement-breakpoint');
-
-  // One transaction per file: a failed migration leaves nothing half applied.
-  db.transaction(() => {
-    for (const statement of statements) {
-      if (statement.trim()) db.exec(statement);
-    }
-    db.prepare('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)').run(file, Date.now());
-  })();
-  console.log(`applied ${file}`);
-  changed = true;
+/**
+ * "attempt to write a readonly database" with a writable folder is what SQLite says when it cannot
+ * recover or map the WAL index — typically after the previous process was killed without closing
+ * the database, on a volume without working shared-memory locking (network share, some bind mounts).
+ * The -shm file only caches the -wal and is rebuilt from it, so it is the one file that is safe to drop.
+ */
+function explainReadonly(error) {
+  const listing = ['', '-wal', '-shm']
+    .map((suffix) => `${dbPath}${suffix}`)
+    .filter((path) => existsSync(path))
+    .map((path) => {
+      const info = statSync(path);
+      return `  ${path}  ${info.size} bytes  uid ${info.uid}  mode ${(info.mode & 0o777).toString(8)}`;
+    });
+  console.error(
+    `\nThe database could not be written (${error.code}) although the folder is writable.\n` +
+      `Files:\n${listing.join('\n')}\n` +
+      'This usually follows a container that was killed instead of stopped. With the app stopped, delete only\n' +
+      `${dbPath}-shm (keep the .db and -wal files, they hold the data) and start again, e.g.:\n` +
+      '  docker run --rm -v <volume-or-folder>:/data busybox rm -f /data/watcharr.db-shm\n' +
+      'If it keeps happening, the data folder is probably on a network share or a mount without file locking;\n' +
+      'use a Docker named volume instead.\n',
+  );
 }
 
-// New indexes have no statistics yet, and a planner without them picks plans for a small
-// database (a title page went from 5 ms to 450 ms on a million plays). Analyzes only what
-// lacks them, so it is quick on an install that is already tuned.
-if (changed) db.pragma('optimize(0x10002)');
+try {
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  db.exec('CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)');
 
-db.close();
+  const applied = new Set(db.prepare('SELECT name FROM _migrations').all().map((r) => r.name));
+  const dir = join(process.cwd(), 'drizzle');
+  let changed = false;
+
+  for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
+    if (applied.has(file)) continue;
+    const statements = readFileSync(join(dir, file), 'utf8').split('--> statement-breakpoint');
+
+    // One transaction per file: a failed migration leaves nothing half applied.
+    db.transaction(() => {
+      for (const statement of statements) {
+        if (statement.trim()) db.exec(statement);
+      }
+      db.prepare('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)').run(file, Date.now());
+    })();
+    console.log(`applied ${file}`);
+    changed = true;
+  }
+
+  // New indexes have no statistics yet, and a planner without them picks plans for a small
+  // database (a title page went from 5 ms to 450 ms on a million plays). Analyzes only what
+  // lacks them, so it is quick on an install that is already tuned.
+  if (changed) db.pragma('optimize(0x10002)');
+  db.close();
+} catch (error) {
+  if (error?.code?.startsWith('SQLITE_READONLY')) {
+    explainReadonly(error);
+    process.exit(1);
+  }
+  throw error;
+}

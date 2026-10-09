@@ -8,10 +8,16 @@ import {
   ACHIEVEMENT_TIERS,
   chronotypeOf,
   computeAchievements,
+  computeCustomAchievements,
+  levelOf,
+  levelStart,
+  parseTiers,
+  validateCustomBadge,
   computeInsights,
   localDayOf,
   type Achievement,
   type AchievementId,
+  type CustomBadgeDef,
   type Insight,
   type PlayRow,
 } from '../server/insights-core';
@@ -341,8 +347,10 @@ check('achievements: tiers, progress to the next tier, maxed tiers read 1', () =
   assert.deepEqual([ach(at(9), 'plays').tier, ach(at(9), 'plays').target, ach(at(9), 'plays').progress], [1, 10, 0.9]);
   assert.equal(ach(at(10), 'plays').tier, 2);
   assert.equal(ach(at(100), 'plays').tier, 3);
-  const top = ach(at(1000), 'plays');
-  assert.deepEqual([top.tier, top.tiers, top.progress, top.target], [5, 5, 1, 1000]);
+  const near = ach(at(1000), 'plays');
+  assert.deepEqual([near.tier, near.tiers, near.target], [5, 6, 5000]);
+  const top = ach(at(5000), 'plays');
+  assert.deepEqual([top.tier, top.tiers, top.progress, top.target], [6, 6, 1, 5000]);
 });
 
 check('achievements: invariants hold for a busy mixed history', () => {
@@ -354,7 +362,7 @@ check('achievements: invariants hold for a busy mixed history', () => {
     assert.ok(a.progress >= 0 && a.progress <= 1, a.id);
     assert.ok(a.tier >= 0 && a.tier <= a.tiers, a.id);
     assert.equal(a.unlocked, a.tier > 0, a.id);
-    assert.equal(a.tiers, ACHIEVEMENT_TIERS[a.id].length, a.id);
+    assert.equal(a.tiers, ACHIEVEMENT_TIERS[a.id as AchievementId].length, a.id);
     assert.equal(a.progress === 1, a.tier === a.tiers || a.value >= a.target, a.id);
   }
 });
@@ -447,6 +455,85 @@ check('playful badges: double feature, time traveler, Friday the 13th', () => {
   // 2026-02-13 is a Friday; 2026-10-13 is a Tuesday.
   assert.equal(ach(computeAchievements([play('2026-02-13')]), 'friday13').unlocked, true);
   assert.equal(ach(computeAchievements([play('2026-10-13')]), 'friday13').unlocked, false);
+});
+
+check('newer badges: shows, deep dive, triple feature, busy day, weeks, classics, lunch, festive, leap day', () => {
+  const eps = Array.from({ length: 10 }, (_, i) => episode('2026-05-05', 'Andor', { itemId: `e${i}` }));
+  const a = computeAchievements([...eps, episode('2026-05-06', 'Severance')]);
+  assert.equal(ach(a, 'seriesFan').value, 2);
+  assert.equal(ach(a, 'deepDive').value, 1);
+  assert.equal(ach(a, 'busyDay').value, 10);
+  assert.equal(ach(a, 'busyDay').tier, 2);
+  // Movies do not count as shows; the same viewer's day is what busies a day.
+  const two = [play('2026-05-05', { userId: 1 }), play('2026-05-05', { userId: 2 })];
+  assert.equal(ach(computeAchievements(two), 'busyDay').value, 1);
+
+  const triple = ['a', 'b', 'c'].map((id) => play('2026-05-05', { itemId: id }));
+  assert.equal(ach(computeAchievements(triple), 'tripleFeature').tier, 1);
+
+  // Monday 2026-05-04 and Sunday 2026-05-10 are one week, Monday the 11th the next.
+  const weeks = ['2026-05-04', '2026-05-10', '2026-05-11'].map((d) => play(d));
+  assert.equal(ach(computeAchievements(weeks), 'weeklyHabit').value, 2);
+
+  const old = [play('2026-05-05', { itemId: 'm1', year: 1979 }), play('2026-05-05', { itemId: 'm2', year: 1980 }), episode('2026-05-05', 'Old Show', { year: 1970 })];
+  assert.equal(ach(computeAchievements(old), 'classics').value, 1);
+
+  // Hours 12 and 13 on a weekday count; the weekend and 14:00 do not.
+  const lunch = [play('2026-10-09', { hour: 12 }), play('2026-10-09', { hour: 13 }), play('2026-10-09', { hour: 14 }), play('2026-10-10', { hour: 12 })];
+  assert.equal(ach(computeAchievements(lunch), 'lunchBreak').value, 2);
+
+  const festive = ['2025-12-24', '2025-12-25', '2025-12-27', '2026-01-01'].map((d) => play(d));
+  assert.equal(ach(computeAchievements(festive), 'festive').value, 3);
+  assert.equal(ach(computeAchievements([play('2024-02-29')]), 'leapDay').unlocked, true);
+  assert.equal(ach(computeAchievements([play('2026-02-28')]), 'leapDay').unlocked, false);
+});
+
+check('level: tiers are worth the same, thresholds grow, the top is capped', () => {
+  assert.deepEqual([1, 2, 3, 10].map(levelStart), [0, 20, 60, 900]);
+  const fresh = levelOf(computeAchievements([]));
+  assert.deepEqual([fresh.level, fresh.xp, fresh.to, fresh.progress], [1, 0, 20, 0]);
+  // One play = one tier on one badge = 10 XP, halfway to level 2.
+  const first = levelOf(computeAchievements([play('2026-05-05')]));
+  assert.deepEqual([first.level, first.xp, first.progress], [1, 10, 0.5]);
+  const capped = levelOf([{ id: 'x', tier: 500, tiers: 500, unlocked: true, progress: 1, value: 0, target: 1 }]);
+  assert.deepEqual([capped.level, capped.to, capped.progress], [10, null, 1]);
+});
+
+check('custom badges: genre and text filters, metrics, tiers', () => {
+  const def = (over: Partial<CustomBadgeDef>): CustomBadgeDef => ({
+    id: 7, name: 'Horror Fan', description: '', icon: 'x', metric: 'plays', filter: 'genre', filterValue: 'horror', tiers: [2, 4], ...over,
+  });
+  const plays = [
+    play('2026-05-05', { itemId: 'a', genres: ['Horror', 'Drama'] }),
+    play('2026-05-06', { itemId: 'b', genres: [' horror '] }),
+    play('2026-05-06', { itemId: 'c', genres: ['Comedy'], durationMs: 7_200_000 }),
+  ];
+  const [horror] = computeCustomAchievements(plays, [def({})]);
+  assert.deepEqual([horror.id, horror.value, horror.tier, horror.target, horror.custom?.name], ['c7', 2, 1, 4, 'Horror Fan']);
+  const [days] = computeCustomAchievements(plays, [def({ metric: 'days', filter: 'none', tiers: [2] })]);
+  assert.deepEqual([days.value, days.tier], [2, 1]);
+  const [hours] = computeCustomAchievements(plays, [def({ metric: 'hours', filter: 'genre', filterValue: 'comedy', tiers: [1, 2] })]);
+  assert.deepEqual([hours.value, hours.tier], [2, 2]);
+  // Text matches the show name or the title, case-insensitively; shows count episodes only.
+  const shows = [episode('2026-05-05', 'The Bear', { title: 'Pilot' }), episode('2026-05-06', 'The Bear', { title: 'Hands', itemId: 'e2' }), play('2026-05-07', { title: 'Bear Grylls' })];
+  const [bear] = computeCustomAchievements(shows, [def({ filter: 'text', filterValue: 'BEAR', metric: 'shows', tiers: [1] })]);
+  assert.equal(bear.value, 1);
+  assert.deepEqual(computeCustomAchievements(shows, []), []);
+});
+
+check('custom badge input: tiers are parsed strictly and the form is validated', () => {
+  assert.deepEqual(parseTiers('10, 1; 50 1'), [1, 10, 50]);
+  for (const bad of ['', 'a', '0', '-3', '1,2,3,4,5,6,7', '1e999', '99999999']) assert.equal(parseTiers(bad), null, bad);
+  const ok = validateCustomBadge({ name: ' Scary ', metric: 'plays', filter: 'genre', filterValue: 'Horror', tiers: '1,5' });
+  assert.ok(ok.ok && ok.value.name === 'Scary' && ok.value.icon.length > 0);
+  const noValue = validateCustomBadge({ name: 'x', metric: 'plays', filter: 'text', filterValue: '', tiers: '1' });
+  assert.equal(noValue.ok, false);
+  assert.equal(validateCustomBadge({ name: 'x', metric: 'bogus', tiers: '1' }).ok, false);
+  assert.equal(validateCustomBadge({ name: '', metric: 'plays', tiers: '1' }).ok, false);
+  assert.equal(validateCustomBadge({ name: 'x', metric: 'plays', tiers: '1', icon: '<b>' }).ok, false);
+  // No filter drops a stale filter value.
+  const none = validateCustomBadge({ name: 'x', metric: 'plays', filter: 'none', filterValue: 'junk', tiers: '1' });
+  assert.ok(none.ok && none.value.filterValue === '');
 });
 
 check('local day: just before and after midnight, on a DST night', () => {

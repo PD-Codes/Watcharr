@@ -322,10 +322,20 @@ export type AchievementId =
   | 'weekendWarrior'
   | 'doubleFeature'
   | 'timeTraveler'
-  | 'friday13';
+  | 'friday13'
+  | 'seriesFan'
+  | 'deepDive'
+  | 'tripleFeature'
+  | 'busyDay'
+  | 'weeklyHabit'
+  | 'classics'
+  | 'lunchBreak'
+  | 'festive'
+  | 'leapDay';
 
 export interface Achievement {
-  id: AchievementId;
+  /** A built-in id, or `c<number>` for a badge a global admin defined. */
+  id: string;
   /** Tiers reached; 0 means locked. */
   tier: number;
   tiers: number;
@@ -336,25 +346,36 @@ export interface Achievement {
   value: number;
   /** What `progress` is measured against: the next tier's threshold, or the last one when done. */
   target: number;
+  /** Only on admin-defined badges: their text and icon come from the definition, not from i18n. */
+  custom?: { name: string; description: string; icon: string };
 }
 
 /** Tier thresholds per achievement, in display order. Units are in the comments. */
 export const ACHIEVEMENT_TIERS: Record<AchievementId, number[]> = {
-  plays: [1, 10, 100, 500, 1000], // plays
-  hours: [100, 500, 1000], // hours of watch time
-  regular: [30, 100, 365], // distinct active days
-  streak: [3, 7, 30], // longest run of consecutive days, ever
+  plays: [1, 10, 100, 500, 1000, 5000], // plays
+  hours: [100, 500, 1000, 2500], // hours of watch time
+  regular: [30, 100, 365, 1000], // distinct active days
+  streak: [3, 7, 30, 100], // longest run of consecutive days, ever
   binge: [5, 10], // distinct episodes of one show in one day
   marathoner: [6, 10], // hours in one day
-  rewatcher: [5, 10], // plays of one item
-  cinephile: [50, 150, 500], // distinct movies
+  rewatcher: [5, 10, 25], // plays of one item
+  cinephile: [50, 150, 500, 1000], // distinct movies
   explorer: [8, 15], // distinct genres
-  nightOwl: [10, 50, 200], // plays starting 00:00-04:59
+  nightOwl: [10, 50, 200, 1000], // plays starting 00:00-04:59
   earlyBird: [10, 50, 200], // plays starting 05:00-07:59
-  weekendWarrior: [25, 100, 300], // plays on a Saturday or Sunday
+  weekendWarrior: [25, 100, 300, 1000], // plays on a Saturday or Sunday
   doubleFeature: [1, 10], // days with two or more distinct movies
   timeTraveler: [4, 7], // distinct decades of release years
   friday13: [1], // Fridays the 13th with a play
+  seriesFan: [5, 15, 40], // distinct shows
+  deepDive: [1, 3, 10], // shows with ten or more distinct episodes watched
+  tripleFeature: [1, 5], // days with three or more distinct movies
+  busyDay: [5, 10, 20], // plays by one viewer in one day
+  weeklyHabit: [10, 26, 52], // distinct calendar weeks with a play
+  classics: [3, 10, 30], // distinct movies released before 1980
+  lunchBreak: [10, 50, 200], // weekday plays starting 12:00-13:59
+  festive: [1, 3, 6], // distinct days among Dec 24-26, Dec 31 and Jan 1
+  leapDay: [1], // a play on February 29th
 };
 
 function longestStreak(days: Set<string>): number {
@@ -375,15 +396,36 @@ function measures(plays: PlayRow[]): Record<AchievementId, number> {
   const genres = new Set<string>();
   const decades = new Set<number>();
   const friday13 = new Set<string>();
-  // user|day -> ms watched / distinct movies, for the marathon and the double feature.
-  const perDay = new Map<string, { ms: number; movies: Set<string> }>();
+  const shows = new Set<string>();
+  const showEpisodes = new Map<string, Set<string>>();
+  const weeks = new Set<number>();
+  const classics = new Set<string>();
+  const festiveDays = new Set<string>();
+  const leapDays = new Set<string>();
+  // user|day -> ms watched / plays / distinct movies, for the marathon, busy day and features.
+  const perDay = new Map<string, { ms: number; count: number; movies: Set<string> }>();
   let totalMs = 0;
   let night = 0;
   let early = 0;
   let weekend = 0;
+  let lunch = 0;
 
   for (const play of plays) {
     days.add(play.day);
+    weeks.add(Math.floor((dayNumber(play.day) + 3) / 7));
+    const monthDay = play.day.slice(5);
+    if (['12-24', '12-25', '12-26', '12-31', '01-01'].includes(monthDay)) festiveDays.add(play.day);
+    if (monthDay === '02-29') leapDays.add(play.day);
+    if ((play.hour === 12 || play.hour === 13) && !isWeekend(play.day)) lunch += 1;
+    if (play.mediaType === 'episode' && play.show) {
+      shows.add(play.show);
+      const seen = showEpisodes.get(play.show) ?? new Set<string>();
+      seen.add(play.itemId);
+      showEpisodes.set(play.show, seen);
+    }
+    if (play.mediaType === 'movie' && play.year !== null && play.year >= 1850 && play.year < 1980) {
+      classics.add(play.itemId);
+    }
     totalMs += play.durationMs;
     if (play.hour < 5) night += 1;
     else if (play.hour < 8) early += 1;
@@ -396,8 +438,9 @@ function measures(plays: PlayRow[]): Record<AchievementId, number> {
     if (play.year !== null && play.year >= 1850 && play.year <= 2200) {
       decades.add(Math.floor(play.year / 10));
     }
-    const slot = perDay.get(`${play.userId}|${play.day}`) ?? { ms: 0, movies: new Set() };
+    const slot = perDay.get(`${play.userId}|${play.day}`) ?? { ms: 0, count: 0, movies: new Set() };
     slot.ms += play.durationMs;
+    slot.count += 1;
     if (play.mediaType === 'movie') {
       movies.add(play.itemId);
       slot.movies.add(play.itemId);
@@ -407,10 +450,15 @@ function measures(plays: PlayRow[]): Record<AchievementId, number> {
 
   let longestDayMs = 0;
   let doubleFeatures = 0;
+  let tripleFeatures = 0;
+  let busiest = 0;
   for (const slot of perDay.values()) {
     if (slot.ms > longestDayMs) longestDayMs = slot.ms;
+    if (slot.count > busiest) busiest = slot.count;
     if (slot.movies.size >= 2) doubleFeatures += 1;
+    if (slot.movies.size >= 3) tripleFeatures += 1;
   }
+  const deepShows = [...showEpisodes.values()].filter((seen) => seen.size >= 10).length;
 
   return {
     plays: plays.length,
@@ -428,25 +476,166 @@ function measures(plays: PlayRow[]): Record<AchievementId, number> {
     doubleFeature: doubleFeatures,
     timeTraveler: decades.size,
     friday13: friday13.size,
+    seriesFan: shows.size,
+    deepDive: deepShows,
+    tripleFeature: tripleFeatures,
+    busyDay: busiest,
+    weeklyHabit: weeks.size,
+    classics: classics.size,
+    lunchBreak: lunch,
+    festive: festiveDays.size,
+    leapDay: leapDays.size,
+  };
+}
+
+function tierState(id: string, value: number, thresholds: number[]): Achievement {
+  const tier = thresholds.filter((threshold) => value >= threshold).length;
+  const done = tier === thresholds.length;
+  const target = thresholds[done ? tier - 1 : tier];
+  return {
+    id,
+    tier,
+    tiers: thresholds.length,
+    unlocked: tier > 0,
+    progress: done ? 1 : clamp01(value / target),
+    value,
+    target,
   };
 }
 
 /** Every achievement, locked ones included, in display order. */
 export function computeAchievements(plays: PlayRow[]): Achievement[] {
   const value = measures(plays);
-  return (Object.keys(ACHIEVEMENT_TIERS) as AchievementId[]).map((id) => {
-    const thresholds = ACHIEVEMENT_TIERS[id];
-    const tier = thresholds.filter((threshold) => value[id] >= threshold).length;
-    const done = tier === thresholds.length;
-    const target = thresholds[done ? tier - 1 : tier];
-    return {
-      id,
-      tier,
-      tiers: thresholds.length,
-      unlocked: tier > 0,
-      progress: done ? 1 : clamp01(value[id] / target),
-      value: value[id],
-      target,
-    };
+  return (Object.keys(ACHIEVEMENT_TIERS) as AchievementId[]).map((id) =>
+    tierState(id, value[id], ACHIEVEMENT_TIERS[id]),
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Custom badges (defined by a global admin)
+// ---------------------------------------------------------------------------------------------
+
+export const CUSTOM_METRICS = ['plays', 'hours', 'days', 'titles', 'shows'] as const;
+export type CustomMetric = (typeof CUSTOM_METRICS)[number];
+export const CUSTOM_FILTERS = ['none', 'genre', 'text'] as const;
+export type CustomFilter = (typeof CUSTOM_FILTERS)[number];
+
+export interface CustomBadgeDef {
+  id: number;
+  name: string;
+  description: string;
+  icon: string;
+  /** What is counted: plays, hours, distinct days, distinct titles or distinct shows. */
+  metric: CustomMetric;
+  /** Which plays count: all, one genre, or titles/shows containing the text. */
+  filter: CustomFilter;
+  filterValue: string;
+  tiers: number[];
+}
+
+export const MAX_CUSTOM_TIERS = 6;
+export const MAX_CUSTOM_BADGES = 40;
+
+/** "1, 10; 50" -> [1, 10, 50]; null when empty, too long, not positive or not finite. */
+export function parseTiers(raw: string): number[] | null {
+  const parts = raw.split(/[\s,;]+/).filter(Boolean);
+  if (parts.length === 0 || parts.length > MAX_CUSTOM_TIERS) return null;
+  const numbers = parts.map(Number);
+  if (numbers.some((n) => !Number.isFinite(n) || n <= 0 || n > 10_000_000)) return null;
+  return [...new Set(numbers)].sort((a, b) => a - b);
+}
+
+/** Checks the admin's form input; the error is a short English message for the form. */
+export function validateCustomBadge(
+  input: Record<string, unknown>,
+): { ok: true; value: Omit<CustomBadgeDef, 'id'> } | { ok: false; error: string } {
+  const text = (key: string) => (typeof input[key] === 'string' ? (input[key] as string).trim() : '');
+  const name = text('name');
+  const description = text('description');
+  const icon = text('icon') || '\u{1F3C5}';
+  const metric = text('metric');
+  const filter = text('filter') || 'none';
+  const filterValue = text('filterValue');
+  const tiers = parseTiers(typeof input.tiers === 'string' ? input.tiers : '');
+
+  if (!name || name.length > 40) return { ok: false, error: 'Name is required (up to 40 characters)' };
+  if (description.length > 120) return { ok: false, error: 'Description is too long (up to 120 characters)' };
+  // Eight UTF-16 units fit any single emoji, including flags and skin tones.
+  if (icon.length > 8 || /[\u0000-\u001f<>&]/.test(icon)) return { ok: false, error: 'Icon must be one emoji' };
+  if (!(CUSTOM_METRICS as readonly string[]).includes(metric)) return { ok: false, error: 'Unknown metric' };
+  if (!(CUSTOM_FILTERS as readonly string[]).includes(filter)) return { ok: false, error: 'Unknown filter' };
+  if (filter !== 'none' && (!filterValue || filterValue.length > 60)) {
+    return { ok: false, error: 'The filter needs a value (up to 60 characters)' };
+  }
+  if (!tiers) return { ok: false, error: `Levels: one to ${MAX_CUSTOM_TIERS} positive numbers, e.g. 1, 10, 50` };
+  return {
+    ok: true,
+    value: {
+      name,
+      description,
+      icon,
+      metric: metric as CustomMetric,
+      filter: filter as CustomFilter,
+      filterValue: filter === 'none' ? '' : filterValue,
+      tiers,
+    },
+  };
+}
+
+function customValue(def: CustomBadgeDef, plays: PlayRow[]): number {
+  const needle = def.filterValue.trim().toLowerCase();
+  const matching = plays.filter((play) => {
+    if (def.filter === 'genre') return play.genres.some((genre) => genre.trim().toLowerCase() === needle);
+    if (def.filter === 'text') return `${label(play)} ${play.title}`.toLowerCase().includes(needle);
+    return true;
   });
+  switch (def.metric) {
+    case 'plays':
+      return matching.length;
+    case 'hours':
+      return matching.reduce((sum, play) => sum + play.durationMs, 0) / HOUR_MS;
+    case 'days':
+      return new Set(matching.map((play) => play.day)).size;
+    case 'titles':
+      return new Set(matching.map((play) => play.itemId)).size;
+    case 'shows':
+      return new Set(matching.flatMap((play) => (play.mediaType === 'episode' && play.show ? [play.show] : []))).size;
+  }
+}
+
+/** The admin-defined badges for one set of plays, in definition order. */
+export function computeCustomAchievements(plays: PlayRow[], defs: CustomBadgeDef[]): Achievement[] {
+  return defs.map((def) => ({
+    ...tierState(`c${def.id}`, customValue(def, plays), def.tiers),
+    custom: { name: def.name, description: def.description, icon: def.icon },
+  }));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Level
+// ---------------------------------------------------------------------------------------------
+
+export const XP_PER_TIER = 10;
+export const MAX_LEVEL = 10;
+
+/** XP at which a level starts: 0, 20, 60, 120, 200 ... 900 for level 10. */
+export const levelStart = (level: number): number => 10 * level * (level - 1);
+
+export interface Level {
+  level: number;
+  xp: number;
+  /** XP at the start of this level, and at the start of the next (null on the last one). */
+  from: number;
+  to: number | null;
+  progress: number;
+}
+
+/** Every tier reached on any badge is worth the same, so a rare badge and a common one weigh alike. */
+export function levelOf(achievements: Achievement[]): Level {
+  const xp = achievements.reduce((sum, a) => sum + a.tier, 0) * XP_PER_TIER;
+  let level = 1;
+  while (level < MAX_LEVEL && xp >= levelStart(level + 1)) level += 1;
+  const from = levelStart(level);
+  const to = level < MAX_LEVEL ? levelStart(level + 1) : null;
+  return { level, xp, from, to, progress: to === null ? 1 : (xp - from) / (to - from) };
 }

@@ -93,7 +93,7 @@ export default function ServersManager({
     <>
       {servers.map((server) => (
         <form key={server.id} className="card section" onSubmit={(e) => onUpdate(e, server.id)}>
-          <p className="stat-label">
+          <p className="stat-label" style={{ marginBottom: 12 }}>
             {t('servers.cardMeta', {
               type: server.serverType,
               slug: server.slug,

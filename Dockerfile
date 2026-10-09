@@ -26,5 +26,7 @@ COPY --from=builder /app/scripts ./scripts
 RUN mkdir -p /app/data && chown -R node:node /app/data
 USER node
 EXPOSE 3000
-# Migrations run before the server starts; already applied files are skipped.
-CMD ["sh", "-c", "node scripts/migrate.mjs && node server.js"]
+# Migrations run before the server starts; already applied files are skipped. `exec` makes node
+# PID 1: a plain `sh -c a && b` keeps the shell as PID 1, which ignores SIGTERM, so every stop or
+# restart ended in a SIGKILL after 10 s and left the SQLite WAL unclosed.
+CMD ["sh", "-c", "node scripts/migrate.mjs && exec node server.js"]

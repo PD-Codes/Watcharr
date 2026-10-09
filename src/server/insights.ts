@@ -4,8 +4,10 @@ import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { globalState } from '@/server/state';
 import { scopeFilter, type Scope } from '@/server/stats';
+import { badgeVersion, listCustomBadges } from '@/server/badges';
 import {
   computeAchievements,
+  computeCustomAchievements,
   computeInsights,
   type Achievement,
   type Insight,
@@ -100,7 +102,10 @@ export async function getInsights(scope: Scope, now = new Date()): Promise<Insig
   );
 }
 
-/** Every achievement with its progress, locked ones included. */
+/** Every achievement with its progress, locked ones included; the admin-defined badges come last. */
 export async function getAchievements(scope: Scope): Promise<Achievement[]> {
-  return memoized(`a:${scopeKey(scope)}`, async () => computeAchievements(await rowsFor(scope)));
+  return memoized(`a:${scopeKey(scope)}:${badgeVersion()}`, async () => {
+    const [plays, custom] = await Promise.all([rowsFor(scope), listCustomBadges()]);
+    return [...computeAchievements(plays), ...computeCustomAchievements(plays, custom)];
+  });
 }

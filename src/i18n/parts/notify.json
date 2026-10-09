@@ -75,6 +75,22 @@
     "en": "The last {days} days on the server.",
     "de": "Die letzten {days} Tage auf dem Server."
   },
+  "newsletterMail.preheader": { "en": "{movies} new movies and {series} new series on the server", "de": "{movies} neue Filme und {series} neue Serien auf dem Server" },
+  "newsletterMail.stat.movies": { "en": "Movies", "de": "Filme" },
+  "newsletterMail.stat.series": { "en": "Series", "de": "Serien" },
+  "newsletterMail.stat.episodes": { "en": "New episodes", "de": "Neue Folgen" },
+  "newsletterMail.topGenres": { "en": "Mostly {genres}", "de": "Vor allem {genres}" },
+  "newsletterMail.pick": { "en": "Pick of the issue", "de": "Tipp der Ausgabe" },
+  "newsletterMail.highlights": { "en": "Highlights", "de": "Highlights" },
+  "newsletterMail.mostWatched": { "en": "Most watched lately", "de": "Zuletzt am meisten geschaut" },
+  "newsletterMail.plays": { "en": "{count} {count|play|plays}", "de": "{count} {count|Wiedergabe|Wiedergaben}" },
+  "newsletterMail.more": { "en": "Also new on {server}", "de": "Außerdem neu auf {server}" },
+  "newsletterMail.andMore": { "en": "…and {count} more", "de": "… und {count} weitere" },
+  "newsletterMail.movie": { "en": "Movie", "de": "Film" },
+  "newsletterMail.series": { "en": "Series", "de": "Serie" },
+  "newsletterMail.episodes": { "en": "{count} new {count|episode|episodes}", "de": "{count} {count|neue Folge|neue Folgen}" },
+  "newsletterMail.added": { "en": "added {date}", "de": "hinzugefügt am {date}" },
+  "newsletterMail.open": { "en": "Open Watcharr", "de": "Watcharr öffnen" },
   "newsletterMail.nothing": {
     "en": "Nothing was added in this period.",
     "de": "In diesem Zeitraum kam nichts dazu."
@@ -104,8 +120,8 @@
     "de": "Server-Dashboard"
   },
   "dashboard.playingNow": {
-    "en": "{count} streams playing right now",
-    "de": "{count} Streams laufen gerade"
+    "en": "{count} {count|stream is|streams are} playing right now",
+    "de": "{count} {count|Stream läuft|Streams laufen} gerade"
   },
   "dashboard.nothingPlaying": {
     "en": "Nothing is currently being played.",
@@ -168,7 +184,7 @@
     "de": "Zuletzt hinzugefügt"
   },
   "dashboard.viewers": {
-    "en": "{count} viewers",
+    "en": "{count} {count|viewer|viewers}",
     "de": "{count} Zuschauer"
   },
   "libraries.tableSubtitle": {
@@ -228,8 +244,8 @@
     "de": "Serie"
   },
   "libraries.totalRow": {
-    "en": "{count} libraries",
-    "de": "{count} Bibliotheken"
+    "en": "{count} {count|library|libraries}",
+    "de": "{count} {count|Bibliothek|Bibliotheken}"
   },
   "libraries.sortBy": {
     "en": "Sort by {column}",

@@ -3,6 +3,7 @@
 import { createContext, useContext, useMemo } from 'react';
 import {
   DEFAULT_LOCALE,
+  interpolate,
   type Dictionary,
   type Locale,
   type Translate,
@@ -41,10 +42,7 @@ export function useT(): Translate {
   return useMemo(
     () => (key: TranslationKey, vars?: Vars) => {
       const template = dictionary[key] ?? key;
-      if (!vars) return template;
-      return template.replace(/\{(\w+)\}/g, (match, name: string) =>
-        name in vars ? String(vars[name]) : match,
-      );
+      return interpolate(template, vars);
     },
     [dictionary],
   );

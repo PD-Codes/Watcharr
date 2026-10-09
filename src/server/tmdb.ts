@@ -157,6 +157,18 @@ export async function cachedPosters(items: TitleRef[]): Promise<Map<string, stri
   return posters;
 }
 
+/** Cached metadata (never a lookup) for a list of titles, keyed by `metaKey`-independent item id. */
+export async function cachedMeta(items: TitleRef[]): Promise<Map<string, TmdbMeta>> {
+  const out = new Map<string, TmdbMeta>();
+  if (!items.length) return out;
+  const byKey = await readCachedMeta(items);
+  for (const item of items) {
+    const meta = byKey.get(metaKey(item.title, item.mediaType, item.year));
+    if (meta) out.set(item.itemId, meta);
+  }
+  return out;
+}
+
 /** One query for a whole list. Misses are simply absent from the map. */
 async function readCachedMeta(
   items: { title: string; mediaType: string; year?: number | null }[],

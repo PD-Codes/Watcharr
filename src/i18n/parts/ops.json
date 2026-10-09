@@ -44,8 +44,8 @@
     "de": "Sprache der Vorschau"
   },
   "adminNewsletter.previewSubscribers": {
-    "en": "{count} subscribers",
-    "de": "{count} Abonnenten"
+    "en": "{count} {count|subscriber|subscribers}",
+    "de": "{count} {count|Abonnent|Abonnenten}"
   },
   "adminNewsletter.previewTitle": {
     "en": "Preview with unsaved values · {count} titles",
@@ -368,8 +368,8 @@
     "de": "Vorschläge"
   },
   "caches.entries": {
-    "en": "{count} entries",
-    "de": "{count} Einträge"
+    "en": "{count} {count|entry|entries}",
+    "de": "{count} {count|Eintrag|Einträge}"
   },
   "doctor.allGood": {
     "en": "Everything looks fine.",

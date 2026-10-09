@@ -97,6 +97,19 @@ const sqlite = (globalForDb.sqlite ??= connect());
 
 export const db = drizzle(sqlite, { schema });
 
+// Closing the last connection checkpoints the WAL, so a stop leaves one clean file instead of a
+// -wal/-shm pair the next start has to recover (Next calls process.exit on SIGTERM, which lands here).
+if (!(globalThis as { dbExitHook?: boolean }).dbExitHook) {
+  (globalThis as { dbExitHook?: boolean }).dbExitHook = true;
+  process.once('exit', () => {
+    try {
+      sqlite.close();
+    } catch {
+      // Already closed (tests) or never opened: nothing left to checkpoint.
+    }
+  });
+}
+
 /** Closes the connection so the database file can be removed (used by the tests). */
 export function closeDb() {
   sqlite.close();

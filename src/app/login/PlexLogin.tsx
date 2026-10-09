@@ -19,12 +19,16 @@ export default function PlexLogin({ serverId, askSetupToken }: { serverId: numbe
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [setupToken, setSetupToken] = useState('');
 
-  useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+  const onVisible = useRef<(() => void) | null>(null);
 
   function stop() {
     if (timer.current) clearInterval(timer.current);
     timer.current = null;
+    if (onVisible.current) document.removeEventListener('visibilitychange', onVisible.current);
+    onVisible.current = null;
   }
+
+  useEffect(() => stop, []);
 
   // Ends the flow with a message and brings the button back, so the user can start over.
   function giveUp(message: string) {
@@ -36,20 +40,27 @@ export default function PlexLogin({ serverId, askSetupToken }: { serverId: numbe
   async function start() {
     stop(); // a second click must not leave the first poller running unreachable
     setError(null);
+    // Opened inside the click: browsers (iOS above all) block a window opened after an await.
+    const popup = window.open('', '_blank');
+    if (popup) popup.opener = null;
     try {
       const res = await fetch('/api/auth/plex/pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ serverId }),
       });
-      if (!res.ok) return setError(t('login.plexFailed'));
+      if (!res.ok) {
+        popup?.close();
+        return setError(t('login.plexFailed'));
+      }
       const next = (await res.json()) as Pin;
       setPin(next);
-      window.open(next.authUrl, '_blank', 'noopener');
+      if (popup) popup.location.href = next.authUrl;
+      else window.open(next.authUrl, '_blank', 'noopener');
 
       const deadline = Date.now() + POLL_DEADLINE_MS;
       let inFlight = false;
-      timer.current = setInterval(async () => {
+      const tick = async () => {
         if (inFlight) return; // a slow answer must not stack requests behind itself
         if (Date.now() > deadline) return giveUp(t('login.plexExpired'));
         inFlight = true;
@@ -76,8 +87,15 @@ export default function PlexLogin({ serverId, askSetupToken }: { serverId: numbe
         } finally {
           inFlight = false;
         }
-      }, POLL_MS);
+      };
+      timer.current = setInterval(tick, POLL_MS);
+      // A phone freezes this tab while plex.tv is in front; ask right away when it returns.
+      onVisible.current = () => {
+        if (document.visibilityState === 'visible') void tick();
+      };
+      document.addEventListener('visibilitychange', onVisible.current);
     } catch {
+      popup?.close();
       setError(t('login.plexFailed'));
     }
   }
