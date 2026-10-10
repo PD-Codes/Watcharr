@@ -5,6 +5,7 @@ import { playbackSessions } from '@/db/schema';
 import { createAdapter, supportsLiveSocket, type ServerType } from './adapters';
 import { getSettings, listServers } from './config';
 import { isEnabled } from './features';
+import { isRunning } from './jobs';
 import { globalState } from './state';
 import { liveSessionFilter, syncActivity } from './sync';
 
@@ -69,6 +70,9 @@ function onEvent(label: string) {
     return;
   }
   live.running = true;
+  // A pass already under way (the tick, a page) read the sessions before this frame: joining
+  // it would drop the change, so a joined pass is followed by a fresh one.
+  const joined = isRunning('activity');
   // Errors are swallowed on purpose: this runs outside any request, so an unhandled
   // rejection here would take the whole process down over a media server hiccup.
   void syncActivity(true)
@@ -78,7 +82,7 @@ function onEvent(label: string) {
     })
     .finally(() => {
       live.running = false;
-      if (live.again) {
+      if (live.again || joined) {
         live.again = false;
         onEvent(label);
       }

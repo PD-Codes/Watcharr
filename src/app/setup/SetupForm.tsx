@@ -55,6 +55,11 @@ export default function SetupForm() {
           <input name="serverToken" type="password" required />
         </label>
         <label>
+          {t('login.setupToken')}
+          <input name="setupToken" autoComplete="off" spellCheck={false} placeholder="XXXX-XXXX" required />
+          <span className="muted">{t('setup.tokenHint')}</span>
+        </label>
+        <label>
           {t('setup.tmdbKey')}
           <input name="tmdbApiKey" type="password" />
         </label>

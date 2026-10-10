@@ -41,7 +41,9 @@ export default async function AdminDoctorPage() {
             >
               {check.level === 'ok' ? '✓' : check.level === 'warn' ? '!' : '✕'}
             </span>
-            <span>
+            {/* min-width 0 lets the text shrink inside the flex row, and long unbroken values (a
+                plex.direct host, a data path) wrap instead of widening the page on a phone. */}
+            <span style={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
               <strong>{text(`doctor.${check.id}`)}</strong>
               <br />
               <span className="muted">{text(`doctor.${check.id}.${check.level}`, check.params)}</span>

@@ -26,7 +26,8 @@ export async function GET(
   const sig = url.searchParams.get('sig');
   const exp = Number(url.searchParams.get('exp'));
   const signedOk = sig && verifyArtSignature(serverSlug, itemId, exp, sig);
-  if (!signedOk && !(await getSession())) return new Response('Unauthorized', { status: 401 });
+  const session = signedOk ? null : await getSession();
+  if (!signedOk && !session) return new Response('Unauthorized', { status: 401 });
   // Both path segments are attacker-controlled and are checked before either is used.
   if (!ITEM_ID.test(itemId) || !SERVER_SLUG.test(serverSlug)) {
     return new Response('Bad request', { status: 400 });
@@ -34,6 +35,11 @@ export async function GET(
 
   const server = await getServerBySlug(serverSlug);
   if (!server) return new Response('Bad request', { status: 400 });
+  // A session reaches its own server's artwork only (a global admin every server's): through
+  // another server's slug it would browse that server with its admin token.
+  if (session && !session.user.globalAdmin && session.user.serverId !== server.id) {
+    return new Response('Not found', { status: 404 });
+  }
 
   const adapter = createAdapter(
     server.serverType as ServerType,

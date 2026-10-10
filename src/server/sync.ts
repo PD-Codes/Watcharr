@@ -132,9 +132,17 @@ async function pullHistory(session: Session) {
     });
   if (!entries.length) return;
 
+  // Plays older than the history retention would only be deleted again at the next prune:
+  // once a user's last kept play is gone, the media server hands back its whole recent list,
+  // and without this every prune was followed by the same plays coming back.
+  const { retentionHistoryDays } = await getSettings();
+  const keepFrom = retentionHistoryDays ? Date.now() - retentionHistoryDays * 86_400_000 : 0;
+  const kept = keepFrom ? entries.filter((entry) => entry.watchedAt.getTime() >= keepFrom) : entries;
+  if (!kept.length) return;
+
   // Through recordPlays() rather than a direct insert: sessions that finished here write
   // to the same table, and the unique index cannot tell two views of one play apart.
-  await recordPlays(userId, entries, 'server');
+  await recordPlays(userId, kept, 'server');
 }
 
 /**
@@ -185,25 +193,10 @@ async function runActivity() {
     // A server that just failed is skipped for a while. The sync runs in the app layout,
     // so without this every page load would pay the connection timeout again.
     if ((downUntil.get(server.id) ?? 0) > Date.now()) continue;
-    // Overloaded (Plex's own "database is locked", 5xx, timeouts): everything that can wait
-    // does, and what is playing is asked twice a minute instead of every five seconds.
+    // Overloaded (Plex's own "database is locked", 5xx, timeouts): what is playing is asked
+    // twice a minute instead of every five seconds.
     const strained = isStrained(server.serverUrl);
     if (strained && throttled(`strained-poll:${server.id}`, STRAINED_POLL_MS)) continue;
-
-    // Cheap enough to sit in the same loop, but on its own, much slower clock. Not consumed
-    // while strained, so it runs as soon as the pause is over.
-    if (!strained && !throttled(`added:${server.id}`, 10 * 60_000)) {
-      // Before the recently-added check, so a new arrival can already be matched to its
-      // library. Warmed here rather than left to the poster prefetch, which only runs with
-      // a TMDB key — the library filter must not depend on an unrelated setting.
-      await warmLibraryCache(server.id).catch(reportSyncError(`library cache for ${server.label}`));
-      await syncRecentlyAdded(server).catch(reportSyncError(`recently added on ${server.label}`));
-    }
-    // The roster rarely changes; every few hours is plenty, and the first pass fills a fresh
-    // install. Streams add anybody missed in between (see syncServerActivity).
-    if (!strained && !throttled(`roster:${server.id}`, 6 * 3_600_000)) {
-      await syncRoster(server).catch(reportSyncError(`user list of ${server.label}`));
-    }
     // One unreachable server must not stop the others from being polled.
     await syncServerActivity(server).catch((error: unknown) => {
       downUntil.set(server.id, Date.now() + DOWN_BACKOFF_MS);
@@ -217,6 +210,31 @@ async function runActivity() {
         notify('server.down', { server: { id: server.id, label: server.label, slug: server.slug } });
       }
     });
+  }
+  await checkThresholds().catch(reportSyncError('threshold check'));
+  // Everything slow runs beside the live poll, not inside it: the library listing, TMDB (25
+  // lookups in a row), backup, retention and the newsletter used to sit in this pass, so a
+  // socket frame that arrived meanwhile joined a pass that had read the sessions long before,
+  // and a new stream waited for the next tick — or for the backup to finish.
+  runInBackground(singleFlight('housekeeping', () => timed('housekeeping', housekeeping)), 'housekeeping');
+}
+
+async function housekeeping() {
+  for (const server of await listServers()) {
+    if ((downUntil.get(server.id) ?? 0) > Date.now() || isStrained(server.serverUrl)) continue;
+    // Not consumed while strained or down, so it runs as soon as the server is back.
+    if (!throttled(`added:${server.id}`, 10 * 60_000)) {
+      // Before the recently-added check, so a new arrival can already be matched to its
+      // library. Warmed here rather than left to the poster prefetch, which only runs with
+      // a TMDB key — the library filter must not depend on an unrelated setting.
+      await warmLibraryCache(server.id).catch(reportSyncError(`library cache for ${server.label}`));
+      await syncRecentlyAdded(server).catch(reportSyncError(`recently added on ${server.label}`));
+    }
+    // The roster rarely changes; every few hours is plenty, and the first pass fills a fresh
+    // install. Streams add anybody missed in between (see syncServerActivity).
+    if (!throttled(`roster:${server.id}`, 6 * 3_600_000)) {
+      await syncRoster(server).catch(reportSyncError(`user list of ${server.label}`));
+    }
   }
   // Artwork for the poster grids is filled here rather than while a page renders: a grid
   // of two dozen tiles would otherwise fire two dozen TMDB searches on its first view.
@@ -235,7 +253,6 @@ async function runActivity() {
       reportSyncError('database optimize')(e);
     }
   }
-  await checkThresholds().catch(reportSyncError('threshold check'));
   await checkDigest().catch(reportSyncError('digest'));
   await checkNewsletter().catch(reportSyncError('newsletter'));
   await checkAutoBackup().catch(reportSyncError('automatic backup'));
@@ -303,13 +320,23 @@ async function syncRecentlyAdded(server: ServerRow) {
   const items = await adapter.getRecentlyAdded(RECENT_WINDOW);
   if (!items.length) return;
 
+  // The marker is "<item id>@<added at ms>"; older installs stored the bare id.
+  const [markerId, markerAt] = (server.lastAddedItemId ?? '').split('@');
   const newest = items[0].itemId;
-  if (newest === server.lastAddedItemId) return;
+  if (newest === markerId) return;
 
-  if (server.lastAddedItemId) {
-    const marker = items.findIndex((item) => item.itemId === server.lastAddedItemId);
-    // Marker gone from the window means more arrived than fit; report what is visible.
-    const fresh = marker === -1 ? items : items.slice(0, marker);
+  if (markerId) {
+    const marker = items.findIndex((item) => item.itemId === markerId);
+    // Marker gone from the window: either more arrived than fit, or the marker item itself was
+    // deleted. With its time known only what was added after it is new — otherwise deleting the
+    // newest title announced the whole window again.
+    const since = Number(markerAt);
+    const fresh =
+      marker !== -1
+        ? items.slice(0, marker)
+        : since
+          ? items.filter((item) => (item.addedAt?.getTime() ?? 0) > since)
+          : items;
     for (const item of fresh) {
       notify('media.added', {
         server: { id: server.id, label: server.label, slug: server.slug },
@@ -327,7 +354,7 @@ async function syncRecentlyAdded(server: ServerRow) {
 
   await db
     .update(appConfig)
-    .set({ lastAddedItemId: newest })
+    .set({ lastAddedItemId: items[0].addedAt ? `${newest}@${items[0].addedAt.getTime()}` : newest })
     .where(eq(appConfig.id, server.id));
 }
 
@@ -354,7 +381,7 @@ function libraryOf(
   return { sectionKey: key, library: cachedSectionName(key) ?? undefined };
 }
 
-async function syncServerActivity(server: ServerRow) {
+export async function syncServerActivity(server: ServerRow) {
   const adapter = createAdapter(
     server.serverType as ServerType,
     server.serverUrl,
@@ -383,10 +410,12 @@ async function syncServerActivity(server: ServerRow) {
 
   const ownRows = like(playbackSessions.sessionKey, `${server.id}:%`);
   const existing = await db
-    .select({ sessionKey: playbackSessions.sessionKey, progressMs: playbackSessions.progressMs })
+    .select({ ...endingFields, progressMs: playbackSessions.progressMs })
     .from(playbackSessions)
+    .leftJoin(users, eq(users.id, playbackSessions.userId))
     .where(and(ne(playbackSessions.state, 'ended'), ownRows));
   const previousProgress = new Map(existing.map((row) => [row.sessionKey, row.progressMs]));
+  const openRows = new Map(existing.map((row) => [row.sessionKey, row]));
 
   // Rows this app already closed that the server still lists with the same item at the same
   // position: a client that vanished, or a pause nobody came back to. Treating them as new
@@ -418,6 +447,21 @@ async function syncServerActivity(server: ServerRow) {
     const before = closed.get(rowKey);
     if (before && before.itemId === session.itemId && before.progressMs === session.progressMs) continue;
     seen.push(rowKey);
+
+    // The same key now reports another item: Jellyfin/Emby key a session by device, so
+    // autoplay moves a TV from episode 1 to 2 under one key. Episode 1 ends here, properly
+    // (history row, playback.stop), and keeps its own row; episode 2 starts a new one.
+    const open = openRows.get(rowKey);
+    if (open && open.itemId !== session.itemId) {
+      if (!(await finishRows(server, [open]))) continue; // retried next pass; nothing overwritten
+      archiveRow(rowKey, true);
+      previousProgress.delete(rowKey);
+    } else if (!open && before) {
+      // An ended row under this key (the same item watched again, or the same device a day
+      // later) is history: it moves aside instead of being overwritten by the new play.
+      archiveRow(rowKey, false);
+    }
+
     if (!previousProgress.has(rowKey)) {
       notify('playback.start', {
         server: { id: server.id, label: server.label, slug: server.slug },
@@ -534,26 +578,43 @@ async function syncServerActivity(server: ServerRow) {
   // Read the rows before ending them: afterwards there is no way to tell which ones this
   // pass closed and which had been ended for days.
   const ending = await db
-    .select({
-      title: playbackSessions.title,
-      grandparentTitle: playbackSessions.grandparentTitle,
-      itemId: playbackSessions.itemId,
-      mediaType: playbackSessions.mediaType,
-      progressMs: playbackSessions.progressMs,
-      durationMs: playbackSessions.durationMs,
-      startedAt: playbackSessions.startedAt,
-      deviceName: playbackSessions.deviceName,
-      userId: playbackSessions.userId,
-      username: users.username,
-    })
+    .select(endingFields)
     .from(playbackSessions)
     .leftJoin(users, eq(users.id, playbackSessions.userId))
     .where(stopped);
 
-  await db.update(playbackSessions).set({ state: 'ended' }).where(stopped);
+  // History first, then "ended": the other way round, a failed write (full disk, a locked
+  // file) lost the play for good, since the next pass no longer sees the row as open.
+  if (await finishRows(server, ending)) {
+    await db.update(playbackSessions).set({ state: 'ended' }).where(stopped);
+  }
+}
 
-  await recordFinishedPlays(ending);
+const endingFields = {
+  sessionKey: playbackSessions.sessionKey,
+  title: playbackSessions.title,
+  grandparentTitle: playbackSessions.grandparentTitle,
+  itemId: playbackSessions.itemId,
+  mediaType: playbackSessions.mediaType,
+  progressMs: playbackSessions.progressMs,
+  durationMs: playbackSessions.durationMs,
+  startedAt: playbackSessions.startedAt,
+  deviceName: playbackSessions.deviceName,
+  userId: playbackSessions.userId,
+  username: users.username,
+};
 
+/** Writes finished streams to the history and announces them; false when the write failed. */
+async function finishRows(
+  server: ServerRow,
+  ending: (Parameters<typeof recordFinishedPlays>[0][number] & { username: string | null; sessionKey: string })[],
+): Promise<boolean> {
+  try {
+    await recordFinishedPlays(ending);
+  } catch (error) {
+    reportSyncError('recording a finished play')(error);
+    return false;
+  }
   for (const row of ending) {
     notify('playback.stop', {
       server: { id: server.id, label: server.label, slug: server.slug },
@@ -567,6 +628,20 @@ async function syncServerActivity(server: ServerRow) {
       ...libraryOf(server.id, row),
     });
   }
+  return true;
+}
+
+/**
+ * Moves a stream row off its live key (`1:abc` → `1:abc#<rowid>`, unique by construction and
+ * still under the server prefix), so the key is free for the next play and the old row stays
+ * for the statistics. `end` also closes it, for a row that was still open.
+ */
+function archiveRow(sessionKey: string, end: boolean) {
+  db.run(sql`
+    UPDATE playback_sessions
+    SET session_key = session_key || '#' || rowid${end ? sql`, state = 'ended'` : sql``}
+    WHERE session_key = ${sessionKey}
+  `);
 }
 
 /**
@@ -618,8 +693,10 @@ async function recordFinishedPlays(
     byUser.set(row.userId, list);
   }
 
+  // Throws on failure: the caller keeps the rows open and the next pass tries again; the
+  // near-duplicate check in recordPlays makes a repeat harmless.
   for (const [userId, plays] of byUser) {
-    await recordPlays(userId, plays, 'session').catch(reportSyncError('recording a finished play'));
+    await recordPlays(userId, plays, 'session');
   }
 }
 

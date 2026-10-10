@@ -31,12 +31,12 @@ export default function NewsletterSubscription({
         headers: { 'Content-Type': 'application/json' },
         body: method === 'POST' ? JSON.stringify({ email }) : undefined,
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; pending?: boolean; error?: string };
       if (!res.ok || body.error) {
         setError(body.error ?? t('error.generic'));
         return;
       }
-      setMessage(method === 'POST' ? t('profile.nlSubscribed') : t('profile.nlUnsubscribed'));
+      setMessage(body.pending ? t('mail.confirmSent') : method === 'POST' ? t('profile.nlSubscribed') : t('profile.nlUnsubscribed'));
       router.refresh();
     } catch {
       setError(t('error.generic'));

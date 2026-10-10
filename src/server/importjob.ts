@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
 import { DB_PATH, db } from '@/db';
 import { createManualBackup } from './backups';
 import { getServer } from './config';
-import { completedPath } from './importupload';
+import { completedPath, deleteUpload } from './importupload';
 import { importFromTautulli, type ImportSummary } from './tautulli';
 import { globalState } from './state';
 
@@ -150,6 +150,12 @@ export async function startJob(params: JobParams, resumeFrom?: Job): Promise<Job
       job.status = summary.stopped ? 'stopped' : 'done';
       // An import can double a table; refresh the planner's statistics while it is fresh news.
       if (!params.dryRun) db.run(sql`ANALYZE`);
+      // The uploaded Tautulli file is only the source. Kept, a 700 MB upload sat next to a
+      // 70 MB database and looked as if the app ran on two databases. A dry run, a stop or a
+      // failure keep it, because those are exactly the cases that go on with the same file.
+      if (job.status === 'done' && !params.dryRun && params.uploadId) {
+        await deleteUpload(IMPORT_DIR, params.uploadId).catch(() => {});
+      }
     } catch (error) {
       job.status = 'failed';
       job.error = error instanceof Error ? error.message : 'Import failed';

@@ -310,6 +310,33 @@ async function testLibraryIsPaged() {
   assert.equal(new Set(plex.map((i) => i.itemId)).size, total, 'no page is fetched twice');
 }
 
+/** Delta sync: only items changed since the cutoff, newest change first, plus each total. */
+async function testPlexLibraryChanges() {
+  const now = Math.floor(Date.now() / 1000);
+  // 450 items, item n changed n minutes ago; Plex answers sorted by updatedAt desc.
+  const all = Array.from({ length: 450 }, (_, n) => ({ ratingKey: `m${n}`, title: `Movie ${n}`, type: 'movie', updatedAt: now - n * 60 }));
+  const asked: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/library/sections') {
+      return Response.json({ MediaContainer: { Directory: [{ key: '1', type: 'movie', title: 'Movies' }] } });
+    }
+    asked.push(url.search);
+    assert.equal(url.searchParams.get('sort'), 'updatedAt:desc');
+    const start = Number(url.searchParams.get('X-Plex-Container-Start'));
+    const size = Number(url.searchParams.get('X-Plex-Container-Size'));
+    return Response.json({ MediaContainer: { totalSize: all.length, Metadata: all.slice(start, start + size) } });
+  }) as typeof fetch;
+  const plex = createAdapter('plex', 'http://plex:32400', 'tok');
+  const result = await plex.getLibraryChanges!(new Date((now - 250 * 60) * 1000));
+  assert.ok(result);
+  assert.equal(result.changed.length, 251, 'everything changed at or after the cutoff');
+  assert.equal(result.totals['1'], 450);
+  assert.equal(asked.length, 2, 'stops at the first page that reaches older changes');
+  const everything = await plex.getLibraryChanges!(new Date(0));
+  assert.equal(everything?.changed.length, 450);
+}
+
 /**
  * plex.tv hands a valid token to every Plex account there is. Signing in must additionally
  * require that plex.tv lists this very server for the account, or any stranger could browse
@@ -450,6 +477,7 @@ async function main() {
   testUnauthorizedDetection,
   testEndpointAddress,
   testLibraryIsPaged,
+  testPlexLibraryChanges,
   testPlexSignInRequiresServerAccess,
   testJellyfinSessions,
   testJellyfinDirectPlayUsesSourceStreams,

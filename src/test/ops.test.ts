@@ -468,12 +468,18 @@ async function main() {
     const { proxy } = await import('../proxy');
     const call = (method: string, path: string, cookie?: string) =>
       proxy(new NextRequest(`http://localhost${path}`, { method, headers: cookie ? { cookie } : {} })).status;
-    const view = 'watcharr_view_as=x';
+    const view = 'watcharr_session=abc.sig; watcharr_view_as=abc:7.sig';
     assert.equal(call('POST', '/api/watchlist', view), 403, 'writes are refused while previewing');
     assert.equal(call('PATCH', '/api/admin/config', view), 403);
     assert.equal(call('GET', '/api/watchlist', view), 200, 'reads still work');
     assert.equal(call('DELETE', '/api/admin/view-as', view), 200, 'the way out stays open');
     assert.equal(call('POST', '/api/watchlist'), 200, 'no preview cookie, no change');
+    // A leftover from another sign-in previews nothing, so it must not lock writes; it is dropped.
+    const stale = 'watcharr_session=new.sig; watcharr_view_as=old:7.sig';
+    assert.equal(call('POST', '/api/profile/locale', stale), 200, 'a stale preview cookie does not block');
+    const cleared = proxy(new NextRequest('http://localhost/api/profile/locale', { method: 'POST', headers: { cookie: stale } }));
+    assert.match(cleared.headers.get('set-cookie') ?? '', /watcharr_view_as=;/);
+    assert.equal(call('POST', '/api/watchlist', 'watcharr_view_as=old:7.sig'), 200, 'signed out: nothing to protect');
     console.log('ok - the proxy blocks writes while an admin previews another user');
   }
 
@@ -504,6 +510,70 @@ async function main() {
     assert.equal((await readDb.all<{ n: number }>(people))[0].n, before + 1, 'cheap answers are always fresh');
     await db.delete(users).where(eq(users.serverUserId, 'cache-probe'));
     console.log('ok - slow statistics are kept briefly, cheap ones stay live');
+  }
+
+  // The library caches answer an old copy at once and refresh it behind the page; only a cold
+  // cache waits, and parallel views share one refresh.
+  {
+    const { revalidate } = await import('../server/library');
+    let loads = 0;
+    let release: () => void = () => {};
+    const load = () => new Promise<number>((resolve) => { loads += 1; release = () => resolve(loads); });
+    const cold1 = revalidate('t:cold', undefined, false, load);
+    const cold2 = revalidate('t:cold', undefined, false, load);
+    assert.ok(cold1 && cold2, 'a cold cache waits');
+    assert.equal(loads, 1, 'two cold views share one fetch');
+    release();
+    assert.equal(await cold1!.wait, 1);
+    assert.equal(revalidate('t:fresh', { at: Date.now() }, false, load), null, 'fresh: no fetch');
+    assert.equal(loads, 1);
+    assert.equal(revalidate('t:stale', { at: 0 }, false, load), null, 'stale: answer the old copy now');
+    assert.equal(loads, 2, '...and refresh it in the background');
+    release();
+    const forced = revalidate('t:fresh', { at: Date.now() }, true, load);
+    assert.ok(forced, 'force always waits');
+    release();
+    await forced!.wait;
+    console.log('ok - library caches serve stale copies and refresh once in the background');
+
+    const { mergeLibrary } = await import('../server/library');
+    const item = (id: string, sectionId: string, title = id) => ({ itemId: id, title, mediaType: 'movie', genres: [], posterUrl: '', sectionId });
+    const base = [item('a', '1'), item('b', '1'), item('c', '2')];
+    const merged = mergeLibrary(base, [item('b', '1', 'B new'), item('d', '2')], { '1': 2, '2': 2 });
+    assert.deepEqual(merged?.map((i) => `${i.itemId}:${i.title}`).sort(), ['a:a', 'b:B new', 'c:c', 'd:d']);
+    assert.equal(mergeLibrary(base, [], { '1': 1, '2': 1 }), null, 'a deletion forces a full listing');
+    assert.equal(mergeLibrary(base, [], { '1': 2 }), null, 'a library that vanished forces one too');
+    console.log('ok - a library delta merges changes and falls back to a full listing on deletions');
+  }
+
+  // Confirmation links for a mail address that is not the account's own.
+  {
+    const { confirmationQuery, readConfirmation, isOwnAddress } = await import('../server/mailconfirm');
+    const now = Date.now();
+    const query = new URLSearchParams(confirmationQuery(7, 'Friend@Example.com', 'newsletter', now));
+    assert.deepEqual(readConfirmation(query, now), { userId: 7, address: 'Friend@Example.com', kind: 'newsletter' });
+    const swapped = new URLSearchParams(query);
+    swapped.set('a', 'victim@example.com');
+    assert.equal(readConfirmation(swapped, now), null, 'another address does not match the signature');
+    const otherUser = new URLSearchParams(query);
+    otherUser.set('u', '8');
+    assert.equal(readConfirmation(otherUser, now), null);
+    assert.equal(readConfirmation(query, now + 49 * 3_600_000), null, 'links expire after 48 h');
+    assert.ok(isOwnAddress(' Me@Example.com', 'me@example.com '));
+    assert.ok(!isOwnAddress(null, 'me@example.com'));
+    console.log('ok - mail confirmation links are signed, bound and expire');
+  }
+
+  // Library totals are summed in JS from one grouped scan.
+  {
+    const { totalsOf } = await import('../server/librarystats');
+    const totals = totalsOf([
+      { label: 'Andor', plays: 3, ms: 9000, last: 200 },
+      { label: 'Heat', plays: 1, ms: 1000, last: 500 },
+    ]);
+    assert.deepEqual(totals, { plays: 4, watchtimeMs: 10000, lastPlayedAt: new Date(500), lastTitle: 'Heat' });
+    assert.deepEqual(totalsOf([]), { plays: 0, watchtimeMs: 0, lastPlayedAt: null, lastTitle: null });
+    console.log('ok - library totals add up groups and name the latest title');
   }
 
   console.log('all ops tests passed');

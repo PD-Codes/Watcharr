@@ -87,6 +87,8 @@ export default function PlexLogin({ serverId, askSetupToken }: { serverId: numbe
             giveUp(t('login.setupTokenInvalid')); // a wrong or throttled setup token: retrying cannot help
           } else if (poll.status === 403) {
             giveUp(t('login.plexNoAccess')); // approved, but by an account this server does not list
+          } else if (poll.status === 410) {
+            giveUp(t('login.plexExpired')); // plex.tv no longer knows this PIN
           } else if (poll.status === 400) {
             giveUp(t('login.plexFailed')); // the request itself is wrong; asking again changes nothing
           }

@@ -275,7 +275,12 @@ async function main() {
   startStub();
   const app = spawn('node', ['.next/standalone/server.js'], {
     env: { ...process.env, PORT: String(APP_PORT), HOSTNAME: '127.0.0.1' },
-    stdio: ['ignore', 'inherit', 'inherit'],
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  let log = '';
+  app.stdout.on('data', (chunk) => {
+    log += String(chunk);
+    process.stdout.write(chunk);
   });
   const base = `http://127.0.0.1:${APP_PORT}`;
   await waitFor(`${base}/api/health`);
@@ -287,6 +292,8 @@ async function main() {
       serverType: 'jellyfin',
       serverUrl: `http://127.0.0.1:${STUB_PORT}`,
       serverToken: 'stub',
+      // Printed at start-up; setup refuses to run without it.
+      setupToken: log.match(/setup token:\s+([A-Z0-9]{4}-[A-Z0-9]{4})/)?.[1],
     }),
   });
   const login = await fetch(`${base}/api/auth/login`, {

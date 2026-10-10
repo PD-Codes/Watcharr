@@ -12,6 +12,11 @@ import { scopeFilter, type LabelledValue, type Scope } from './stats';
 // either: a movie play carries the item's own id, while an episode play carries the
 // episode id and only the *series title* in grandparent_title. Matching on both is what
 // makes shows count at all, and it is the same trick the "never started" list already uses.
+//
+// The matching runs in JS on one grouped scan (per item and series title) instead of in SQL
+// per library: `lower(coalesce(...)) IN json_each(...)` can use no index, so each library
+// used to read the whole history again — seconds per library on a million plays, every
+// dashboard refresh. Now every library of a page shares one scan, which the read cache keeps.
 
 export interface LibraryTotals {
   plays: number;
@@ -20,34 +25,63 @@ export interface LibraryTotals {
   lastTitle: string | null;
 }
 
-/** Item ids and titles of one library, as JSON arrays for json_each(). */
-async function libraryKeys(serverId: number, sectionId: string) {
-  const items = (await getLibrary(serverId)).filter((item) => item.sectionId === sectionId);
-  return {
-    ids: JSON.stringify(items.map((item) => item.itemId)),
-    titles: JSON.stringify(items.map((item) => item.title.toLowerCase())),
-    count: items.length,
-  };
+interface PlayGroup {
+  item_id: string;
+  k: string; // lower(series title or title)
+  label: string;
+  user_id: number;
+  plays: number;
+  ms: number;
+  last: number;
 }
 
 /**
- * SQL predicate: this history row belongs to the given library. Item ids are only unique
- * per server (Plex rating keys) and the same title exists on several, so the row also has
- * to belong to a user of that server — otherwise a global admin's numbers for one library
- * include everybody else's plays of anything with the same name.
+ * Plays of one server's users grouped by item, series title and (optionally) user. Item ids
+ * are only unique per server and the same title exists on several, so the server filter
+ * stays — otherwise one library's numbers would include other servers' plays of the same name.
  */
-function inLibrary(serverId: number, ids: string, titles: string) {
-  return sql`(
-    (item_id IN (SELECT value FROM json_each(${ids}))
-     OR lower(coalesce(grandparent_title, title)) IN (SELECT value FROM json_each(${titles})))
-    AND ${scopeFilter({ userId: null, serverId })}
-  )`;
+async function groups(serverId: number, scope: Scope, days: number | undefined, byUser: boolean) {
+  const key = `${serverId}|${JSON.stringify(scope)}|${days ?? ''}|${byUser}`;
+  let running = inflight.get(key) as Promise<PlayGroup[]> | undefined;
+  if (!running) {
+    running = db
+      .all<PlayGroup>(sql`
+        SELECT item_id, lower(coalesce(grandparent_title, title)) AS k,
+               min(coalesce(grandparent_title, title)) AS label,
+               ${byUser ? sql`user_id` : sql`0`} AS user_id,
+               count(*) AS plays, coalesce(sum(duration_ms), 0) AS ms, max(watched_at) AS last
+        FROM watch_history
+        WHERE ${scopeFilter({ userId: null, serverId })} AND ${scopeFilter(scope)}
+          AND ${days ? sql`watched_at >= (unixepoch('now', ${`-${days} days`}) * 1000)` : sql`1 = 1`}
+        GROUP BY item_id, k${byUser ? sql`, user_id` : sql``}
+      `)
+      .finally(() => inflight.delete(key));
+    inflight.set(key, running);
+  }
+  return running;
+}
+// Parallel calls for several libraries of one page share one scan instead of starting one each.
+const inflight = new Map<string, Promise<unknown>>();
+
+/** The groups that belong to one library: by item id (movies) or series title (episodes). */
+async function inSection(serverId: number, sectionId: string, rows: PlayGroup[]): Promise<PlayGroup[]> {
+  const items = (await getLibrary(serverId)).filter((item) => item.sectionId === sectionId);
+  const ids = new Set(items.map((item) => item.itemId));
+  const titles = new Set(items.map((item) => item.title.toLowerCase()));
+  return rows.filter((row) => ids.has(row.item_id) || titles.has(row.k));
 }
 
-function windowFilter(days?: number) {
-  return days
-    ? sql`watched_at >= (unixepoch('now', ${`-${days} days`}) * 1000)`
-    : sql`1 = 1`;
+/** Pure, for the test: sums groups into a library's totals. */
+export function totalsOf(rows: Pick<PlayGroup, 'label' | 'plays' | 'ms' | 'last'>[]): LibraryTotals {
+  let plays = 0;
+  let ms = 0;
+  let last: { at: number; label: string } | null = null;
+  for (const row of rows) {
+    plays += Number(row.plays);
+    ms += Number(row.ms);
+    if (!last || Number(row.last) > last.at) last = { at: Number(row.last), label: row.label };
+  }
+  return { plays, watchtimeMs: ms, lastPlayedAt: last ? new Date(last.at) : null, lastTitle: last?.label ?? null };
 }
 
 export async function getLibraryTotals(
@@ -56,29 +90,7 @@ export async function getLibraryTotals(
   scope: Scope,
   days?: number,
 ): Promise<LibraryTotals> {
-  const { ids, titles } = await libraryKeys(serverId, sectionId);
-  const [row] = await db.all<{
-    plays: number;
-    watchtime: number;
-    last_played: number | null;
-    last_title: string | null;
-  }>(sql`
-    SELECT count(*) AS plays,
-           coalesce(sum(duration_ms), 0) AS watchtime,
-           max(watched_at) AS last_played,
-           (SELECT coalesce(h2.grandparent_title, h2.title) FROM watch_history h2
-             WHERE ${inLibrary(serverId, ids, titles)} AND ${scopeFilter(scope, 'h2.')}
-             ORDER BY h2.watched_at DESC LIMIT 1) AS last_title
-    FROM watch_history
-    WHERE ${inLibrary(serverId, ids, titles)} AND ${scopeFilter(scope)} AND ${windowFilter(days)}
-  `);
-
-  return {
-    plays: Number(row?.plays ?? 0),
-    watchtimeMs: Number(row?.watchtime ?? 0),
-    lastPlayedAt: row?.last_played ? new Date(Number(row.last_played)) : null,
-    lastTitle: row?.last_title ?? null,
-  };
+  return totalsOf(await inSection(serverId, sectionId, await groups(serverId, scope, days, false)));
 }
 
 /** Who watches this library, by play count. */
@@ -88,17 +100,18 @@ export async function getLibraryUsers(
   scope: Scope,
   limit = 20,
 ): Promise<LabelledValue[]> {
-  const { ids, titles } = await libraryKeys(serverId, sectionId);
-  const rows = await db.all<{ label: string; total: number }>(sql`
-    SELECT u.username AS label, count(*) AS total
-    FROM watch_history h
-    JOIN users u ON u.id = h.user_id
-    WHERE ${inLibrary(serverId, ids, titles)} AND ${scopeFilter(scope, 'h.')}
-    GROUP BY u.id
-    ORDER BY total DESC, label ASC
-    LIMIT ${limit}
-  `);
-  return rows.map((r) => ({ label: r.label, value: Number(r.total) }));
+  const rows = await inSection(serverId, sectionId, await groups(serverId, scope, undefined, true));
+  const perUser = new Map<number, number>();
+  for (const row of rows) perUser.set(row.user_id, (perUser.get(row.user_id) ?? 0) + Number(row.plays));
+  if (perUser.size === 0) return [];
+  const names = await db.all<{ id: number; username: string }>(
+    sql`SELECT id, username FROM users WHERE server_id = ${serverId}`,
+  );
+  const nameOf = new Map(names.map((u) => [Number(u.id), u.username]));
+  return [...perUser]
+    .map(([id, value]) => ({ label: nameOf.get(id) ?? '?', value }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label))
+    .slice(0, limit);
 }
 
 /** Most played titles inside one library. */
@@ -108,18 +121,18 @@ export async function getLibraryTopTitles(
   scope: Scope,
   limit = 10,
 ): Promise<LabelledValue[]> {
-  const { ids, titles } = await libraryKeys(serverId, sectionId);
-  const rows = await db.all<{ label: string; total: number }>(sql`
-    SELECT coalesce(grandparent_title, title) AS label, count(*) AS total
-    FROM watch_history
-    WHERE ${inLibrary(serverId, ids, titles)} AND ${scopeFilter(scope)}
-    GROUP BY label
-    ORDER BY total DESC, label ASC
-    LIMIT ${limit}
-  `);
-  return rows.map((r) => ({ label: r.label, value: Number(r.total) }));
+  const rows = await inSection(serverId, sectionId, await groups(serverId, scope, undefined, false));
+  const perTitle = new Map<string, { label: string; value: number }>();
+  for (const row of rows) {
+    const entry = perTitle.get(row.k) ?? { label: row.label, value: 0 };
+    entry.value += Number(row.plays);
+    perTitle.set(row.k, entry);
+  }
+  return [...perTitle.values()]
+    .sort((a, b) => b.value - a.value || (a.label < b.label ? -1 : 1))
+    .slice(0, limit);
 }
 
 export async function getLibraryItemCount(serverId: number, sectionId: string): Promise<number> {
-  return (await libraryKeys(serverId, sectionId)).count;
+  return (await getLibrary(serverId)).filter((item) => item.sectionId === sectionId).length;
 }

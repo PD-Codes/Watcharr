@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { badBody, readBody } from '@/server/body';
+import { getT } from '@/i18n/server';
+import { isOwnAddress, sendConfirmation } from '@/server/mailconfirm';
 import { selectableEvents, setUserPrefs } from '@/server/notifications';
 import { getSession } from '@/server/session';
 
@@ -29,6 +31,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'An email address is required' }, { status: 400 });
   }
 
-  await setUserPrefs(session.user.id, { email: address, events });
-  return NextResponse.json({ ok: true });
+  // A new address that is not the account's own is confirmed by mail first; the events are
+  // saved right away and keep going to the previous address until then.
+  const unchanged = !address || isOwnAddress(session.user.notifyEmail, address) || isOwnAddress(session.user.email, address);
+  if (unchanged) {
+    await setUserPrefs(session.user.id, { email: address, events });
+    return NextResponse.json({ ok: true });
+  }
+  await setUserPrefs(session.user.id, { email: session.user.notifyEmail, events });
+  const t = await getT();
+  const sent = await sendConfirmation(request, session.user.id, address, 'notify', {
+    subject: t('mail.confirmSubject'),
+    body: t('mail.confirmNotify'),
+    button: t('mail.confirmButton'),
+  });
+  if (!sent.ok) return NextResponse.json({ error: sent.error }, { status: 400 });
+  return NextResponse.json({ ok: true, pending: true });
 }

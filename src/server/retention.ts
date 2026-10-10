@@ -1,6 +1,6 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
-import { db, vacuum } from '@/db';
+import { db } from '@/db';
 import { getSettings, updateSettings } from './config';
 
 // Data retention. Three tables grow with every poll and every login and nobody ever looks
@@ -14,21 +14,41 @@ const EVERY_MS = 6 * 3_600_000;
 
 type Prune = { table: string; days: number | null; where?: string };
 
+const BATCH = 5000;
+
+/**
+ * Deletes in slices with a breath in between. One DELETE over a few hundred thousand rows
+ * (the first prune after turning retention on) held the process for tens of seconds — long
+ * enough for the container health check to restart it mid-way.
+ */
+async function deleteInBatches(table: string, where: ReturnType<typeof sql>): Promise<number> {
+  const name = sql.raw(table);
+  let total = 0;
+  for (;;) {
+    const result = await db.run(
+      sql`DELETE FROM ${name} WHERE rowid IN (SELECT rowid FROM ${name} WHERE ${where} LIMIT ${BATCH})`,
+    );
+    const changes = Number(result.changes ?? 0);
+    total += changes;
+    if (changes < BATCH) return total;
+    await new Promise((resolve) => setImmediate(resolve)); // let requests in between slices
+  }
+}
+
 async function deleteOlderThan({ table, days, where }: Prune): Promise<number> {
   if (!days) return 0;
   const cutoff = Date.now() - days * 86_400_000;
   const extra = where ? sql.raw(` AND ${where}`) : sql.raw('');
-  // db.run reports how many rows the statement touched, which is what decides whether the
-  // VACUUM below is worth its write lock.
-  const result = await db.run(
-    sql`DELETE FROM ${sql.raw(table)} WHERE created_at < ${cutoff}${extra}`,
-  );
-  return Number(result.changes ?? 0);
+  return deleteInBatches(table, sql`created_at < ${cutoff}${extra}`);
 }
 
 /**
  * One pass over everything with a configured cutoff. Returns how many rows went, so the
  * caller can tell "retention is off" apart from "there was nothing left to delete".
+ *
+ * No VACUUM here any more: it rewrites the whole file while holding the database, which on
+ * a large one froze every request. Freed pages are reused right away; giving them back to the
+ * disk happens at the next start (scripts/migrate.mjs), before the server takes requests.
  */
 export async function prune(): Promise<number> {
   const settings = await getSettings();
@@ -42,22 +62,13 @@ export async function prune(): Promise<number> {
     // Only sessions that have actually finished: a long film paused since yesterday is
     // still live, and ending it here would take a running stream off "Now Playing".
     const cutoff = Date.now() - settings.retentionSessionDays * 86_400_000;
-    const result = await db.run(
-      sql`DELETE FROM playback_sessions WHERE state = 'ended' AND last_seen_at < ${cutoff}`,
-    );
-    deleted += Number(result.changes ?? 0);
+    deleted += await deleteInBatches('playback_sessions', sql`state = 'ended' AND last_seen_at < ${cutoff}`);
   }
 
   if (settings.retentionHistoryDays) {
     const cutoff = Date.now() - settings.retentionHistoryDays * 86_400_000;
-    const result = await db.run(sql`DELETE FROM watch_history WHERE watched_at < ${cutoff}`);
-    deleted += Number(result.changes ?? 0);
+    deleted += await deleteInBatches('watch_history', sql`watched_at < ${cutoff}`);
   }
-
-  // Freed pages are only reusable, not returned, so the file keeps its size — the one
-  // number an operator came here to reduce. Skipped when nothing was deleted, and vacuum()
-  // itself skips it until a quarter of the file is free: the rebuild locks the whole database.
-  if (deleted > 0) vacuum();
   return deleted;
 }
 

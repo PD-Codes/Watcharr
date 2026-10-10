@@ -39,8 +39,12 @@ export default function PlexDone({ pinId, serverId }: { pinId: string; serverId:
           const data = (await res.json().catch(() => ({}))) as { ok?: boolean };
           if (data.ok) return router.replace('/watchlist');
           if (res.status === 403) return setError(t('login.plexNoAccess'));
+          if (res.status === 410) return setError(t('login.plexExpired'));
           if (res.status === 401 && setupToken) return setError(t('login.setupTokenInvalid'));
-          if (res.status === 401 || res.status === 400) return setError(t('login.plexFailed'));
+          // 400: this browser did not start the sign-in (an installed app on iOS opens plex.tv in
+          // Safari, which has its own cookies). The window that started it finishes on its own.
+          if (res.status === 400) return setError(t('login.plexReturn'));
+          if (res.status === 401) return setError(t('login.plexFailed'));
         } catch {
           // A dropped connection is retried like a pending PIN.
         }

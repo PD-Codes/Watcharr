@@ -42,6 +42,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .select({
       count: sql<number>`count(*)`,
       playing: sql<number>`coalesce(sum(CASE WHEN ${playbackSessions.state} <> 'paused' THEN 1 ELSE 0 END), 0)`,
+      // "Activity" is the personal page: its dot is about this person, not about the server.
+      mine: sql<number>`coalesce(sum(CASE WHEN ${playbackSessions.state} <> 'paused' AND ${playbackSessions.userId} = ${session.user.id} THEN 1 ELSE 0 END), 0)`,
     })
     .from(playbackSessions)
     .where(
@@ -52,6 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     );
   const liveCount = Number(live?.count ?? 0);
   const playingCount = Number(live?.playing ?? 0);
+  const minePlaying = Number(live?.mine ?? 0);
 
   const nav = userNav(t, suggestionsEnabled);
   const adminItems = isAdmin(session.user)
@@ -80,7 +83,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               key={item.href}
               href={item.href}
               icon={item.icon}
-              trailing={item.href === '/activity' && playingCount > 0 ? <span className="bulb on" /> : null}
+              trailing={item.href === '/activity' && minePlaying > 0 ? <span className="bulb on" /> : null}
             >
               {item.label}
             </NavLink>
@@ -129,6 +132,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           username={session.user.username}
           liveCount={liveCount}
           playingCount={playingCount}
+          minePlaying={minePlaying}
           nav={nav}
           adminItems={adminItems}
         />
@@ -138,7 +142,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
       </div>
 
-      <BottomNav items={bottomNav(t, suggestionsEnabled)} playingCount={playingCount} />
+      <BottomNav items={bottomNav(t, suggestionsEnabled)} playingCount={minePlaying} />
       <CommandPalette userKey={session.user.id} pages={[...nav, ...adminItems]} />
       <Shortcuts />
       <Tooltip />

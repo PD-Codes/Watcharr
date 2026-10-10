@@ -206,6 +206,16 @@ async function main() {
     console.log(`${toSetup ? 'ok  ' : 'FAIL'} - unconfigured / redirects to /setup`);
     if (!toSetup) failures += 1;
 
+    // Setup needs the one-time token from the log: without it, a stranger could claim a fresh instance.
+    const noToken = await fetch(`${base}/api/setup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serverType: 'jellyfin', serverUrl: `http://127.0.0.1:${STUB_PORT}`, serverToken: 'stub-token' }),
+    });
+    console.log(`${noToken.status === 401 ? 'ok  ' : 'FAIL'} - setup without the log token is refused → ${noToken.status}`);
+    if (noToken.status !== 401) failures += 1;
+    const printed = logs.join('').match(/setup token:\s+([A-Z0-9]{4}-[A-Z0-9]{4})/)?.[1];
+
     const setup = await fetch(`${base}/api/setup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -213,6 +223,7 @@ async function main() {
         serverType: 'jellyfin',
         serverUrl: `http://127.0.0.1:${STUB_PORT}`,
         serverToken: 'stub-token',
+        setupToken: printed,
       }),
     });
     console.log(`${setup.ok ? 'ok  ' : 'FAIL'} - POST /api/setup → ${setup.status}`);

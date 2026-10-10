@@ -47,10 +47,23 @@ export function clearRateLimit(key: string): void {
   hits.delete(key);
 }
 
-export function clientIp(request: Request): string {
-  return (
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    request.headers.get('x-real-ip') ??
-    'unknown'
-  );
+/**
+ * The caller's address. X-Forwarded-For is a list the client starts and every proxy appends
+ * to, so only the entries added by our own proxies can be trusted: the last one with a single
+ * reverse proxy (the default), or further left with WATCHARR_TRUSTED_PROXIES=2 (e.g. Cloudflare
+ * in front of nginx). The first entry, used before, was whatever the client claimed — one
+ * made-up value per request and no login or PIN limit applied.
+ */
+export function clientIp(request: Request, hops = trustedHops()): string {
+  const chain = (request.headers.get('x-forwarded-for') ?? '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (chain.length) return chain[Math.max(0, chain.length - hops)];
+  return request.headers.get('x-real-ip')?.trim() || 'unknown';
+}
+
+function trustedHops(): number {
+  const n = Number(process.env.WATCHARR_TRUSTED_PROXIES ?? 1);
+  return Number.isInteger(n) && n >= 1 ? n : 1;
 }

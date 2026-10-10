@@ -19,6 +19,7 @@ export default function AppBar({
   username,
   liveCount,
   playingCount,
+  minePlaying,
   nav,
   adminItems,
 }: {
@@ -26,6 +27,8 @@ export default function AppBar({
   liveCount: number;
   /** Streams that are actually running: only these light the bulb. */
   playingCount: number;
+  /** The viewer's own running streams: the dot on the personal Activity entry. */
+  minePlaying: number;
   nav: NavItem[];
   adminItems: NavItem[];
 }) {
@@ -118,7 +121,7 @@ export default function AppBar({
                   icon={item.icon}
                   onNavigate={() => setOpen(false)}
                   trailing={
-                    item.href === '/activity' && playingCount > 0 ? <span className="bulb on" /> : null
+                    item.href === '/activity' && minePlaying > 0 ? <span className="bulb on" /> : null
                   }
                 >
                   {item.label}

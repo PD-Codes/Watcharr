@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 const PAGE_SIZE = 50;
 // Period filters, labelled at render time so the labels follow the request's locale.
 const PERIODS: [string, (t: Translate) => string][] = [
-  ['', (t) => t('common.allTime')],
+  ['all', (t) => t('common.allTime')],
   ['7', (t) => t('common.days', { count: 7 })],
   ['30', (t) => t('common.days', { count: 30 })],
   ['365', (t) => t('common.lastYear')],
@@ -33,9 +33,10 @@ export default async function AdminStreamsPage({
   const t = await getT();
   const params = await searchParams;
   // Whitelisted against the period links: a free number would reach the SQL window and the export link.
-  const requested = firstParam(params.days) ?? '';
-  const daysValue = PERIODS.some(([value]) => value === requested) ? requested : '';
-  const days = daysValue ? Number(daysValue) : undefined;
+  // 30 days by default: "all time" counts every stream ever recorded, seconds on a large server.
+  const requested = firstParam(params.days) ?? '30';
+  const daysValue = PERIODS.some(([value]) => value === requested) ? requested : '30';
+  const days = daysValue === 'all' ? undefined : Number(daysValue);
   const page = intParam(params.page, 1);
   const transcodesOnly = params.transcodes === '1';
   const scope = adminScope(session.user);
@@ -55,7 +56,7 @@ export default async function AdminStreamsPage({
   const query = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
     for (const [key, value] of Object.entries({
-      days: daysValue || undefined,
+      days: daysValue === '30' ? undefined : daysValue,
       transcodes: transcodesOnly ? '1' : undefined,
       page: undefined as string | undefined,
       ...patch,
@@ -67,7 +68,7 @@ export default async function AdminStreamsPage({
   };
 
   const exportSearch = new URLSearchParams();
-  if (daysValue) exportSearch.set('days', daysValue);
+  if (days) exportSearch.set('days', String(days));
   if (transcodesOnly) exportSearch.set('transcodes', '1');
 
   return (
@@ -81,7 +82,7 @@ export default async function AdminStreamsPage({
           {PERIODS.map(([value, label]) => (
             <Link
               key={value}
-              href={query({ days: value || undefined })}
+              href={query({ days: value === '30' ? undefined : value })}
               className={daysValue === value ? 'on' : undefined}
             >
               {label(t)}

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import { execFileSync } from 'node:child_process';
 import Database from 'better-sqlite3';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -1286,6 +1286,61 @@ async function main() {
     assert.ok(markStrained('http://plex:32400/', 'x', t)! <= STRAIN_MAX_MS, 'capped');
     resetStrain();
     console.log('ok - an overloaded host is paused, longer when it repeats');
+  }
+
+  // Stream rows: a device key that moves to another item (Jellyfin autoplay) ends the old
+  // stream properly, and a key reused later never overwrites the ended row — it is history.
+  {
+    const { createServer: createHttp } = await import('node:http');
+    const { createServer: addServer, getServer: loadServer } = await import('../server/config');
+    const { syncServerActivity } = await import('../server/sync');
+    const { appConfig, playbackSessions: ps, watchHistory: wh } = await import('../db/schema');
+    let reported: unknown[] = [];
+    const stub = createHttp((_req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(reported));
+    });
+    await new Promise<void>((resolve) => stub.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${(stub.address() as { port: number }).port}`;
+    const created = await addServer({ serverType: 'jellyfin', serverUrl: base, serverToken: 't', label: 'Keys' });
+    const server = (await loadServer(created.id))!;
+    const [viewer] = await db.insert(users).values({ serverId: created.id, serverUserId: 'jf-u', username: 'keys-viewer' }).returning();
+    const MIN = 60 * 10_000_000; // ticks per minute
+    const playing = (id: string, minute: number) => ({
+      Id: 'device-1',
+      UserId: 'jf-u',
+      UserName: 'keys-viewer',
+      DeviceName: 'TV',
+      PlayState: { PositionTicks: minute * MIN, IsPaused: false },
+      NowPlayingItem: { Id: id, Name: id, Type: 'Episode', SeriesName: 'Show', RunTimeTicks: 40 * MIN },
+    });
+    const rows = () => db.select().from(ps).where(like(ps.sessionKey, `${created.id}:%`));
+
+    reported = [playing('ep1', 39)];
+    await syncServerActivity(server);
+    reported = [playing('ep2', 1)];
+    await syncServerActivity(server);
+    let all = await rows();
+    assert.equal(all.length, 2, 'episode 2 gets its own row');
+    const ep1 = all.find((r) => r.itemId === 'ep1')!;
+    assert.equal(ep1.state, 'ended');
+    assert.ok(ep1.sessionKey.includes('#'), 'the finished row left the live key');
+    const history = await db.select().from(wh).where(eq(wh.userId, viewer.id));
+    assert.deepEqual(history.map((h) => h.itemId), ['ep1'], 'episode 1 reached the history');
+
+    reported = [];
+    await syncServerActivity(server); // episode 2 stops
+    reported = [playing('ep3', 2)];
+    await syncServerActivity(server); // same device, later
+    all = await rows();
+    assert.deepEqual(all.map((r) => r.itemId).sort(), ['ep1', 'ep2', 'ep3'], 'no row was overwritten');
+    assert.equal(all.filter((r) => r.state !== 'ended').length, 1);
+
+    await db.delete(ps).where(like(ps.sessionKey, `${created.id}:%`));
+    await db.delete(users).where(eq(users.id, viewer.id));
+    await db.delete(appConfig).where(eq(appConfig.id, created.id));
+    await new Promise<void>((resolve) => stub.close(() => resolve()));
+    console.log('ok - stream rows are kept per play, not per device key');
   }
 
   // WAL files stay locked on Windows until the handle is closed.

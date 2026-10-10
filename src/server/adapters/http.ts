@@ -7,6 +7,12 @@
 import { isStrainSignal, markStrained } from '../strain';
 
 const DEFAULT_TIMEOUT_MS = 8_000;
+/**
+ * Whole-library listings and long histories: a big Plex library takes well over 8 s to list
+ * while the server is perfectly healthy. Slow there means "large", not "overloaded", so a
+ * timeout on such a request fails only that job and does not pause the server.
+ */
+const BULK_TIMEOUT_MS = 90_000;
 
 export type HttpError = Error & { status?: number };
 
@@ -36,9 +42,9 @@ export function isUnauthorized(error: unknown): boolean {
 /** Thin fetch wrapper: JSON in, JSON out, non-2xx throws with the response body. */
 export async function apiFetch<T>(
   url: string,
-  init: RequestInit & { timeoutMs?: number } = {},
+  init: RequestInit & { timeoutMs?: number; bulk?: boolean } = {},
 ): Promise<T> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...rest } = init;
+  const { bulk = false, timeoutMs = bulk ? BULK_TIMEOUT_MS : DEFAULT_TIMEOUT_MS, ...rest } = init;
   let res: Response;
   try {
     res = await fetch(url, {
@@ -50,7 +56,7 @@ export async function apiFetch<T>(
   } catch (error) {
     // Only our own timeout: a refused connection is a server that is down, which the sync's
     // down-backoff already handles, and a caller's abort is not the server's fault.
-    if ((error as Error | null)?.name === 'TimeoutError') strained(url, `no answer within ${timeoutMs / 1000} s`);
+    if ((error as Error | null)?.name === 'TimeoutError' && !bulk) strained(url, `no answer within ${timeoutMs / 1000} s`);
     throw error;
   }
   if (!res.ok) {

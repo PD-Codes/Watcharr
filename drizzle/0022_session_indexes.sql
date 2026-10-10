@@ -1,0 +1,2 @@
+CREATE INDEX `playback_sessions_open_idx` ON `playback_sessions` (`session_key`) WHERE state != 'ended';--> statement-breakpoint
+CREATE INDEX `playback_sessions_item_idx` ON `playback_sessions` (`item_id`,`started_at`);

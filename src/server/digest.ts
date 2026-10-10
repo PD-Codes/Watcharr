@@ -27,7 +27,7 @@ export async function checkDigest() {
 
   const days = periodDays(settings.digestFrequency);
   const scope = { userId: null } as const;
-  const [totals, titles] = await Promise.all([getTotals(scope, days), getTopTitles(scope, 1, 'time')]);
+  const [totals, titles] = await Promise.all([getTotals(scope, days), getTopTitles(scope, 1, 'time', days)]);
 
   const t = await getDefaultT();
   notify('digest', {

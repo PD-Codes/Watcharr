@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash } from 'node:crypto';
 import type { SQL } from 'drizzle-orm';
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import { db } from '@/db';
@@ -29,7 +30,8 @@ const kept = globalState('readcache', () => new Map<string, { at: number; rows: 
 
 async function all<T>(query: SQL): Promise<T[]> {
   const { sql, params } = dialect.sqlToQuery(query);
-  const key = `${sql}\u0000${JSON.stringify(params)}`;
+  // Hashed: a query can carry big parameter lists, and the key is kept for every slow answer.
+  const key = createHash('sha1').update(sql).update('\u0000').update(JSON.stringify(params)).digest('base64');
   const hit = kept.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return (hit.rows as T[]).slice();
 

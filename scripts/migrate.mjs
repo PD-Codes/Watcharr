@@ -156,6 +156,16 @@ try {
   // database (a title page went from 5 ms to 450 ms on a million plays). Analyzes only what
   // lacks them, so it is quick on an install that is already tuned.
   if (changed) db.pragma('optimize(0x10002)');
+  // Give pages freed by retention back to the disk here, before the server takes requests: a
+  // VACUUM rewrites the whole file and used to run in the middle of serving pages. Only when a
+  // quarter of the file is free (the same share as db/index.ts::VACUUM_FREE_SHARE).
+  const free = Number(db.pragma('freelist_count', { simple: true }));
+  const total = Number(db.pragma('page_count', { simple: true }));
+  if (total && free / total >= 0.25) {
+    console.log(`reclaiming ${Math.round((free / total) * 100)}% free space (VACUUM)`);
+    db.exec('VACUUM');
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  }
   db.close();
 } catch (error) {
   if (error?.code?.startsWith('SQLITE_READONLY')) {

@@ -31,12 +31,16 @@ export type Scope = { userId: number } | { userId: null; serverId?: number };
 const localDay = (column: string) => sql.raw(`date(${column} / 1000, 'unixepoch', 'localtime')`);
 
 /** Restricts an aggregate to one user, one server, or nothing at all. */
-export function scopeFilter(scope: Scope, alias = ''): SQL {
+export function scopeFilter(scope: Scope, alias = '', timeOrdered = false): SQL {
   const column = sql.raw(`${alias}user_id`);
   if (scope.userId !== null) return sql`${column} = ${scope.userId}`;
   // Rows carry no server_id of their own; the server is reached through the user.
   if (scope.serverId !== undefined) {
-    return sql`${column} IN (SELECT id FROM users WHERE server_id = ${scope.serverId})`;
+    // timeOrdered: for "newest N" queries. The unary + keeps SQLite off the user index, which it
+    // otherwise picks for the IN list — then sorts every matching play (2 s on a million rows)
+    // instead of walking the time index backwards until N rows are found (milliseconds).
+    const target = timeOrdered ? sql`+${column}` : column;
+    return sql`${target} IN (SELECT id FROM users WHERE server_id = ${scope.serverId})`;
   }
   return sql`1 = 1`;
 }
@@ -60,7 +64,13 @@ export async function getTotals(scope: Scope, days?: number): Promise<Totals> {
            count(*) FILTER (WHERE media_type = 'movie') AS movies,
            count(*) FILTER (WHERE media_type = 'episode') AS episodes,
            count(*) FILTER (WHERE media_type IN ('track', 'audio', 'audiobook')) AS audio,
-           count(DISTINCT ${localDay('watched_at')}) AS active_days
+           count(DISTINCT ${
+             // A rolling window of N × 24 h touches N + 1 calendar days ("31 of 30"): count only
+             // the last N local days, the way getPeriodComparison does.
+             days
+               ? sql`CASE WHEN ${localDay('watched_at')} >= date('now', 'localtime', ${`-${days - 1} days`}) THEN ${localDay('watched_at')} END`
+               : localDay('watched_at')
+           }) AS active_days
     FROM watch_history
     WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
   `);
@@ -315,7 +325,7 @@ export async function getRecentPlays(scope: Scope, limit = 5): Promise<RecentPla
            h.watched_at AS watched_at
     FROM watch_history h
     LEFT JOIN users u ON u.id = h.user_id
-    WHERE ${scopeFilter(scope, 'h.')}
+    WHERE ${scopeFilter(scope, 'h.', true)}
     ORDER BY h.watched_at DESC
     LIMIT ${limit}
   `);

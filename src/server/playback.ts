@@ -274,7 +274,7 @@ export async function listSessionHistory(options: {
   transcodesOnly?: boolean;
 }): Promise<{ rows: SessionHistoryRow[]; total: number }> {
   const { scope, days, limit = 50, offset = 0, transcodesOnly = false } = options;
-  const filter = sql`${since(days, 'p.')} AND ${scoped(scope, 'p.')} AND ${
+  const filter = sql`${since(days, 'p.')} AND ${scope ? scopeFilter(scope, 'p.', true) : sql`1 = 1`} AND ${
     transcodesOnly ? sql`p.play_method = 'transcode'` : sql`1 = 1`
   }`;
 
@@ -574,20 +574,24 @@ export async function getUserAddresses(userId: number, limit = 50): Promise<Addr
     last_title: string | null;
     is_local: number | null;
   }>(sql`
+    -- One pass with a window instead of two correlated subqueries per address: those sorted
+    -- the user's sessions again for every address (21 s for a heavy user on a large database).
+    WITH s AS (
+      SELECT remote_address, started_at, last_seen_at, is_local,
+             coalesce(device_name, client_name) AS player,
+             coalesce(grandparent_title, title) AS shown,
+             row_number() OVER (PARTITION BY remote_address ORDER BY last_seen_at DESC) AS rn
+      FROM playback_sessions
+      WHERE user_id = ${userId} AND remote_address IS NOT NULL
+    )
     SELECT remote_address AS ip,
            min(started_at) AS first_seen,
            max(last_seen_at) AS last_seen,
            count(*) AS plays,
-           -- The player and title of the most recent session on this address.
-           (SELECT coalesce(p2.device_name, p2.client_name) FROM playback_sessions p2
-             WHERE p2.remote_address = p.remote_address AND p2.user_id = p.user_id
-             ORDER BY p2.last_seen_at DESC LIMIT 1) AS last_player,
-           (SELECT coalesce(p3.grandparent_title, p3.title) FROM playback_sessions p3
-             WHERE p3.remote_address = p.remote_address AND p3.user_id = p.user_id
-             ORDER BY p3.last_seen_at DESC LIMIT 1) AS last_title,
+           max(CASE WHEN rn = 1 THEN player END) AS last_player,
+           max(CASE WHEN rn = 1 THEN shown END) AS last_title,
            max(is_local) AS is_local
-    FROM playback_sessions p
-    WHERE user_id = ${userId} AND remote_address IS NOT NULL
+    FROM s
     GROUP BY remote_address
     ORDER BY last_seen DESC
     LIMIT ${limit}

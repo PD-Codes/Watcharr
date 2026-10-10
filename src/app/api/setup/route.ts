@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { badBody, readBody } from '@/server/body';
 import { createAdapter, SERVER_TYPES, type ServerType } from '@/server/adapters';
 import { createFirstServer, isConfigured, listServers, updateSettings } from '@/server/config';
+import { clientIp } from '@/server/ratelimit';
+import { getRealSession } from '@/server/session';
+import { checkSetupToken, setupTokenPending } from '@/server/setuptoken';
 
 export async function GET() {
   const servers = await listServers();
@@ -26,8 +29,25 @@ export async function POST(request: Request) {
     serverToken: 'string',
     tmdbApiKey: 'string',
     label: 'string',
+    setupToken: 'string',
   });
   if (!body) return badBody();
+
+  // Whoever finishes setup decides which server the admins come from, so it takes the one-time
+  // token from the container log (or, if an admin still exists after every server was removed,
+  // that admin). Without it, anyone reaching a fresh instance could point it at their own server
+  // and sign in as its admin — the global admin role included.
+  if (await setupTokenPending()) {
+    const check = await checkSetupToken(body.setupToken, clientIp(request));
+    if (check !== 'valid') {
+      return NextResponse.json(
+        { error: check === 'limited' ? 'Too many attempts, try again later' : 'The setup token from the server log is required', code: 'setup-token' },
+        { status: check === 'limited' ? 429 : 401 },
+      );
+    }
+  } else if (!(await getRealSession())?.user.globalAdmin) {
+    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
+  }
 
   if (!body.serverType || !SERVER_TYPES.includes(body.serverType as ServerType)) {
     return NextResponse.json({ error: 'Invalid server type' }, { status: 400 });

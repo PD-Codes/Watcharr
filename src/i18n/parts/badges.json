@@ -73,5 +73,12 @@
   "badges.edit": {"en": "Edit", "de": "Bearbeiten"},
   "badges.editing": {"en": "Edit badge", "de": "Abzeichen bearbeiten"},
   "badges.save": {"en": "Save", "de": "Speichern"},
-  "badges.cancel": {"en": "Cancel", "de": "Abbrechen"}
+  "badges.cancel": {"en": "Cancel", "de": "Abbrechen"},
+  "mail.confirmSubject": {"en": "Confirm your email address for Watcharr", "de": "Bestätige deine E-Mail-Adresse für Watcharr"},
+  "mail.confirmNewsletter": {"en": "Someone signed this address up for the Watcharr newsletter. If that was you, confirm below; otherwise ignore this mail and nothing will be sent.", "de": "Jemand hat diese Adresse für den Watcharr-Newsletter eingetragen. Warst du das, bestätige unten; sonst ignoriere diese Mail, dann kommt nichts."},
+  "mail.confirmNotify": {"en": "Someone wants Watcharr notifications sent to this address. If that was you, confirm below; otherwise ignore this mail.", "de": "Jemand möchte Watcharr-Benachrichtigungen an diese Adresse bekommen. Warst du das, bestätige unten; sonst ignoriere diese Mail."},
+  "mail.confirmButton": {"en": "Confirm address", "de": "Adresse bestätigen"},
+  "mail.confirmSent": {"en": "Almost done: we sent a confirmation link to that address. Mails start once it is clicked.", "de": "Fast fertig: An die Adresse ging ein Bestätigungslink. Mails kommen, sobald er angeklickt ist."},
+  "mail.confirmed": {"en": "Email address confirmed.", "de": "E-Mail-Adresse bestätigt."},
+  "mail.invalid": {"en": "That confirmation link is invalid or has expired.", "de": "Der Bestätigungslink ist ungültig oder abgelaufen."}
 }

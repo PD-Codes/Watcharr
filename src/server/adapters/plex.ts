@@ -20,8 +20,13 @@ const PLEX_METADATA = 'https://metadata.provider.plex.tv';
 const PRODUCT = 'Watcharr';
 const CLIENT_ID = 'watcharr-server';
 /** Items per library request, and the ceiling that keeps a runaway server from filling memory. */
-const LIBRARY_PAGE = 5000;
+// 1000, not 5000: Plex builds a page with full media info in one go, and a 5000-item page of a
+// large movie library took long enough to look like an overloaded server.
+const LIBRARY_PAGE = 1000;
 const MAX_LIBRARY_ITEMS = 200_000;
+/** Delta sync: changed items per page, and the point from which a full listing is cheaper. */
+const DELTA_PAGE = 200;
+const MAX_DELTA_ITEMS = 2000;
 
 // Plex numbers stream types: 1 = video, 2 = audio, 3 = subtitle.
 type PlexStream = {
@@ -45,6 +50,7 @@ type PlexMeta = {
   viewedAt?: number;
   lastViewedAt?: number; // seconds since the epoch, like every other Plex timestamp
   addedAt?: number; // seconds since the epoch, like every other Plex timestamp
+  updatedAt?: number;
   viewOffset?: number;
   thumb?: string;
   accountID?: number;
@@ -129,8 +135,8 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     };
   }
 
-  private server<T>(path: string, token = this.adminToken) {
-    return apiFetch<T>(joinUrl(this.baseUrl, path), { headers: this.plexHeaders(token) });
+  private server<T>(path: string, token = this.adminToken, bulk = false) {
+    return apiFetch<T>(joinUrl(this.baseUrl, path), { headers: this.plexHeaders(token), bulk });
   }
 
   async ping() {
@@ -387,45 +393,81 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     );
     // Paged: a single capped request would silently drop everything past the cap from
     // search, the library table and the "never started" list.
-    const pages = await Promise.all(
-      wanted.map(async (d) => {
-        const Metadata: PlexMeta[] = [];
-        for (let start = 0; start < MAX_LIBRARY_ITEMS; start += LIBRARY_PAGE) {
-          const page = await this.server<PlexContainer>(
-            `/library/sections/${d.key}/all?X-Plex-Container-Start=${start}&X-Plex-Container-Size=${LIBRARY_PAGE}`,
-          );
-          const batch = page.MediaContainer.Metadata ?? [];
-          Metadata.push(...batch);
-          if (batch.length < LIBRARY_PAGE) break;
-        }
-        return { MediaContainer: { Metadata } } as PlexContainer;
-      }),
-    );
+    // One section after the other: in parallel, every library asked Plex for a big page at
+    // the same moment, which is the load the strain backoff then (rightly) reacted to.
+    const pages: PlexContainer[] = [];
+    for (const d of wanted) {
+      const Metadata: PlexMeta[] = [];
+      for (let start = 0; start < MAX_LIBRARY_ITEMS; start += LIBRARY_PAGE) {
+        const page = await this.server<PlexContainer>(
+          `/library/sections/${d.key}/all?X-Plex-Container-Start=${start}&X-Plex-Container-Size=${LIBRARY_PAGE}`,
+          this.adminToken,
+          true,
+        );
+        const batch = page.MediaContainer.Metadata ?? [];
+        for (const item of batch) Metadata.push(item); // push(...batch) overflows the stack on huge pages
+        if (batch.length < LIBRARY_PAGE) break;
+      }
+      pages.push({ MediaContainer: { Metadata } } as PlexContainer);
+    }
     // ponytail: Plex omits genres in section listings; scoring falls back to year/type.
     // Fetch /library/metadata/{key} per item if genre-accurate suggestions matter.
     return pages.flatMap((page, index) =>
-      (page.MediaContainer.Metadata ?? []).map((m) => {
-        const media = m.Media?.[0];
-        return {
-          itemId: m.ratingKey,
-          title: m.title,
-          mediaType: m.type ?? 'unknown',
-          year: m.year,
-          genres: (m.Genre ?? []).map((g) => g.tag),
-          posterUrl: this.posterUrl(m.ratingKey),
-          // The pages come back in the order the sections were requested in.
-          sectionId: wanted[index].key,
-          // Shows have no Media block of their own — only their episodes do — so these
-          // stay undefined there rather than reporting a misleading zero.
-          fileSizeBytes: media?.Part?.[0]?.size,
-          videoCodec: media?.videoCodec?.toLowerCase(),
-          height: media?.height,
-          durationMs: media?.duration ?? m.duration,
-          addedAt: m.addedAt ? new Date(m.addedAt * 1000) : undefined,
-          lastPlayedAt: m.lastViewedAt ? new Date(m.lastViewedAt * 1000) : undefined,
-        };
-      }),
+      (page.MediaContainer.Metadata ?? []).map((m) => this.libraryItem(m, wanted[index].key)),
     );
+  }
+
+  private libraryItem(m: PlexMeta, sectionId: string): LibraryItem {
+    const media = m.Media?.[0];
+    return {
+      itemId: m.ratingKey,
+      title: m.title,
+      mediaType: m.type ?? 'unknown',
+      year: m.year,
+      genres: (m.Genre ?? []).map((g) => g.tag),
+      posterUrl: this.posterUrl(m.ratingKey),
+      sectionId,
+      // Shows have no Media block of their own — only their episodes do — so these
+      // stay undefined there rather than reporting a misleading zero.
+      fileSizeBytes: media?.Part?.[0]?.size,
+      videoCodec: media?.videoCodec?.toLowerCase(),
+      height: media?.height,
+      durationMs: media?.duration ?? m.duration,
+      addedAt: m.addedAt ? new Date(m.addedAt * 1000) : undefined,
+      lastPlayedAt: m.lastViewedAt ? new Date(m.lastViewedAt * 1000) : undefined,
+    };
+  }
+
+  /**
+   * What changed since `since`, newest change first, page by page until the changes are older.
+   * Sorting (rather than a `updatedAt>` filter) works on every Plex version. Plus each
+   * section's total, one header-only request each, so the caller can spot deletions.
+   */
+  async getLibraryChanges(since: Date): Promise<{ changed: LibraryItem[]; totals: Record<string, number> } | null> {
+    const sections = await this.server<{ MediaContainer: { Directory?: { key: string; type: string }[] } }>(
+      '/library/sections',
+    );
+    const wanted = (sections.MediaContainer.Directory ?? []).filter((d) => d.type === 'movie' || d.type === 'show');
+    const cutoff = Math.floor(since.getTime() / 1000);
+    const changed: LibraryItem[] = [];
+    const totals: Record<string, number> = {};
+    for (const d of wanted) {
+      for (let start = 0; ; start += DELTA_PAGE) {
+        const page = await this.server<PlexContainer>(
+          `/library/sections/${d.key}/all?sort=updatedAt:desc&X-Plex-Container-Start=${start}&X-Plex-Container-Size=${DELTA_PAGE}`,
+          this.adminToken,
+          true, // sorting a large section can take Plex a while; that is size, not load
+        );
+        if (start === 0) totals[d.key] = page.MediaContainer.totalSize ?? page.MediaContainer.size ?? 0;
+        const batch = page.MediaContainer.Metadata ?? [];
+        const recent = batch.filter((m) => (m.updatedAt ?? m.addedAt ?? 0) >= cutoff);
+        for (const m of recent) changed.push(this.libraryItem(m, d.key));
+        if (recent.length < batch.length || batch.length < DELTA_PAGE) break;
+        // So much changed (a rescan, a big import) that one full listing is cheaper.
+        if (start + DELTA_PAGE >= MAX_DELTA_ITEMS) return null;
+      }
+    }
+    return { changed, totals };
   }
 
   async getLibraries(): Promise<LibrarySection[]> {
@@ -443,8 +485,11 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     // is what makes seasons and episodes countable inside a show library.
     const countOf = async (key: string, type?: number): Promise<number> => {
       const query = `X-Plex-Container-Size=0${type ? `&type=${type}` : ''}`;
+      // Counting episodes makes Plex walk the whole show library: bulk, see http.ts.
       const page = await this.server<PlexContainer>(
         `/library/sections/${key}/all?${query}`,
+        this.adminToken,
+        true,
       ).catch(() => ({ MediaContainer: {} }) as PlexContainer);
       return page.MediaContainer.totalSize ?? page.MediaContainer.size ?? 0;
     };
@@ -496,7 +541,8 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     });
     if (since) params.set('viewedAt>', String(Math.floor(since.getTime() / 1000)));
     // History is only exposed to the server owner token, not to individual user tokens.
-    const res = await this.server<PlexContainer>(`/status/sessions/history/all?${params}`);
+    // Sorting a long play history is slow on Plex's side, not a sign of load: bulk, see http.ts.
+    const res = await this.server<PlexContainer>(`/status/sessions/history/all?${params}`, this.adminToken, true);
     // Newest first. Cut here as well as in the request: an answer that ignores the page size
     // would otherwise bring the whole history through the metadata lookups below.
     const rows = (res.MediaContainer.Metadata ?? []).filter((m) => m.viewedAt).slice(0, HISTORY_LIMIT);

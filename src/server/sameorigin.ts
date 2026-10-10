@@ -35,11 +35,19 @@ export function isCrossSiteWrite(
     return true; // "null", from a sandboxed frame or a privacy redirect
   }
 
+  return !acceptedHosts(headers, appUrl).includes(originHost);
+}
+
+/** The hosts this app answers as: what the proxy forwarded, the Host header, APP_URL. */
+export function acceptedHosts(
+  headers: { get(name: string): string | null },
+  appUrl: string | undefined = process.env.APP_URL,
+): (string | undefined)[] {
   const accepted = [firstValue(headers.get('x-forwarded-host')), firstValue(headers.get('host'))];
   try {
     if (appUrl) accepted.push(new URL(appUrl).host.toLowerCase());
   } catch {
     // An unusable APP_URL just means it cannot vouch for anything.
   }
-  return !accepted.includes(originHost);
+  return accepted;
 }

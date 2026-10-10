@@ -13,8 +13,7 @@ import {
   formatMinutes,
   formatTimeAgo,
 } from '@/components/format';
-import { getAdapter } from '@/server/config';
-import { getSections } from '@/server/library';
+import { getRecentlyAdded, getSections } from '@/server/library';
 import { getLibraryTotals } from '@/server/librarystats';
 import { getLiveSessions } from '@/server/livesessions';
 import { getConcurrencyPeak, getClientSessions } from '@/server/playback';
@@ -92,7 +91,6 @@ export default async function DashboardPage({
     by === 'time' ? formatMinutes(value) : t('common.plays', { count: value });
   const viewers = (value: number) => t('dashboard.viewers', { count: value });
 
-  const adapter = await getAdapter(serverId).catch(() => null);
   const sections = await getSections(serverId).catch(() => []);
 
   const [
@@ -109,6 +107,7 @@ export default async function DashboardPage({
     sparkPlays,
     sparkTime,
     yearDays,
+    yearPlays,
     streak,
     bestStreak,
   ] = await Promise.all([
@@ -131,6 +130,9 @@ export default async function DashboardPage({
     getDailyPlays(scope, Math.min(days, SPARK_DAYS)),
     getDailyActivity(scope, Math.min(days, SPARK_DAYS)),
     getDailyActivity(scope, 365),
+    // Active days count plays, not minutes: a day of short or runtime-less (imported) plays is
+    // 0 minutes after rounding, yet getStreak counts it — the lights showed gaps it did not.
+    getDailyPlays(scope, 365),
     getStreak(scope),
     getLongestStreak(scope),
   ]);
@@ -148,7 +150,7 @@ export default async function DashboardPage({
     .sort((a, b) => b.value - a.value)
     .slice(0, TOP_LIBRARIES);
 
-  const added = (await adapter?.getRecentlyAdded(RECENT_ADDED).catch(() => [])) ?? [];
+  const added = await getRecentlyAdded(serverId, RECENT_ADDED).catch(() => []);
   const posters = await cachedPosters(added);
 
   // A paused stream is live but not playing: only a running one earns the amber light.
@@ -174,7 +176,7 @@ export default async function DashboardPage({
   const greetingKey =
     hour < 5 ? 'night' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
 
-  const activeDaysInYear = yearDays.filter((day) => day.value > 0).length;
+  const activeDaysInYear = yearPlays.filter((day) => day.value > 0).length;
   const busiest = yearDays.reduce((best, day) => (day.value > best.value ? day : best), {
     label: '',
     value: 0,
@@ -189,7 +191,7 @@ export default async function DashboardPage({
         )
       : '—';
   // The last two weeks as lit/unlit days, for the streak tile.
-  const lastTwoWeeks = yearDays.slice(-14).map((day) => day.value > 0);
+  const lastTwoWeeks = yearPlays.slice(-14).map((day) => day.value > 0);
 
   return (
     <>

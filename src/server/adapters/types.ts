@@ -168,6 +168,14 @@ export interface MediaServerAdapter {
   getLibraries(): Promise<LibrarySection[]>;
 
   /**
+   * Delta sync, where the backend can sort by change time: the items changed since `since`,
+   * plus how many items each library holds now (a changed total means something was deleted,
+   * which a delta cannot show). Null when the change list is too long to be worth it — the
+   * caller then loads everything.
+   */
+  getLibraryChanges?(since: Date): Promise<{ changed: LibraryItem[]; totals: Record<string, number> } | null>;
+
+  /**
    * Newest additions, newest first. Without a section id this spans every library, which
    * is what the media.added notification watches; the newsletter passes one so an admin
    * can leave a library out of it.

@@ -13,6 +13,7 @@ export default function BottomNav({
 }: {
   items: NavItem[];
   /** Streams that are actually running (a paused one does not light the bulb). */
+  /** The viewer's own running streams (the personal Activity tab), not the server's. */
   playingCount: number;
 }) {
   const pathname = usePathname();

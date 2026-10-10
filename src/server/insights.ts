@@ -1,7 +1,7 @@
 import 'server-only';
 import { cache } from 'react';
 import { sql } from 'drizzle-orm';
-import { db } from '@/db';
+import { readDb as db } from '@/server/readcache';
 import { globalState } from '@/server/state';
 import { scopeFilter, type Scope } from '@/server/stats';
 import { badgeVersion, listCustomBadges } from '@/server/badges';
@@ -53,7 +53,7 @@ const loadPlays = cache(async (userId: number | null, serverId: number | null): 
     SELECT user_id, item_id, title, grandparent_title, media_type, year, genres, duration_ms,
            strftime('%Y-%m-%d %H', watched_at / 1000, 'unixepoch', 'localtime') AS slot
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${scopeFilter(scope, '', true)}
       -- strftime answers NULL beyond year 9999 (a bad import); one such row must not take the page down.
       AND watched_at / 1000 BETWEEN 0 AND 253402300799
     ORDER BY watched_at DESC

@@ -8,18 +8,84 @@ import { globalState } from './state';
 // Process-wide (see state.ts): per module graph the tick and the pages would each fetch and
 // hold their own copy, and a forced refresh from a page would leave the tick's copy stale.
 const TTL_MS = 5 * 60 * 1000;
-const cache = globalState('library.items', () => new Map<number, { items: LibraryItem[]; at: number }>());
+/** `fullAt`: the last complete listing. Deltas build on it; a full one runs at least this often. */
+const FULL_EVERY_MS = 6 * 60 * 60 * 1000;
+// A change logged by the media server's clock can be a little behind ours.
+const DELTA_OVERLAP_MS = 10 * 60 * 1000;
+const cache = globalState('library.items', () => new Map<number, { items: LibraryItem[]; at: number; fullAt: number }>());
+// Refreshes in flight, one per cache and server, so ten page views start one fetch, not ten.
+const inflight = globalState('library.inflight', () => new Map<string, Promise<unknown>>());
+
+/**
+ * Stale-while-revalidate. A page used to wait for the whole Plex library every time the five
+ * minutes ran out (every other dashboard view, since the sync refreshes every ten): a large
+ * library takes many seconds to list. Now an old copy is answered at once and refreshed behind
+ * it; only a cold cache (right after a start) waits, and `force` always does.
+ */
+export function revalidate<T>(
+  key: string,
+  hit: { at: number } | undefined,
+  force: boolean,
+  load: () => Promise<T>,
+): { wait: Promise<T> } | null {
+  const fresh = hit && Date.now() - hit.at < TTL_MS;
+  if (fresh && !force) return null;
+  let running = inflight.get(key) as Promise<T> | undefined;
+  if (!running) {
+    running = load().finally(() => inflight.delete(key));
+    inflight.set(key, running);
+  }
+  if (hit && !force) {
+    running.catch(() => {}); // a failed refresh keeps the old copy; the next view tries again
+    return null;
+  }
+  return { wait: running };
+}
 
 export async function getLibrary(serverId: number, force = false): Promise<LibraryItem[]> {
   const hit = cache.get(serverId);
-  if (!force && hit && Date.now() - hit.at < TTL_MS) return hit.items;
-  const items = await (await getAdapter(serverId)).getLibrary();
-  cache.set(serverId, { items, at: Date.now() });
-  return items;
+  const pending = revalidate(`items:${serverId}`, hit, force, async () => {
+    const adapter = await getAdapter(serverId);
+    const started = Date.now();
+    if (hit && !force && adapter.getLibraryChanges && started - hit.fullAt < FULL_EVERY_MS) {
+      const delta = await adapter.getLibraryChanges(new Date(hit.at - DELTA_OVERLAP_MS));
+      const items = delta && mergeLibrary(hit.items, delta.changed, delta.totals);
+      if (items) {
+        cache.set(serverId, { items, at: started, fullAt: hit.fullAt });
+        return items;
+      }
+    }
+    const items = await adapter.getLibrary();
+    cache.set(serverId, { items, at: started, fullAt: started });
+    return items;
+  });
+  return pending ? pending.wait : hit!.items;
 }
 
 // The section list costs three requests per show library — series, seasons and episodes
 // are separate totals — and four pages ask for it. Same TTL as the item cache above.
+/**
+ * Applies a delta to a cached listing: changed items replace or join it. Null when a library's
+ * total no longer matches — something was deleted, which only a full listing can show.
+ */
+export function mergeLibrary(
+  items: LibraryItem[],
+  changed: LibraryItem[],
+  totals: Record<string, number>,
+): LibraryItem[] | null {
+  const byId = new Map(items.map((item) => [item.itemId, item]));
+  for (const item of changed) byId.set(item.itemId, item);
+  const merged = [...byId.values()];
+  const counts = new Map<string, number>();
+  for (const item of merged) counts.set(item.sectionId ?? '', (counts.get(item.sectionId ?? '') ?? 0) + 1);
+  for (const [sectionId, total] of Object.entries(totals)) {
+    if ((counts.get(sectionId) ?? 0) !== total) return null;
+  }
+  // A library that disappeared altogether: its items must go too.
+  for (const sectionId of counts.keys()) if (!(sectionId in totals)) return null;
+  return merged;
+}
+
 const sectionCache = globalState(
   'library.sections',
   () => new Map<number, { sections: LibrarySection[]; at: number }>(),
@@ -28,10 +94,30 @@ const sectionCache = globalState(
 /** The libraries of one server, with their counts. Cached like getLibrary(). */
 export async function getSections(serverId: number, force = false): Promise<LibrarySection[]> {
   const hit = sectionCache.get(serverId);
-  if (!force && hit && Date.now() - hit.at < TTL_MS) return hit.sections;
-  const sections = await (await getAdapter(serverId)).getLibraries();
-  sectionCache.set(serverId, { sections, at: Date.now() });
-  return sections;
+  const pending = revalidate(`sections:${serverId}`, hit, force, async () => {
+    const sections = await (await getAdapter(serverId)).getLibraries();
+    sectionCache.set(serverId, { sections, at: Date.now() });
+    return sections;
+  });
+  return pending ? pending.wait : hit!.sections;
+}
+
+const recentCache = globalState('library.recent', () => new Map<string, { items: LibraryItem[]; at: number }>());
+
+/**
+ * Recently added, for the dashboard, the lobby screen and a library page. These asked the
+ * media server live on every render — on Plex one more request in the way of every page
+ * load. Same rule as above; a cold cache waits at most for this one request.
+ */
+export async function getRecentlyAdded(serverId: number, limit: number, sectionId?: string): Promise<LibraryItem[]> {
+  const key = `${serverId}|${sectionId ?? ''}|${limit}`;
+  const hit = recentCache.get(key);
+  const pending = revalidate(`recent:${key}`, hit, false, async () => {
+    const items = await (await getAdapter(serverId)).getRecentlyAdded(limit, sectionId);
+    recentCache.set(key, { items, at: Date.now() });
+    return items;
+  });
+  return pending ? pending.wait : hit!.items;
 }
 
 /* ------------------------------------------------------------------ *

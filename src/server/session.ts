@@ -39,6 +39,26 @@ function unsign(value: string): string | null {
   return a.length === b.length && timingSafeEqual(a, b) ? id : null;
 }
 
+// The Plex PIN flow: plex.tv hands the token of an approved PIN to anyone who knows its
+// (sequential) id and this app's fixed client id. Binding the PIN to the browser that started
+// it keeps a stranger from polling neighbouring ids and receiving somebody else's sign-in.
+const PIN_COOKIE = 'watcharr_plex_pin';
+
+export async function bindPlexPin(pinId: string): Promise<void> {
+  (await cookies()).set(PIN_COOKIE, sign(pinId), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: await useSecureCookie(),
+    path: '/api/auth/plex',
+    maxAge: 20 * 60, // plex.tv lets a PIN expire after about fifteen minutes
+  });
+}
+
+export async function isPlexPinBound(pinId: string): Promise<boolean> {
+  const raw = (await cookies()).get(PIN_COOKIE)?.value;
+  return !!raw && unsign(raw) === pinId;
+}
+
 /**
  * Whether the session cookie may carry the Secure flag.
  *

@@ -410,6 +410,11 @@ export const playbackSessions = sqliteTable(
     startedIdx: index('playback_sessions_started_idx').on(t.startedAt),
     userStartedIdx: index('playback_sessions_user_started_idx').on(t.userId, t.startedAt),
     lastSeenIdx: index('playback_sessions_last_seen_idx').on(t.lastSeenAt),
+    // The few open rows, which every activity poll looks for (state != 'ended' plus the
+    // server prefix, which no index can serve on its own): a scan of a million rows per poll before.
+    openIdx: index('playback_sessions_open_idx').on(t.sessionKey).where(sql`state != 'ended'`),
+    // Item pages fall back to the sessions for media info and a playing item.
+    itemIdx: index('playback_sessions_item_idx').on(t.itemId, t.startedAt),
   }),
 );
 

@@ -40,12 +40,12 @@ export default function EventPrefs({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const result = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const result = (await res.json().catch(() => ({}))) as { ok?: boolean; pending?: boolean; error?: string };
       if (!res.ok || result.error) {
         setError(result.error ?? t('error.generic'));
         return;
       }
-      setMessage(t('notifyMe.saved'));
+      setMessage(result.pending ? t('mail.confirmSent') : t('notifyMe.saved'));
       router.refresh();
     } catch {
       setError(t('error.generic'));

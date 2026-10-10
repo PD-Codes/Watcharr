@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { badBody, readBody } from '@/server/body';
-import { subscribe, unsubscribe } from '@/server/newsletter';
+import { getT } from '@/i18n/server';
+import { isOwnAddress, sendConfirmation } from '@/server/mailconfirm';
+import { getSubscription, subscribe, unsubscribe } from '@/server/newsletter';
 import { getSession } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -21,8 +23,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'That does not look like an email address' }, { status: 400 });
   }
 
-  await subscribe(session.user.id, address);
-  return NextResponse.json({ ok: true });
+  // The account's own address, or the one already confirmed, needs no round trip.
+  const current = await getSubscription(session.user.id);
+  if (isOwnAddress(session.user.email, address) || isOwnAddress(current?.email, address)) {
+    await subscribe(session.user.id, address);
+    return NextResponse.json({ ok: true });
+  }
+  const t = await getT();
+  const sent = await sendConfirmation(request, session.user.id, address, 'newsletter', {
+    subject: t('mail.confirmSubject'),
+    body: t('mail.confirmNewsletter'),
+    button: t('mail.confirmButton'),
+  });
+  if (!sent.ok) return NextResponse.json({ error: sent.error }, { status: 400 });
+  return NextResponse.json({ ok: true, pending: true });
 }
 
 export async function DELETE() {

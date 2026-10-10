@@ -34,8 +34,9 @@ function scheduleHint(t: Translate, settings: Awaited<ReturnType<typeof getSetti
     : t('profile.nlOff');
 }
 
-export default async function NotificationsPage() {
+export default async function NotificationsPage({ searchParams }: { searchParams: Promise<{ mail?: string }> }) {
   const { user } = await requireUser();
+  const { mail } = await searchParams;
   const t = await getT();
   const settings = await getSettings();
   const subscription = await getSubscription(user.id);
@@ -49,6 +50,8 @@ export default async function NotificationsPage() {
       <p className="eyebrow">{user.username}</p>
       <h1>{t('nav.notifications')}</h1>
       <p className="subtitle">{t('notifyMe.subtitle')}</p>
+      {mail === 'confirmed' && <p role="status">{t('mail.confirmed')}</p>}
+      {mail === 'invalid' && <p className="error" role="alert">{t('mail.invalid')}</p>}
 
       <section>
         <EventPrefs

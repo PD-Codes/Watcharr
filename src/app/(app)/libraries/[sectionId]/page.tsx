@@ -4,8 +4,7 @@ import { Icon } from '@/components/Icons';
 import { BarChart, StatCard } from '@/components/Charts';
 import Poster from '@/components/Poster';
 import { artUrl, formatDate, formatDuration } from '@/components/format';
-import { getAdapter } from '@/server/config';
-import { getLibrary, getSections } from '@/server/library';
+import { getLibrary, getRecentlyAdded, getSections } from '@/server/library';
 import { cachedPosters } from '@/server/tmdb';
 import {
   getLibraryTopTitles,
@@ -53,7 +52,7 @@ export default async function LibraryDetailPage({
     getLibraryUsers(serverId, sectionId, scope),
     getLibraryTopTitles(serverId, sectionId, scope),
     getLibrary(serverId).then((all) => all.filter((item) => item.sectionId === sectionId)),
-    (await getAdapter(serverId)).getRecentlyAdded(RECENT_LIMIT, sectionId).catch(() => []),
+    getRecentlyAdded(serverId, RECENT_LIMIT, sectionId).catch(() => []),
   ]);
 
   const posters = await cachedPosters(recent);

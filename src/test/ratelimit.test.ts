@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { clearRateLimit, isRateLimited, rateLimit } from '../server/ratelimit';
+import { clearRateLimit, clientIp, isRateLimited, rateLimit } from '../server/ratelimit';
 
 // Counting, reading without counting, and clearing.
 assert.ok(rateLimit('a', 2, 60_000));
@@ -32,3 +32,16 @@ assert.ok(!isRateLimited('stale', 1), 'the least recently used counter was evict
 assert.ok(isRateLimited('hot', 1), 'a counter that keeps being hit stays');
 
 console.log('ok - rate limit counters are bounded and expire');
+
+// The client writes the start of X-Forwarded-For, the reverse proxy appends the real address:
+// only the proxy's entry may count, or one made-up value per request beats every limit.
+{
+  const req = (xff?: string, real?: string) =>
+    new Request('http://app/', { headers: { ...(xff ? { 'x-forwarded-for': xff } : {}), ...(real ? { 'x-real-ip': real } : {}) } });
+  assert.equal(clientIp(req('6.6.6.6, 203.0.113.9')), '203.0.113.9', 'the entry our proxy added');
+  assert.equal(clientIp(req('6.6.6.6, 198.51.100.1, 203.0.113.9'), 2), '198.51.100.1', 'two trusted proxies');
+  assert.equal(clientIp(req('203.0.113.9'), 5), '203.0.113.9', 'more hops than entries: the first one');
+  assert.equal(clientIp(req(undefined, '10.0.0.2')), '10.0.0.2');
+  assert.equal(clientIp(req()), 'unknown');
+  console.log('ok - the client address comes from our own proxy, not from the client');
+}
