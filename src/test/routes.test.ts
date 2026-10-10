@@ -441,6 +441,11 @@ async function main() {
       '/pick',
       '/pick?type=movie&length=quick',
       '/screen',
+      '/screen?view=me',
+      '/wrapped?view=server',
+      '/wrapped/story?view=server',
+      '/stats?days=7',
+      '/admin/stats?days=365',
       '/api/wrapped/card',
       '/title/Blade%20Runner',
       '/title/Firefly',
@@ -681,6 +686,8 @@ async function main() {
       ['/pick', ['Pick something for me', 'pick-stage']],
       ['/wrapped/story', ['Your year, as a story']],
       ['/screen', ['Lobby display']],
+      // The server's year: its own heading, the switch back, and the people ranking.
+      ['/wrapped?view=server', ['the year in review', 'view=server', 'Who watched most']],
       ['/', ['skip-link', 'live-pill']],
       // The deep link out to the media server's own UI.
       ['/suggestions', ['Open in', `127.0.0.1:${STUB_PORT}/web/index.html#/details?id=`]],

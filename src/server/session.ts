@@ -250,7 +250,11 @@ export async function getSession(): Promise<Session | null> {
   if (boundTo !== real.id || !isAdmin(real.user)) return real;
   const [viewed] = await db.select().from(users).where(eq(users.id, Number(target)));
   if (!viewed || viewed.id === real.user.id || !canSee(real.user, viewed)) return real;
-  return { id: real.id, user: viewed, serverToken: '', preview: { admin: real.user } };
+  // Never more rights than the person previewing: a server admin looking at the global admin
+  // would otherwise get every global-admin page and the database download for as long as the
+  // preview cookie lives (proxy.ts only blocks writes).
+  const user = { ...viewed, globalAdmin: viewed.globalAdmin && real.user.globalAdmin };
+  return { id: real.id, user, serverToken: '', preview: { admin: real.user } };
 }
 
 /** Starts (or, with null, ends) the preview. The caller has already checked `canSee`. */

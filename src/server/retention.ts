@@ -55,8 +55,8 @@ export async function prune(): Promise<number> {
   }
 
   // Freed pages are only reusable, not returned, so the file keeps its size — the one
-  // number an operator came here to reduce. Skipped when nothing was deleted, because the
-  // rebuild takes a write lock over the whole database.
+  // number an operator came here to reduce. Skipped when nothing was deleted, and vacuum()
+  // itself skips it until a quarter of the file is free: the rebuild locks the whole database.
   if (deleted > 0) vacuum();
   return deleted;
 }

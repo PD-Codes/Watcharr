@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { appendFile, mkdir, open, readFile, readdir, rm, stat, statfs, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 // Chunked, resumable upload for a Tautulli database. No 'server-only': plain fs code that
@@ -115,7 +115,15 @@ export async function appendChunk(
   if (!data.length || info.received + data.length > info.size) {
     throw new UploadError('Chunk is empty or runs past the announced size', 400, info.received);
   }
-  await appendFile(part(dir, id), data);
+  // Written at the offset rather than appended: two requests for the same chunk (a double
+  // click, two tabs) both pass the check above, and two appends would leave the file longer
+  // than announced and the upload stuck. Two positional writes of the same bytes are harmless.
+  const handle = await open(part(dir, id), 'r+');
+  try {
+    await handle.write(data, 0, data.length, offset);
+  } finally {
+    await handle.close();
+  }
 
   const after = await uploadInfo(dir, id);
   if (after.complete) {

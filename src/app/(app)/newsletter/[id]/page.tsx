@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { formatDate } from '@/components/format';
 import { getSettings } from '@/server/config';
 import { requireUser } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 
 // No loading.tsx in this segment: it calls notFound(). See the streaming note in CLAUDE.md.
 export const dynamic = 'force-dynamic';
@@ -19,6 +19,9 @@ export default async function NewsletterPage({ params }: { params: Promise<{ id:
   const settings = await getSettings();
 
   if (id !== settings.newsletterUniqueId || !settings.newsletterLastHtml) notFound();
+  // The issue in the reader's language when it was rendered in it (issues sent before the
+  // per-language copy existed only have the default one).
+  const html = settings.newsletterLastHtmlByLocale?.[await getLocale()] ?? settings.newsletterLastHtml;
 
   return (
     <>
@@ -35,7 +38,7 @@ export default async function NewsletterPage({ params }: { params: Promise<{ id:
           cannot leak into the app's own stylesheet. */}
       <iframe
         title={settings.newsletterSubject}
-        srcDoc={settings.newsletterLastHtml}
+        srcDoc={html}
         sandbox=""
         style={{ width: '100%', height: '70vh', border: '1px solid var(--line)', borderRadius: 12 }}
       />

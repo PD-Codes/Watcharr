@@ -18,6 +18,10 @@ export interface DoctorInput {
   updateAvailable: string | null;
   importInterrupted: boolean;
   restorePending: boolean;
+  /** How SQLite is running. Optional so older callers (and tests) need not supply it. */
+  database?: { journalMode: string; remoteFs: string | null; readers: number; walBytes: number };
+  /** Hosts paused for overload right now ("plex:32400 — database is locked"). */
+  strained?: string[];
 }
 
 export interface Check {
@@ -36,6 +40,15 @@ export function evaluateDoctor(i: DoctorInput, now = Date.now()): Check[] {
   add('secret', i.secretIsPlaceholder ? 'fail' : 'ok');
   add('migrations', i.pendingMigrations > 0 ? 'fail' : 'ok', { count: i.pendingMigrations });
   add('servers', i.downServers.length ? 'fail' : 'ok', { servers: i.downServers.join(', ') });
+  if (i.strained) add('load', i.strained.length ? 'warn' : 'ok', { hosts: i.strained.join(', ') });
+  if (i.database) {
+    const d = i.database;
+    // Not WAL: every write blocks every read. A share: locks are unreliable ("database is locked").
+    const level: Level = d.journalMode !== 'wal' ? 'fail' : d.remoteFs ? 'warn' : 'ok';
+    add('database', level, { mode: d.journalMode, fs: d.remoteFs ?? '', readers: d.readers });
+    // journal_size_limit trims it after a checkpoint; one that stays this big is never checkpointed.
+    add('wal', d.walBytes > 256 * 1024 ** 2 ? 'warn' : 'ok', { size: Math.round(d.walBytes / 1024 ** 2) });
+  }
 
   // Backups: scheduled ones that have stopped are worse than none that were never wanted.
   const staleAfter = Math.max(i.backup.intervalHours, 1) * 3_600_000 * 2;

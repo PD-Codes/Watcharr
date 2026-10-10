@@ -186,7 +186,6 @@ export default async function AdminUserDetailPage({
               <BarChart
                 data={genres}
                 format={(v) => t('common.plays', { count: v })}
-                hrefFor={(label) => `/history?genre=${encodeURIComponent(label)}`}
               />
             </div>
           </section>

@@ -664,6 +664,45 @@ html:has(.scr) {
   background: var(--surface-container-highest);
 }
 
+.scr-views {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--shape-full);
+  background: var(--glass-strong);
+}
+
+.scr-views a {
+  display: inline-grid;
+  place-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--shape-full);
+  color: var(--text-dim);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.scr-views a:hover {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+/* Neutral, not amber: amber is reserved for "playing" and data. */
+.scr-views a.on {
+  background: var(--surface-container-highest);
+  color: var(--text);
+}
+
+.scr-scope {
+  font-family: var(--font-body-stack);
+  font-variation-settings: normal;
+  font-weight: 500;
+  font-size: 0.5em;
+  color: var(--text-dim);
+}
+
 .scr-hint {
   position: absolute;
   z-index: 1;

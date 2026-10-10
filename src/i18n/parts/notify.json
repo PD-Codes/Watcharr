@@ -250,5 +250,9 @@
   "libraries.sortBy": {
     "en": "Sort by {column}",
     "de": "Nach {column} sortieren"
+  },
+  "libraries.typeAudio": {
+    "en": "Music & audiobooks",
+    "de": "Musik & Hörbücher"
   }
 }

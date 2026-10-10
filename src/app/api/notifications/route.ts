@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
   // The allowlist is applied here as well as in the form: a non-admin must not be able to
   // subscribe to server-wide events by posting their keys directly.
-  const allowed = selectableEvents(session.user.isAdmin || session.user.globalAdmin) as string[];
+  const allowed = selectableEvents(session.user.isAdmin, session.user.globalAdmin) as string[];
   const events = (body.events ?? []).filter((event) => allowed.includes(event));
   if (events.length && !address) {
     return NextResponse.json({ error: 'An email address is required' }, { status: 400 });

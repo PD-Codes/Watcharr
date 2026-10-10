@@ -2,7 +2,9 @@ import 'server-only';
 import { readdirSync, statSync } from 'node:fs';
 import { stat, statfs } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { db, DB_PATH } from '@/db';
+import { db, DB_PATH, dbInfo } from '@/db';
+import { readerStatus } from '@/db/readers';
+import { strainedHosts } from './strain';
 import { createAdapter, type ServerType } from './adapters';
 import { listAutoBackups } from './autobackup';
 import { listBackups, pendingRestore } from './backups';
@@ -74,6 +76,13 @@ export async function runDoctor(): Promise<{ checks: Check[]; usage: { label: st
     updateAvailable: update?.outdated ? update.latest : null,
     importInterrupted: job?.status === 'interrupted',
     restorePending: restore !== null,
+    strained: strainedHosts().map((s) => `${s.host} (${s.reason})`),
+    database: {
+      journalMode: dbInfo().journalMode,
+      remoteFs: dbInfo().remoteFs,
+      readers: readerStatus()?.broken ? 0 : (readerStatus()?.size ?? 0),
+      walBytes,
+    },
   });
 
   const importsDir = join(dataDir, 'imports');

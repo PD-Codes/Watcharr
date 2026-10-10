@@ -121,6 +121,8 @@ export const appSettings = sqliteTable('app_settings', {
   newsletterLastSentAt: integer('newsletter_last_sent_at', { mode: 'timestamp_ms' }),
   /** Rendered HTML of the last issue, so the static URL does not rebuild it. */
   newsletterLastHtml: text('newsletter_last_html'),
+  /** The same issue in every app language, so a German reader of the static URL gets German. */
+  newsletterLastHtmlByLocale: text('newsletter_last_html_by_locale', { mode: 'json' }).$type<Record<string, string>>(),
   // Cached result of the upstream release check, see server/update.ts.
   updateCheckedAt: integer('update_checked_at', { mode: 'timestamp_ms' }),
   updateLatestVersion: text('update_latest_version'),

@@ -358,12 +358,18 @@ function Intermission({
 export default function ScreenClient({
   locale,
   serverSlug,
+  scopeLabel = null,
+  views = [],
   streams,
   slides,
   stats,
 }: {
   locale: string;
   serverSlug: string;
+  /** The server's name, shown beside the wordmark when a global admin may pick between several. */
+  scopeLabel?: string | null;
+  /** "Mine" / "Server" switches; empty for someone who only has their own view. */
+  views?: { key: string; label: string; href: string; on: boolean }[];
   streams: ScreenStream[];
   slides: ScreenSlide[];
   stats: ScreenStats | null;
@@ -527,6 +533,7 @@ export default function ScreenClient({
           <div className="scr-brand">
             <span className={`bulb ${hero?.state === 'playing' ? 'on' : ''}`} />
             <span>{t('app.name')}</span>
+            {scopeLabel && <span className="scr-scope">{scopeLabel}</span>}
           </div>
           <Clock locale={locale} />
         </header>
@@ -553,6 +560,15 @@ export default function ScreenClient({
       <div className="scr-dim" ref={dimRef} aria-hidden />
 
       <div className="scr-controls">
+        {views.length > 1 && (
+          <nav className="scr-views" aria-label={t('view.label')}>
+            {views.map((v) => (
+              <Link key={v.key} href={v.href} className={v.on ? 'on' : undefined} aria-current={v.on ? 'page' : undefined}>
+                {v.label}
+              </Link>
+            ))}
+          </nav>
+        )}
         {can?.fullscreen && (
           <button
             type="button"

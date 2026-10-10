@@ -1,7 +1,9 @@
 import { ImageResponse } from 'next/og';
 import { NextResponse } from 'next/server';
 import { rateLimit } from '@/server/ratelimit';
+import { getServer } from '@/server/config';
 import { getSession } from '@/server/session';
+import { resolveView } from '@/server/viewscope';
 import { globalState } from '@/server/state';
 import { getWrapped } from '@/server/wrapped';
 import { cardText, parseYear, watchTime } from '@/server/wrapped-story-core';
@@ -42,14 +44,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: NO_STORE });
   }
 
-  const year = parseYear(new URL(request.url).searchParams.get('year'));
-  const cacheKey = `${session.user.id}:${year}:${await getLocale()}`;
+  const query = new URL(request.url).searchParams;
+  const year = parseYear(query.get('year'));
+  const server = await getServer(session.user.serverId);
+  if (!server) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE });
+  // Personal by default; an admin may ask for a server's year, resolved by the same rule as the page.
+  const view = await resolveView(
+    { ...session, server },
+    { view: query.get('view') ?? undefined, server: query.get('server') ?? undefined },
+  );
+  const cacheKey = `${session.user.id}:${view.kind}:${view.server.id}:${year}:${await getLocale()}`;
   const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.at < CARD_TTL_MS) {
     return new Response(hit.png.slice(0), { headers: { ...NO_STORE, 'Content-Type': 'image/png' } });
   }
 
-  const wrapped = await getWrapped(session.user.id, year);
+  const wrapped = await getWrapped(view.scope, year);
   if (wrapped.plays === 0) {
     return NextResponse.json({ error: 'No plays in this year' }, { status: 404, headers: NO_STORE });
   }
@@ -61,7 +71,7 @@ export async function GET(request: Request) {
   const genre = wrapped.topGenres[0];
   // Text is reduced to what the bundled font can draw: anything else makes the renderer fetch
   // fonts and emoji from the internet (leaking the characters) and abort when that fails.
-  const username = cardText(session.user.username, 40);
+  const username = cardText(view.kind === 'server' ? view.server.label : session.user.username, 40);
 
   const cells: { label: string; value: string; unit?: string; sub?: { value: string; label: string } }[] = [
     {

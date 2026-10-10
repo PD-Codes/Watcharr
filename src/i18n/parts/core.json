@@ -66,5 +66,10 @@
 
   "profile.language.label": { "en": "Language", "de": "Sprache" },
   "profile.language.followDefault": { "en": "Follow the deployment default", "de": "Standard der Installation verwenden" },
-  "profile.language.failed": { "en": "Could not save the language", "de": "Sprache konnte nicht gespeichert werden" }
+  "profile.language.failed": { "en": "Could not save the language", "de": "Sprache konnte nicht gespeichert werden" },
+  "split.movies": { "en": "{count} {count|movie|movies}", "de": "{count} {count|Film|Filme}" },
+  "split.shows": { "en": "{count} series", "de": "{count} Serien" },
+  "split.episodes": { "en": "{count} {count|episode|episodes}", "de": "{count} {count|Episode|Episoden}" },
+  "split.audio": { "en": "{count} music & audiobooks", "de": "{count} Musik & Hörbücher" },
+  "split.other": { "en": "{count} other", "de": "{count} sonstige" }
 }

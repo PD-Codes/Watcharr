@@ -1,4 +1,4 @@
-import { and, eq, gte, like, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, like, or, sql, type SQL } from 'drizzle-orm';
 import { watchHistory } from '@/db/schema';
 
 // Shared by the history page and the CSV export so both show exactly the same rows.
@@ -37,7 +37,11 @@ const LOCAL_TS = sql`${watchHistory.watchedAt} / 1000, 'unixepoch', 'localtime'`
 export function historyFilters(userId: number, params: HistoryFilterParams): SQL | undefined {
   const filters: SQL[] = [eq(watchHistory.userId, userId)];
   // SQLite's LIKE is already case-insensitive for ASCII, so no ILIKE is needed.
-  if (params.q) filters.push(like(watchHistory.title, `%${params.q}%`));
+  // The show name too: the rows lead with it, and searching "Firefly" found no episode of it.
+  if (params.q) {
+    const needle = `%${params.q}%`;
+    filters.push(or(like(watchHistory.title, needle), like(watchHistory.grandparentTitle, needle))!);
+  }
   if (params.type) filters.push(eq(watchHistory.mediaType, params.type));
   // Whitelisted, not coerced: `1e9` made an invalid Date and `abc` made NaN, and both ended in an
   // empty list at 200 instead of the unfiltered one every other page falls back to.

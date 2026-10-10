@@ -1,4 +1,5 @@
 import { apiFetch, joinUrl } from './http';
+import { isStrained } from '../strain';
 import type {
   AuthResult,
   HistoryEntry,
@@ -431,8 +432,10 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     const sections = await this.server<{
       MediaContainer: { Directory?: { key: string; title: string; type: string }[] };
     }>('/library/sections');
+    // Music libraries ('artist', audiobooks included) only as counts: their tracks never enter
+    // getLibrary(), which feeds search and suggestions with titles to watch.
     const wanted = (sections.MediaContainer.Directory ?? []).filter(
-      (d) => d.type === 'movie' || d.type === 'show',
+      (d) => d.type === 'movie' || d.type === 'show' || d.type === 'artist',
     );
 
     // Container-Size=0 returns no items, only the paging header with the total. Plex
@@ -449,6 +452,10 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     return Promise.all(
       wanted.map(async (d) => {
         const isShow = d.type === 'show';
+        // 10 = track: an artist count says little about how much music there is.
+        if (d.type === 'artist') {
+          return { id: d.key, name: d.title, mediaType: 'audio', itemCount: await countOf(d.key, 10) };
+        }
         const [itemCount, seasonCount, episodeCount] = await Promise.all([
           countOf(d.key),
           isShow ? countOf(d.key, 3) : Promise.resolve(undefined),
@@ -529,8 +536,13 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
       if (cached) found.set(key, cached);
       else todo.push(key);
     }
+    // A server paused for load gets no extra lookups. Thrown rather than returning bare rows:
+    // a play stored without its runtime would count zero watch time for good, while an aborted
+    // sync simply fetches the same rows again after the pause.
+    if (todo.length && isStrained(this.baseUrl)) throw new Error('paused while the server is overloaded');
     const work = async () => {
       for (let key = todo.pop(); key; key = todo.pop()) {
+        if (isStrained(this.baseUrl)) return; // stop asking the moment the server struggles
         const res = await apiFetch<PlexContainer>(joinUrl(this.baseUrl, `/library/metadata/${encodeURIComponent(key)}`), {
           headers: this.plexHeaders(this.adminToken),
           timeoutMs: 4_000,
@@ -548,6 +560,8 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
       }
     };
     await Promise.all(Array.from({ length: Math.min(DETAIL_CONCURRENCY, todo.length) }, work));
+    // The server went under during the lookups: same reasoning as above, retry after the pause.
+    if (found.size < keys.size && isStrained(this.baseUrl)) throw new Error('paused while the server is overloaded');
     return found;
   }
 

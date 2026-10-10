@@ -7,10 +7,12 @@ import Poster from '@/components/Poster';
 import { Backdrop, CastStrip, Overview, TmdbFacts } from '@/components/TitleMeta';
 import { artUrl, formatDate, formatDuration, formatMinutes } from '@/components/format';
 import { getSettings } from '@/server/config';
+import { getLibrary } from '@/server/library';
 import { getTitleDetail } from '@/server/titles';
+import type { LibraryItem } from '@/server/adapters/types';
 import { getTitleMeta } from '@/server/tmdb';
 import { adminScope, isAdmin, requireUser } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +30,16 @@ export default async function TitlePage({
   // Admins can look at a title across the whole server; everyone else sees their own plays.
   const serverWide = (await searchParams).scope === 'server' && isAdmin(session.user);
   const detail = await getTitleDetail(label, serverWide ? adminScope(session.user) : { userId: session.user.id });
-  if (!detail) notFound();
+  if (!detail) {
+    // Not watched yet, but in the library (the ⌘K palette lists library hits): a page about
+    // the title instead of a 404. Only from the cached library — an unknown label stays a 404.
+    const wanted = label.trim().toLowerCase();
+    const item = (await getLibrary(session.user.serverId).catch(() => [])).find(
+      (entry) => entry.title.trim().toLowerCase() === wanted,
+    );
+    if (!item) notFound();
+    return <UnwatchedTitle item={item} slug={session.server.slug} serverId={session.user.serverId} />;
+  }
 
   const isShow = detail.distinctItems > 1;
   // Episodes are grouped under their show here, so the lookup is always for the show or the
@@ -39,6 +50,7 @@ export default async function TitlePage({
     detail.label,
     detail.mediaType === 'episode' ? 'show' : detail.mediaType,
     detail.year,
+    await getLocale(),
   );
 
   return (
@@ -193,6 +205,42 @@ export default async function TitlePage({
           </table>
         </div>
       </section>
+    </>
+  );
+}
+
+/** A library title nobody here has played yet: what it is, and where to start it. */
+async function UnwatchedTitle({ item, slug, serverId }: { item: LibraryItem; slug: string; serverId: number }) {
+  const t = await getT();
+  const settings = await getSettings();
+  const meta = await getTitleMeta(settings.tmdbApiKey, item.title, item.mediaType, item.year, await getLocale());
+  return (
+    <>
+      <Backdrop url={meta?.backdropUrl} />
+      <Link className="back-link" href="/stats">
+        <Icon name="back" />
+        {t('title.backToStats')}
+      </Link>
+      <div className="title-head">
+        <Poster src={artUrl(slug, item.itemId)} fallback={meta?.posterUrl} />
+        <div>
+          <h1>{item.title}</h1>
+          <p className="subtitle">{[item.year, t('title.notWatchedYet')].filter(Boolean).join(' · ')}</p>
+          <TmdbFacts meta={meta} />
+          <ul className="chips">
+            {item.genres.map((genre) => (
+              <li key={genre}>
+                <span className="badge">{genre}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="chips">
+            <OpenInServer itemId={item.itemId} serverId={serverId} />
+          </p>
+          <Overview meta={meta} />
+        </div>
+      </div>
+      <CastStrip cast={meta?.cast ?? []} heading={t('title.cast')} />
     </>
   );
 }

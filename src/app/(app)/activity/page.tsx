@@ -6,7 +6,7 @@ import Beam from '@/components/Beam';
 import AutoRefresh from '@/components/AutoRefresh';
 import StreamTable from '@/components/StreamTable';
 import { listSessionHistory } from '@/server/playback';
-import { liveSessionFilter, reportSyncError, syncActivity } from '@/server/sync';
+import { liveSessionFilter, syncActivity, runInBackground } from '@/server/sync';
 import { requireUser } from '@/server/session';
 import { getT } from '@/i18n/server';
 
@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export default async function ActivityPage() {
   const session = await requireUser();
   const t = await getT();
-  await syncActivity().catch(reportSyncError('activity sync'));
+  runInBackground(syncActivity(), 'activity sync');
 
   const rows = await db
     .select()

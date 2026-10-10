@@ -4,7 +4,7 @@ import { db } from '@/db';
 import { playbackSessions } from '@/db/schema';
 import { getSettings, isConfigured } from '@/server/config';
 import { isEnabled } from '@/server/features';
-import { liveSessionFilter, reportSyncError, syncActivity } from '@/server/sync';
+import { liveSessionFilter, syncActivity, runInBackground } from '@/server/sync';
 import { getSession, isAdmin } from '@/server/session';
 import { getT } from '@/i18n/server';
 import NavLink from './NavLink';
@@ -34,7 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const serverStatsEnabled = isEnabled(settings.features, 'serverWideStats');
 
   // Polling here rather than per page keeps the bulb honest on every route.
-  await syncActivity().catch(reportSyncError('activity sync'));
+  runInBackground(syncActivity(), 'activity sync');
 
   // Drives the bulb in the wordmark: lit while anything is playing on the server. A paused
   // stream is still "live" for the counts, but it is not playing, so it does not light amber.

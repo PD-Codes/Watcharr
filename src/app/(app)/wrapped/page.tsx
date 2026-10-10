@@ -11,8 +11,10 @@ import { CastStrip } from '@/components/TitleMeta';
 import { Icon } from '@/components/Icons';
 import { getTopCast } from '@/server/tmdb';
 import { getWrapped, getWrappedYears } from '@/server/wrapped';
-import { reportSyncError, syncHistory } from '@/server/sync';
+import { syncHistory, runInBackground } from '@/server/sync';
 import { requireUser } from '@/server/session';
+import { resolveView, viewQuery } from '@/server/viewscope';
+import ViewSwitch from '@/components/ViewSwitch';
 import { getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
@@ -20,18 +22,27 @@ export const dynamic = 'force-dynamic';
 export default async function WrappedPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string }>;
+  searchParams: Promise<{ year?: string; view?: string; server?: string }>;
 }) {
   const session = await requireUser();
   const t = await getT();
-  await syncHistory(session).catch(reportSyncError('history sync'));
+  runInBackground(syncHistory(session), 'history sync');
 
-  const years = await getWrappedYears(session.user.id);
-  const requested = Number((await searchParams).year);
+  const params = await searchParams;
+  const view = await resolveView(session, params);
+  const serverView = view.kind === 'server';
+  const years = await getWrappedYears(view.scope);
+  const requested = Number(params.year);
   const year = years.includes(requested) ? requested : (years[0] ?? new Date().getFullYear());
-  const wrapped = await getWrapped(session.user.id, year);
+  const wrapped = await getWrapped(view.scope, year);
   // Cache-only, like on the statistics page: nothing here waits on TMDB.
-  const topCast = await getTopCast({ userId: session.user.id }).catch(() => []);
+  const topCast = await getTopCast(view.scope).catch(() => []);
+  // Keeps the chosen view on every link that leads back into this report.
+  const here = (extra: Record<string, string | number>) =>
+    viewQuery({ kind: view.kind, server: view.servers.length > 1 ? view.server.slug : undefined }, extra);
+  // The history and title pages are personal unless told otherwise; the server view links to
+  // the server-wide variant where one exists and not at all where none does.
+  const titleHref = (label: string) => `/title/${encodeURIComponent(label)}${serverView ? '?scope=server' : ''}`;
 
   // Index, not label: the server's labels are English, the names shown are translated.
   const topWeekday = wrapped.weekdays.reduce(
@@ -43,15 +54,20 @@ export default async function WrappedPage({
     <>
       <div className="wrapped-hero">
         <p className="year">{year}</p>
-        <h1>{t('wrapped.title')}</h1>
-        <p className="subtitle">{t('wrapped.subtitle')}</p>
+        <h1>{serverView ? t('wrapped.serverTitle', { server: view.server.label }) : t('wrapped.title')}</h1>
+        <p className="subtitle">{serverView ? t('wrapped.serverSubtitle') : t('wrapped.subtitle')}</p>
+        {view.canServer && (
+          <div className="row" style={{ justifyContent: 'center', marginTop: 20 }}>
+            <ViewSwitch view={view} base="/wrapped" extra={{ year }} />
+          </div>
+        )}
         {years.length > 1 && (
           <div className="row" style={{ justifyContent: 'center', marginTop: 20 }}>
             <div className="seg">
               {years.map((option) => (
                 <Link
                   key={option}
-                  href={`/wrapped?year=${option}`}
+                  href={`/wrapped${here({ year: option })}`}
                   className={option === year ? 'on' : undefined}
                 >
                   {option}
@@ -62,13 +78,13 @@ export default async function WrappedPage({
         )}
         {wrapped.plays > 0 && (
           <div className="row" style={{ justifyContent: 'center', marginTop: 20 }}>
-            <Link className="btn" href={`/wrapped/story?year=${year}`}>
+            <Link className="btn" href={`/wrapped/story${here({ year })}`}>
               <Icon name="sparkles" />
               {t('story.playAsStory')}
             </Link>
             <a
               className="btn ghost"
-              href={`/api/wrapped/card?year=${year}`}
+              href={`/api/wrapped/card${here({ year })}`}
               target="_blank"
               rel="noopener"
             >
@@ -87,10 +103,14 @@ export default async function WrappedPage({
             <StatCard
               label={t('common.watchTime')}
               value={formatDuration(wrapped.watchtimeMs)}
-              href={`/stats?days=365`}
+              href={serverView ? '/admin/stats?days=365' : '/stats?days=365'}
               info={t('wrapped.watchTimeInfo')}
             />
-            <StatCard label={t('overview.plays')} value={String(wrapped.plays)} href="/history" />
+            <StatCard
+              label={t('overview.plays')}
+              value={String(wrapped.plays)}
+              href={serverView ? undefined : '/history'}
+            />
             <StatCard
               label={t('wrapped.titles')}
               value={String(wrapped.distinctTitles)}
@@ -109,7 +129,7 @@ export default async function WrappedPage({
               <div className="card">
                 {wrapped.firstPlay ? (
                   <>
-                    <Link href={`/title/${encodeURIComponent(wrapped.firstPlay.label)}`}>
+                    <Link href={titleHref(wrapped.firstPlay.label)}>
                       {wrapped.firstPlay.label}
                     </Link>
                     {wrapped.firstPlay.title !== wrapped.firstPlay.label && (
@@ -127,7 +147,7 @@ export default async function WrappedPage({
               <div className="card">
                 {wrapped.lastPlay ? (
                   <>
-                    <Link href={`/title/${encodeURIComponent(wrapped.lastPlay.label)}`}>
+                    <Link href={titleHref(wrapped.lastPlay.label)}>
                       {wrapped.lastPlay.label}
                     </Link>
                     {wrapped.lastPlay.title !== wrapped.lastPlay.label && (
@@ -154,7 +174,7 @@ export default async function WrappedPage({
                 <BarChart
                   data={wrapped.topGenres}
                   format={(value) => t('common.plays', { count: value })}
-                  hrefFor={(label) => `/history?genre=${encodeURIComponent(label)}`}
+                  hrefFor={serverView ? undefined : (label) => `/history?genre=${encodeURIComponent(label)}`}
                 />
               </div>
             </section>
@@ -167,7 +187,7 @@ export default async function WrappedPage({
                 <Link
                   key={title.label}
                   className="wrapped-rank"
-                  href={`/title/${encodeURIComponent(title.label)}`}
+                  href={titleHref(title.label)}
                 >
                   <span className="rank">{String(index + 1).padStart(2, '0')}</span>
                   <span>
@@ -190,7 +210,7 @@ export default async function WrappedPage({
               <Heatmap
                 data={wrapped.calendar}
                 format={formatMinutes}
-                hrefFor={(day) => `/history?date=${day}`}
+                hrefFor={serverView ? undefined : (day) => `/history?date=${day}`}
               />
               <p className="scroll-hint">{t('wrapped.swipe')}</p>
             </div>
@@ -224,6 +244,15 @@ export default async function WrappedPage({
               character: t('cast.inTitles', { titles: person.titles, plays: person.plays }),
             }))}
           />
+
+          {serverView && wrapped.topViewers.length > 0 && (
+            <section className="section">
+              <h2>{t('wrapped.topViewers', { count: wrapped.viewers })}</h2>
+              <div className="card">
+                <BarChart data={wrapped.topViewers} format={formatMinutes} />
+              </div>
+            </section>
+          )}
 
           {wrapped.devices.length > 0 && (
             <section className="section">

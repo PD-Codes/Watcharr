@@ -33,6 +33,27 @@ export function localizeWeekdays(data: LabelledValue[], t: Translate): LabelledV
   }));
 }
 
+/**
+ * "12 movies · 340 episodes · 80 music & audiobooks · 3 other" — only the parts that are there,
+ * so a video-only server reads as before and the parts always add up to the total.
+ */
+export function mediaSplit(
+  t: Translate,
+  counts: { movies?: number; shows?: number; episodes?: number; audio?: number; total?: number },
+): string {
+  const known = (counts.movies ?? 0) + (counts.shows ?? 0) + (counts.episodes ?? 0) + (counts.audio ?? 0);
+  const other = counts.total !== undefined ? Math.max(0, counts.total - known) : 0;
+  return [
+    counts.movies ? t('split.movies', { count: counts.movies }) : null,
+    counts.shows ? t('split.shows', { count: counts.shows }) : null,
+    counts.episodes ? t('split.episodes', { count: counts.episodes }) : null,
+    counts.audio ? t('split.audio', { count: counts.audio }) : null,
+    other ? t('split.other', { count: other }) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 /** Full weekday name for a Monday-first index, for use inside a sentence. */
 export function weekdayName(index: number, t: Translate): string {
   return t(WEEKDAY_LONG[index] ?? WEEKDAY_LONG[0]);

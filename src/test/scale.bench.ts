@@ -116,7 +116,7 @@ async function main() {
     [`getTitleDetail all`, () => titles.getTitleDetail('Show 5', all)],
     [`getTitleDetail user`, () => titles.getTitleDetail('Show 5', one)],
     [`getItemDetail all`, () => titles.getItemDetail('123', all)],
-    [`getWrapped user`, () => wrapped.getWrapped(3, new Date().getFullYear() - 1)],
+    [`getWrapped user`, () => wrapped.getWrapped({ userId: 3 }, new Date().getFullYear() - 1)],
   );
 
   console.log('--- timings ---');

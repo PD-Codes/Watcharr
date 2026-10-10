@@ -662,5 +662,29 @@
   "activity.nothingPlayingMine": {
     "en": "Nothing is playing. Start something on your server.",
     "de": "Es läuft nichts. Starte etwas auf deinem Server."
+  },
+  "wrapped.serverTitle": {
+    "en": "{server}: the year in review",
+    "de": "{server}: der Jahresrückblick"
+  },
+  "wrapped.serverSubtitle": {
+    "en": "Everything watched on this server, by everyone, in one year.",
+    "de": "Alles, was auf diesem Server geschaut wurde, von allen, in einem Jahr."
+  },
+  "wrapped.topViewers": {
+    "en": "Who watched most ({count} {count|person|people} in total)",
+    "de": "Wer am meisten geschaut hat ({count} {count|Person|Personen} insgesamt)"
+  },
+  "view.label": {
+    "en": "Whose numbers",
+    "de": "Wessen Zahlen"
+  },
+  "view.me": {
+    "en": "Mine",
+    "de": "Meine"
+  },
+  "view.server": {
+    "en": "Server",
+    "de": "Server"
   }
 }

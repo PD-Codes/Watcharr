@@ -1,0 +1,1 @@
+ALTER TABLE `app_settings` ADD `newsletter_last_html_by_locale` text;

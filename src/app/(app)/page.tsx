@@ -31,7 +31,7 @@ import {
   type RankBy,
 } from '@/server/stats';
 import { adminScope, isAdmin, requireUser } from '@/server/session';
-import { reportSyncError, syncHistory } from '@/server/sync';
+import { syncHistory, runInBackground } from '@/server/sync';
 import { cachedPosters } from '@/server/tmdb';
 import { getLocale, getT } from '@/i18n/server';
 import './dashboard.css';
@@ -76,7 +76,7 @@ export default async function DashboardPage({
   const t = await getT();
   const locale = await getLocale();
   // syncActivity already ran in the layout.
-  await syncHistory(session).catch(reportSyncError('history sync'));
+  runInBackground(syncHistory(session), 'history sync');
 
   const params = await searchParams;
   const requested = Number(params.days ?? 30);
@@ -155,7 +155,8 @@ export default async function DashboardPage({
   const playingNow = liveSessions.filter((live) => live.state !== 'paused').length;
   const pausedNow = liveSessions.length - playingNow;
   const movieSections = sections.filter((section) => section.mediaType === 'movie');
-  const showSections = sections.filter((section) => section.mediaType !== 'movie');
+  const showSections = sections.filter((section) => section.mediaType === 'show');
+  const audioSections = sections.filter((section) => section.mediaType === 'audio');
 
   // A show watched five times in a row is one tile on the rail, not five.
   const seen = new Set<string>();
@@ -452,12 +453,18 @@ export default async function DashboardPage({
           <p className="muted">{t('libraries.none')}</p>
         ) : (
           <div className="grid cols-4">
-            {[...movieSections, ...showSections].map((section) => (
+            {[...movieSections, ...showSections, ...audioSections].map((section) => (
               <StatCard
                 key={section.id}
                 label={section.name}
                 value={String(section.itemCount)}
-                hint={section.mediaType === 'movie' ? t('common.movies') : t('common.series')}
+                hint={
+                  section.mediaType === 'movie'
+                    ? t('common.movies')
+                    : section.mediaType === 'audio'
+                      ? t('libraries.typeAudio')
+                      : t('common.series')
+                }
                 href={`/libraries/${encodeURIComponent(section.id)}`}
               />
             ))}

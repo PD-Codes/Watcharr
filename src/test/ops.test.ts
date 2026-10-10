@@ -479,6 +479,10 @@ async function main() {
 
   /* ---------- read cache ---------- */
   {
+    // The restore test above swapped the database file under the open connection (the app only
+    // ever does that before it starts), so a reader thread would open the new file while the
+    // main connection still writes the old one. This block is about the cache, not the readers.
+    await (await import('../db/readers')).stopReaders();
     const { readDb, clearReadCache } = await import('../server/readcache');
     const { sql } = await import('drizzle-orm');
     clearReadCache();

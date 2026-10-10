@@ -436,6 +436,9 @@ export function mayReceive(
   ) {
     return false;
   }
+  // Monitor alerts and the digest carry no server: they cover the whole deployment (logins and
+  // addresses of every server's people), which is the global admin's business only.
+  if (eventServer === undefined && (event === 'monitor.alert' || event === 'digest')) return Boolean(user.globalAdmin);
   if (user.isAdmin) return true;
   if (event === 'media.added') return true;
   if (event.startsWith('playback.')) return payload.user === user.username;
@@ -443,9 +446,10 @@ export function mayReceive(
 }
 
 /** Events a user may pick from — the same rule as mayReceive, for the form. */
-export function selectableEvents(isAdmin: boolean): NotificationEvent[] {
+export function selectableEvents(isAdmin: boolean, globalAdmin = false): NotificationEvent[] {
+  if (globalAdmin) return ['playback.start', 'playback.stop', 'server.down', 'media.added', 'monitor.alert', 'digest'];
   return isAdmin
-    ? ['playback.start', 'playback.stop', 'server.down', 'media.added', 'monitor.alert', 'digest']
+    ? ['playback.start', 'playback.stop', 'server.down', 'media.added']
     : ['playback.start', 'playback.stop', 'media.added'];
 }
 

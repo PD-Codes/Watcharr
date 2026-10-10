@@ -574,5 +574,45 @@
   "caches.coverage": {
     "en": "{cached} of {total} library titles have an answer from TMDB (or a note that it does not know them).",
     "de": "Für {cached} von {total} Bibliothekstiteln liegt eine Antwort von TMDB vor (oder der Vermerk, dass es sie nicht kennt)."
+  },
+  "doctor.database": {
+    "en": "Database access",
+    "de": "Datenbankzugriff"
+  },
+  "doctor.database.ok": {
+    "en": "WAL mode, {readers} parallel {readers|reader|readers} for statistics.",
+    "de": "WAL-Modus, {readers} parallele {readers|Leseverbindung|Leseverbindungen} für Statistiken."
+  },
+  "doctor.database.warn": {
+    "en": "The data folder is on a {fs} file system, where SQLite's file locking is unreliable (\"database is locked\", slow pages). Watcharr runs with an exclusive lock there, so statistics are not read in parallel. Put the data folder on a local volume.",
+    "de": "Der Datenordner liegt auf einem {fs}-Dateisystem, auf dem SQLites Dateisperren unzuverlässig sind („database is locked“, langsame Seiten). Watcharr läuft dort mit exklusiver Sperre, Statistiken werden also nicht parallel gelesen. Leg den Datenordner auf ein lokales Volume."
+  },
+  "doctor.database.fail": {
+    "en": "SQLite runs in \"{mode}\" journal mode instead of WAL, so every write blocks every read. Move the data folder to a local disk.",
+    "de": "SQLite läuft im Journal-Modus „{mode}“ statt WAL, jeder Schreibvorgang blockiert also jedes Lesen. Verschiebe den Datenordner auf eine lokale Platte."
+  },
+  "doctor.wal": {
+    "en": "Write-ahead log",
+    "de": "Write-Ahead-Log"
+  },
+  "doctor.wal.ok": {
+    "en": "{size} MB.",
+    "de": "{size} MB."
+  },
+  "doctor.wal.warn": {
+    "en": "{size} MB and not shrinking: something keeps a read open so the log is never checkpointed. Restart the app.",
+    "de": "{size} MB und wächst weiter: etwas hält einen Lesevorgang offen, das Log wird nie zurückgeschrieben. Starte die App neu."
+  },
+  "doctor.load": {
+    "en": "Media server load",
+    "de": "Auslastung der Medienserver"
+  },
+  "doctor.load.ok": {
+    "en": "No server is being held back.",
+    "de": "Kein Server wird gerade gebremst."
+  },
+  "doctor.load.warn": {
+    "en": "Paused for overload: {hosts}. Live polling runs every 30 s, library, history and artwork jobs wait until the pause ends.",
+    "de": "Wegen Überlastung gebremst: {hosts}. Live-Abfrage alle 30 s, Bibliotheks-, Verlaufs- und Artwork-Jobs warten bis zum Ende der Pause."
   }
 }

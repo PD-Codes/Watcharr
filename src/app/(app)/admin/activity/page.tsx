@@ -4,7 +4,7 @@ import { playbackSessions, users } from '@/db/schema';
 import ActivityTable from '@/components/ActivityTable';
 import AutoRefresh from '@/components/AutoRefresh';
 import { AreaChart, StatCard } from '@/components/Charts';
-import { liveSessionFilter, reportSyncError, syncActivity } from '@/server/sync';
+import { liveSessionFilter, syncActivity, runInBackground } from '@/server/sync';
 import { getConcurrencyOverTime } from '@/server/playback';
 import { getAdapter } from '@/server/config';
 import { supportsTerminate } from '@/server/adapters';
@@ -25,7 +25,7 @@ export default async function AdminActivityPage({
   const t = await getT();
   const requested = Number((await searchParams).days ?? 7);
   const days = PERIODS.includes(requested as (typeof PERIODS)[number]) ? requested : 7;
-  await syncActivity().catch(reportSyncError('activity sync'));
+  runInBackground(syncActivity(), 'activity sync');
 
   const rows = await db
     .select({

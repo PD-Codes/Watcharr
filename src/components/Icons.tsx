@@ -34,13 +34,21 @@ export type IconName =
   | 'trophy'
   | 'share'
   | 'chevron'
-  | 'logout';
+  | 'logout'
+  | 'music';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   film: (
     <>
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <path d="M7 4v16M17 4v16M3 12h18" />
+    </>
+  ),
+  music: (
+    <>
+      <path d="M9 18V5l11-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="17" cy="16" r="3" />
     </>
   ),
   tv: (

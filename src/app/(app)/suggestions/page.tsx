@@ -7,7 +7,7 @@ import { getSettings } from '@/server/config';
 import { isEnabled } from '@/server/features';
 import { getSuggestions } from '@/server/suggestions';
 import { cachedPosters } from '@/server/tmdb';
-import { reportSyncError, syncHistory } from '@/server/sync';
+import { syncHistory, runInBackground } from '@/server/sync';
 import { requireUser } from '@/server/session';
 import { getT } from '@/i18n/server';
 
@@ -18,7 +18,7 @@ export default async function SuggestionsPage() {
   const t = await getT();
   const settings = await getSettings();
   if (!isEnabled(settings.features, 'suggestions')) notFound();
-  await syncHistory(session).catch(reportSyncError('history sync'));
+  runInBackground(syncHistory(session), 'history sync');
   const { fromLibrary, fromTmdb } = await getSuggestions(session.user.id, session.user.serverId);
   const posters = await cachedPosters(fromLibrary);
 

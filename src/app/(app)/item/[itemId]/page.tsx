@@ -9,8 +9,8 @@ import { artUrl, formatDate, formatDuration, formatMinutes } from '@/components/
 import { getSettings } from '@/server/config';
 import { getItemDetail, getItemMedia } from '@/server/titles';
 import { getTitleMeta } from '@/server/tmdb';
-import { adminScope, isAdmin, requireUser } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { isAdmin, requireUser } from '@/server/session';
+import { getLocale, getT } from '@/i18n/server';
 
 // No loading.tsx in this segment: streaming pins the status at 200 and this route has to
 // be able to answer 404. See the note in CLAUDE.md.
@@ -35,7 +35,12 @@ export default async function ItemPage({
   const itemId = decodeURIComponent((await params).itemId);
 
   const serverWide = (await searchParams).scope === 'server' && isAdmin(session.user);
-  const detail = await getItemDetail(itemId, serverWide ? adminScope(session.user) : { userId: session.user.id });
+  // Own server even for a global admin: item ids are only unique per server (Plex numbers its
+  // rating keys from 1), so "every server" merged unrelated items that share an id.
+  const detail = await getItemDetail(
+    itemId,
+    serverWide ? { userId: null, serverId: session.user.serverId } : { userId: session.user.id },
+  );
   if (!detail) notFound();
 
   // An episode is looked up under its show: TMDB indexes episodes below a series id, which
@@ -48,6 +53,7 @@ export default async function ItemPage({
     detail.showLabel ?? detail.title,
     detail.showLabel ? 'show' : detail.mediaType,
     detail.year,
+    await getLocale(),
   );
 
   return (

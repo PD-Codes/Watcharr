@@ -224,11 +224,12 @@ async function testJellyfinLibraryCounts() {
       return Response.json([
         { Name: 'Filme', ItemId: 'lib-movies', CollectionType: 'movies' },
         { Name: 'Serien', ItemId: 'lib-shows', CollectionType: 'tvshows' },
-        // Music is not covered by the adapter and must not appear at all.
+        // Music comes as one track count, never as titles with seasons.
         { Name: 'Hörspiele', ItemId: 'lib-music', CollectionType: 'music' },
+        { Name: 'Fotos', ItemId: 'lib-photos', CollectionType: 'homevideos' },
       ]);
     }
-    const totals: Record<string, number> = { Movie: 2335, Series: 501, Season: 2023, Episode: 34214 };
+    const totals: Record<string, number> = { 'Audio%2CAudioBook': 812, Movie: 2335, Series: 501, Season: 2023, Episode: 34214 };
     const type = Object.keys(totals).find((t) => url.includes(`IncludeItemTypes=${t}`));
     return Response.json({ TotalRecordCount: type ? totals[type] : 0 });
   }) as typeof fetch;
@@ -237,6 +238,7 @@ async function testJellyfinLibraryCounts() {
   assert.deepEqual(sections, [
     { id: 'lib-movies', name: 'Filme', mediaType: 'movie', itemCount: 2335, seasonCount: undefined, episodeCount: undefined },
     { id: 'lib-shows', name: 'Serien', mediaType: 'show', itemCount: 501, seasonCount: 2023, episodeCount: 34214 },
+    { id: 'lib-music', name: 'Hörspiele', mediaType: 'audio', itemCount: 812 },
   ]);
   assert.ok(
     !asked.some((url) => url.includes('lib-movies') && url.includes('IncludeItemTypes=Season')),

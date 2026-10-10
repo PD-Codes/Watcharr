@@ -1,9 +1,9 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
-import { db } from '@/db';
 import { artUrl } from '@/components/format';
-import { scopeFilter } from './stats';
-import { getWrapped } from './wrapped';
+import { readDb as db } from './readcache';
+import type { Scope } from './stats';
+import { getWrapped, yearFilter } from './wrapped';
 import type { StoryInput, StoryTitle } from './wrapped-story-core';
 
 interface TitleRow {
@@ -24,18 +24,18 @@ const toTitle = (row: TitleRow | undefined, slug: string): StoryTitle | null =>
     : null;
 
 /**
- * The signed-in user's own year as story input. `getWrapped` already holds most of it; the
- * show-versus-movie split and the hour histogram are the two things it does not compute.
+ * A year as story input — the signed-in user's own, or a whole server's. `getWrapped` already
+ * holds most of it; the show-versus-movie split and the hour histogram are the two things it
+ * does not compute.
  */
 export async function getStoryInput(
-  userId: number,
+  scope: Scope,
   year: number,
   name: string,
   serverSlug: string,
 ): Promise<StoryInput> {
-  const own = scopeFilter({ userId });
   // Same local-time year bucket as getWrapped, so both pages agree on what "2026" means.
-  const inYear = sql`strftime('%Y', watched_at / 1000, 'unixepoch', 'localtime') = ${String(year)}`;
+  const inYear = yearFilter(scope, year);
 
   const topBy = (kind: 'show' | 'movie') => {
     const [column, type] =
@@ -44,7 +44,7 @@ export async function getStoryInput(
       SELECT ${sql.raw(column)} AS label, max(item_id) AS item_id, count(*) AS plays,
              coalesce(sum(duration_ms), 0) / 60000 AS minutes
       FROM watch_history
-      WHERE ${own} AND ${inYear} AND media_type = ${type} AND ${sql.raw(column)} IS NOT NULL
+      WHERE ${inYear} AND media_type = ${type} AND ${sql.raw(column)} IS NOT NULL
       GROUP BY label
       ORDER BY plays DESC, minutes DESC
       LIMIT 1
@@ -52,14 +52,14 @@ export async function getStoryInput(
   };
 
   const [wrapped, shows, movies, hourRows] = await Promise.all([
-    getWrapped(userId, year),
+    getWrapped(scope, year),
     topBy('show'),
     topBy('movie'),
     db.all<{ hour: number; plays: number }>(sql`
       SELECT CAST(strftime('%H', watched_at / 1000, 'unixepoch', 'localtime') AS INTEGER) AS hour,
              count(*) AS plays
       FROM watch_history
-      WHERE ${own} AND ${inYear}
+      WHERE ${inYear}
       GROUP BY hour
     `),
   ]);

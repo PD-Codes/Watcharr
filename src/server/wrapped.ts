@@ -1,7 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
-import { db } from '@/db';
-import type { LabelledValue } from './stats';
+import { readDb as db } from './readcache';
+import { scopeFilter, type LabelledValue, type Scope } from './stats';
 
 export interface WrappedTitle {
   label: string;
@@ -33,24 +33,37 @@ export interface Wrapped {
   weekdays: LabelledValue[];
   devices: LabelledValue[];
   calendar: LabelledValue[];
+  /** Server view only: who watched most (minutes), and how many people watched at all. */
+  topViewers: LabelledValue[];
+  viewers: number;
 }
 
-const yearFilter = (userId: number, year: number) =>
-  sql`user_id = ${userId} AND strftime('%Y', watched_at / 1000, 'unixepoch', 'localtime') = ${String(year)}`;
+// A range on the indexed column rather than strftime() on every row: the server view reads the
+// whole year of every user, where evaluating the date function per row cost seconds. Local
+// midnight comes from the process zone, the same one SQLite's 'localtime' uses.
+export const yearFilter = (scope: Scope, year: number) =>
+  sql`${scopeFilter(scope)} AND watched_at >= ${new Date(year, 0, 1).getTime()} AND watched_at < ${new Date(year + 1, 0, 1).getTime()}`;
 
-/** Years the user has any history in, newest first. */
-export async function getWrappedYears(userId: number): Promise<number[]> {
-  const rows = await db.all<{ year: string }>(sql`
-    SELECT DISTINCT strftime('%Y', watched_at / 1000, 'unixepoch', 'localtime') AS year
-    FROM watch_history
-    WHERE user_id = ${userId}
-    ORDER BY year DESC
+/** Years the user (or the server) has any history in, newest first. */
+export async function getWrappedYears(scope: Scope): Promise<number[]> {
+  // First and last play only, then the years in between that have rows: DISTINCT over a
+  // formatted date read every play of the server just to list a handful of years.
+  const [range] = await db.all<{ first: number | null; last: number | null }>(sql`
+    SELECT min(watched_at) AS first, max(watched_at) AS last FROM watch_history WHERE ${scopeFilter(scope)}
   `);
-  return rows.map((r) => Number(r.year));
+  if (!range?.first || !range.last) return [];
+  const years: number[] = [];
+  for (let year = new Date(Number(range.last)).getFullYear(); year >= new Date(Number(range.first)).getFullYear(); year--) {
+    const [hit] = await db.all<{ n: number }>(sql`
+      SELECT 1 AS n FROM watch_history WHERE ${yearFilter(scope, year)} LIMIT 1
+    `);
+    if (hit) years.push(year);
+  }
+  return years;
 }
 
-export async function getWrapped(userId: number, year: number): Promise<Wrapped> {
-  const where = yearFilter(userId, year);
+export async function getWrapped(scope: Scope, year: number): Promise<Wrapped> {
+  const where = yearFilter(scope, year);
 
   const [totals] = await db.all<{
     plays: number;
@@ -172,6 +185,20 @@ export async function getWrapped(userId: number, year: number): Promise<Wrapped>
     if (current > longestStreak) longestStreak = current;
   }
 
+  // Only for a server: on a personal year the list would be one name, the reader's own.
+  const viewerRows =
+    scope.userId === null
+      ? await db.all<{ label: string; minutes: number }>(sql`
+          SELECT coalesce(u.username, 'Unknown') AS label, sum(h.duration_ms) / 60000 AS minutes
+          FROM watch_history h
+          LEFT JOIN users u ON u.id = h.user_id
+          WHERE ${scopeFilter(scope, 'h.')} AND h.watched_at >= ${new Date(year, 0, 1).getTime()}
+            AND h.watched_at < ${new Date(year + 1, 0, 1).getTime()}
+          GROUP BY h.user_id
+          ORDER BY minutes DESC
+        `)
+      : [];
+
   const topGenrePlays = genreRows[0]?.plays ?? 0;
   const genreTotalCount = Number(genreTotal?.total ?? 0);
 
@@ -205,5 +232,7 @@ export async function getWrapped(userId: number, year: number): Promise<Wrapped>
     weekdays,
     devices: deviceRows.map((r) => ({ label: r.label, value: Number(r.minutes) })),
     calendar: calendarRows.map((r) => ({ label: r.day, value: Number(r.minutes) })),
+    topViewers: viewerRows.slice(0, 8).map((r) => ({ label: r.label, value: Number(r.minutes) })),
+    viewers: viewerRows.length,
   };
 }

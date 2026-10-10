@@ -232,6 +232,10 @@ async function main() {
   assert.ok(mayReceive('server.down', { isAdmin: true, username: 'a', serverId: 2 }, other));
   assert.ok(mayReceive('server.down', { isAdmin: true, username: 'a', serverId: 1, globalAdmin: true }, other));
   assert.ok(mayReceive('playback.start', { isAdmin: false, username: 'john', serverId: 2 }, other));
+  // Deployment-wide events (no server on them) reach only the global admin.
+  assert.ok(!mayReceive('monitor.alert', { isAdmin: true, username: 'a', serverId: 2 }, { rule: 'x' }));
+  assert.ok(!mayReceive('digest', { isAdmin: true, username: 'a', serverId: 2 }, {}));
+  assert.ok(mayReceive('digest', { isAdmin: true, username: 'a', serverId: 1, globalAdmin: true }, {}));
   console.log('ok - personal notifications stay on the recipient\'s own server');
 
   // GCM must reject a shortened tag; Node would otherwise accept a 4-byte one.

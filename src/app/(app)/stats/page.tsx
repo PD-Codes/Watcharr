@@ -14,6 +14,7 @@ import {
   formatMinutes,
   localizeMonths,
   localizeWeekdays,
+  mediaSplit,
 } from '@/components/format';
 import {
   getDailyActivity,
@@ -48,7 +49,7 @@ import { getLibrary } from '@/server/library';
 import { getTopCast } from '@/server/tmdb';
 import { CastStrip } from '@/components/TitleMeta';
 import { getSettings } from '@/server/config';
-import { reportSyncError, syncHistory } from '@/server/sync';
+import { syncHistory, runInBackground } from '@/server/sync';
 import { requireUser } from '@/server/session';
 import { getLocale, getT } from '@/i18n/server';
 
@@ -67,7 +68,7 @@ export default async function StatsPage({
   const session = await requireUser();
   const t = await getT();
   const locale = await getLocale();
-  await syncHistory(session).catch(reportSyncError('history sync'));
+  runInBackground(syncHistory(session), 'history sync');
 
   const params = await searchParams;
   const requested = Number(params.days ?? 30);
@@ -93,6 +94,7 @@ export default async function StatsPage({
     hours,
     streak,
     highlights,
+    allTime,
     records,
     rewatch,
     library,
@@ -102,16 +104,18 @@ export default async function StatsPage({
     getTrend(scope, days),
     getDailyActivity(scope, days),
     getMonthlyActivity(scope, year),
-    getWeekdayActivity(scope),
-    getWeekHourGrid(scope),
-    getTopGenres(scope, 8, by),
-    getTopTitles(scope, 8, by),
-    getTopDevices(scope, 8, by),
-    getPeakHours(scope),
+    getWeekdayActivity(scope, days),
+    getWeekHourGrid(scope, days),
+    getTopGenres(scope, 8, by, days),
+    getTopTitles(scope, 8, by, days),
+    getTopDevices(scope, 8, by, days),
+    getPeakHours(scope, days),
     getStreak(scope),
+    getHighlights(scope, days),
+    // Streak and library coverage are lifetime numbers; everything else follows the period.
     getHighlights(scope),
-    getRecords(scope),
-    getRewatchSplit(scope),
+    getRecords(scope, days),
+    getRewatchSplit(scope, days),
     getLibrary(session.user.serverId).catch(() => []),
     getDailyActivity(scope, 365),
   ]);
@@ -119,17 +123,17 @@ export default async function StatsPage({
   // Delivery statistics, scoped to this user's own sessions.
   const [playback, methods, reasons, codecs, resolutions, bitrates, clients, deviceSessions] =
     await Promise.all([
-      getPlaybackTotals(undefined, scope),
-      getPlayMethods(undefined, scope),
-      getTranscodeReasons(undefined, scope),
-      getVideoCodecs(undefined, scope),
-      getResolutions(undefined, scope),
-      getBitrateBuckets(undefined, scope),
-      getClientSessions(undefined, scope),
-      getDeviceSessions(undefined, scope),
+      getPlaybackTotals(days, scope),
+      getPlayMethods(days, scope),
+      getTranscodeReasons(days, scope),
+      getVideoCodecs(days, scope),
+      getResolutions(days, scope),
+      getBitrateBuckets(days, scope),
+      getClientSessions(days, scope),
+      getDeviceSessions(days, scope),
     ]);
 
-  const completion = await getCompletionSplit(watchedThreshold, undefined, scope);
+  const completion = await getCompletionSplit(watchedThreshold, days, scope);
   // Cache-only, so this costs one query and never a TMDB request in the render path.
   const topCast = await getTopCast(scope).catch(() => []);
 
@@ -137,7 +141,7 @@ export default async function StatsPage({
   // The library lists movies and series, so coverage has to compare titles with titles —
   // counting individual episodes against it produced percentages far above 100.
   const coverage = library.length
-    ? Math.min(100, Math.round((highlights.distinctTitles / library.length) * 100))
+    ? Math.min(100, Math.round((allTime.distinctTitles / library.length) * 100))
     : null;
 
   return (
@@ -171,7 +175,12 @@ export default async function StatsPage({
         <StatCard
           label={t('overview.plays')}
           value={String(totals.plays)}
-          hint={t('overview.playsHint', { movies: totals.movies, episodes: totals.episodes })}
+          hint={mediaSplit(t, {
+            movies: totals.movies,
+            episodes: totals.episodes,
+            audio: totals.audio,
+            total: totals.plays,
+          })}
         />
         <StatCard
           label={t('stats.activeDays')}
@@ -181,7 +190,7 @@ export default async function StatsPage({
         <StatCard
           label={t('stats.currentStreak')}
           value={t('stats.daysShort', { count: streak })}
-          hint={t('stats.longestStreakHint', { count: highlights.longestStreak })}
+          hint={t('stats.longestStreakHint', { count: allTime.longestStreak })}
           info={t('stats.streakInfo')}
         />
       </div>
@@ -212,7 +221,7 @@ export default async function StatsPage({
             coverage === null
               ? undefined
               : t('stats.libraryExploredHint', {
-                  watched: highlights.distinctTitles,
+                  watched: allTime.distinctTitles,
                   total: library.length,
                 })
           }

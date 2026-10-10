@@ -23,6 +23,7 @@ export async function register() {
   // While nobody is admin yet, the console shows the one-time setup token. Best effort: on a
   // brand-new database the table may not exist for another moment, and the login page asks again.
   await import('./server/setuptoken').then((m) => m.announceSetupToken()).catch(() => {});
+  await import('./server/startup').then((m) => m.logStartup()).catch(() => {});
   // Escape hatch for anyone running the container purely as a web front end, and for the
   // route test suite, which boots the app against a stub that speaks no websockets.
   if (process.env.WATCHARR_NO_BACKGROUND === '1') return;

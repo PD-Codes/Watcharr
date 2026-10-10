@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -16,8 +18,35 @@ import { Icon } from '@/components/Icons';
 import Poster from '@/components/Poster';
 import { formatMinutes } from '@/components/format';
 import { useLocale, useT } from '@/i18n/client';
+import type { TranslationKey, Translate } from '@/i18n';
 import type { Slide, StoryTitle } from '@/server/wrapped-story-core';
 import './story.css';
+
+/**
+ * Who the story talks to. A server's year reuses every slide, but "you watched" would be wrong
+ * for it: the lines that address the reader have a `story.server.*` twin, and only those swap.
+ */
+const Voice = createContext<'me' | 'server'>('me');
+const SERVER_VOICE = new Set([
+  'story.intro.eyebrow',
+  'story.intro.name',
+  'story.time.eyebrow',
+  'story.plays.eyebrow',
+  'story.top.eyebrow',
+  'story.genre.eyebrow',
+  'story.genre.share',
+  'story.days.eyebrow',
+  'story.when.eyebrow',
+  'story.outro.preview',
+]);
+
+function useStoryT(): Translate {
+  const t = useT();
+  const voice = useContext(Voice);
+  if (voice === 'me') return t;
+  return ((key, vars) =>
+    t((SERVER_VOICE.has(key) ? key.replace('story.', 'story.server.') : key) as TranslationKey, vars)) as Translate;
+}
 
 const SLIDE_MS = 6000;
 const HOLD_MS = 180;
@@ -40,6 +69,8 @@ function useReducedMotion(): boolean {
 interface Card {
   preview: string | null;
   file: File | null;
+  /** Where the card is drawn: the personal year or a server's, same query as the page. */
+  src: string;
 }
 
 /**
@@ -47,14 +78,14 @@ interface Card {
  * and the closing slide should not open on an empty frame. The one blob serves the preview and
  * the share sheet, which needs the bytes ready inside the tap.
  */
-function useCard(year: number, armed: boolean): Card {
-  const [card, setCard] = useState<Card>({ preview: null, file: null });
+function useCard(src: string, year: number, armed: boolean): Card {
+  const [card, setCard] = useState<Omit<Card, 'src'>>({ preview: null, file: null });
 
   useEffect(() => {
     if (!armed) return;
     let cancelled = false;
     let url: string | null = null;
-    fetch(`/api/wrapped/card?year=${year}`, { credentials: 'same-origin' })
+    fetch(src, { credentials: 'same-origin' })
       .then((response) => (response.ok ? response.blob() : Promise.reject(new Error('card'))))
       .then((blob) => {
         if (cancelled) return;
@@ -66,17 +97,35 @@ function useCard(year: number, armed: boolean): Card {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [armed, year]);
+  }, [armed, src, year]);
 
-  return card;
+  return { ...card, src };
 }
 
-export default function StoryClient({ slides, year }: { slides: Slide[]; year: number }) {
-  const t = useT();
+export default function StoryClient({
+  slides,
+  year,
+  query,
+  voice = 'me',
+}: {
+  slides: Slide[];
+  year: number;
+  query: string;
+  voice?: 'me' | 'server';
+}) {
+  return (
+    <Voice.Provider value={voice}>
+      <Story slides={slides} year={year} query={query} />
+    </Voice.Provider>
+  );
+}
+
+function Story({ slides, year, query }: { slides: Slide[]; year: number; query: string }) {
+  const t = useStoryT();
   const router = useRouter();
   const reduced = useReducedMotion();
   const total = slides.length;
-  const reportHref = `/wrapped?year=${year}`;
+  const reportHref = `/wrapped${query}`;
 
   const [index, setIndex] = useState(0);
   const [leaving, setLeaving] = useState<number | null>(null);
@@ -86,7 +135,7 @@ export default function StoryClient({ slides, year }: { slides: Slide[]; year: n
 
   // Sticky: stepping back from the end must not throw the card away.
   const [armed, setArmed] = useState(false);
-  const card = useCard(year, armed);
+  const card = useCard(`/api/wrapped/card${query}`, year, armed);
 
   const indexRef = useRef(0);
   const elapsed = useRef(0);
@@ -488,7 +537,7 @@ function SlideView({
   leaving?: boolean;
   animate?: boolean;
 }) {
-  const t = useT();
+  const t = useStoryT();
   const fmt = useFormat();
   const count = !leaving && animate;
 
@@ -735,7 +784,7 @@ function VersusHalf({
 
 /** Closing slide: the card as the server draws it, plus the three ways out. */
 function Outro({ year, card }: { year: number; card: Card }) {
-  const t = useT();
+  const t = useStoryT();
   const [canShare, setCanShare] = useState(false);
 
   useEffect(() => {
@@ -763,7 +812,7 @@ function Outro({ year, card }: { year: number; card: Card }) {
       <div className="story-actions">
         <a
           className="btn"
-          href={`/api/wrapped/card?year=${year}`}
+          href={card.src}
           download={`watcharr-${year}.png`}
           data-story-ui
         >

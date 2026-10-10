@@ -20,17 +20,26 @@ export default function PlexDone({ pinId, serverId }: { pinId: string; serverId:
   useEffect(() => {
     if (!pinId) return;
     let cancelled = false;
+    let setupToken: string | undefined;
+    try {
+      const key = `watcharr.setup.${pinId}`;
+      setupToken = localStorage.getItem(key) ?? undefined;
+      localStorage.removeItem(key);
+    } catch {
+      // Blocked storage: sign in without claiming admin, as before.
+    }
     (async () => {
       for (let i = 0; i < TRIES && !cancelled; i++) {
         try {
           const res = await fetch('/api/auth/plex/check', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pinId, serverId: serverId || undefined }),
+            body: JSON.stringify({ pinId, serverId: serverId || undefined, setupToken }),
           });
           const data = (await res.json().catch(() => ({}))) as { ok?: boolean };
           if (data.ok) return router.replace('/watchlist');
           if (res.status === 403) return setError(t('login.plexNoAccess'));
+          if (res.status === 401 && setupToken) return setError(t('login.setupTokenInvalid'));
           if (res.status === 401 || res.status === 400) return setError(t('login.plexFailed'));
         } catch {
           // A dropped connection is retried like a pending PIN.

@@ -45,8 +45,8 @@
   "serverstats.playsHint": { "en": "{movies} movies · {episodes} episodes", "de": "{movies} Filme · {episodes} Episoden" },
   "serverstats.libraryItems": { "en": "Library items", "de": "Bibliothekseinträge" },
   "serverstats.libraryItemsInfo": {
-    "en": "Movies and series reported by the media server, cached for five minutes.",
-    "de": "Filme und Serien, die der Media-Server meldet, für fünf Minuten zwischengespeichert."
+    "en": "Movies and series reported by the media server, plus music and audiobooks counted in tracks. Cached for five minutes.",
+    "de": "Filme und Serien, die der Media-Server meldet, dazu Musik und Hörbücher in Titeln gezählt. Für fünf Minuten zwischengespeichert."
   },
   "serverstats.peakHour": { "en": "Peak hour", "de": "Spitzenstunde" },
   "serverstats.peakHourInfo": {

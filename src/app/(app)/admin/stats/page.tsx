@@ -1,5 +1,5 @@
 import { AreaChart, BarChart, ColumnChart, DonutChart, StatCard, WeekHourGrid } from '@/components/Charts';
-import { formatDuration, formatMinutes, localizeWeekdays } from '@/components/format';
+import { formatDuration, formatMinutes, localizeWeekdays, mediaSplit } from '@/components/format';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { users } from '@/db/schema';
@@ -28,7 +28,7 @@ import RankToggle from '@/components/RankToggle';
 import { notFound } from 'next/navigation';
 import { getSettings } from '@/server/config';
 import { isEnabled } from '@/server/features';
-import { getLibrary } from '@/server/library';
+import { getLibrary, getSections } from '@/server/library';
 import { adminScope, requireAdmin } from '@/server/session';
 import { getT } from '@/i18n/server';
 
@@ -58,13 +58,13 @@ export default async function AdminStatsPage({
     await Promise.all([
       getTotals(scope, days),
       getDailyActivity(scope, days),
-      getWeekdayActivity(scope),
-      getTopGenres(scope, 8, by),
-      getTopTitles(scope, 8, by),
-      getTopDevices(scope, 8, by),
-      getPeakHours(scope),
-      getUserLeaderboard(onlyServer),
-      getHighlights(scope),
+      getWeekdayActivity(scope, days),
+      getTopGenres(scope, 8, by, days),
+      getTopTitles(scope, 8, by, days),
+      getTopDevices(scope, 8, by, days),
+      getPeakHours(scope, days),
+      getUserLeaderboard(onlyServer, 10, days),
+      getHighlights(scope, days),
       getLibrary(session.user.serverId).catch(() => []),
       onlyServer === undefined
         ? db.select({ id: users.id, username: users.username }).from(users)
@@ -83,10 +83,16 @@ export default async function AdminStatsPage({
 
   const [trend, weekGrid, records, peak] = await Promise.all([
     getTrend(scope, days),
-    getWeekHourGrid(scope),
-    getRecords(scope),
+    getWeekHourGrid(scope, days),
+    getRecords(scope, days),
     getConcurrencyPeak(days, scope),
   ]);
+
+  // Library items hold films and series only; music and audiobooks come as track counts per library.
+  const audioTracks = (await getSections(session.user.serverId).catch(() => []))
+    .filter((section) => section.mediaType === 'audio')
+    .reduce((sum, section) => sum + section.itemCount, 0);
+  const libraryMovies = library.filter((item) => item.mediaType === 'movie').length;
 
   const userIdByName = new Map(userRows.map((user) => [user.username, user.id]));
   const titleHref = (label: string) => `/title/${encodeURIComponent(label)}?scope=server`;
@@ -126,11 +132,21 @@ export default async function AdminStatsPage({
         <StatCard
           label={t('serverstats.plays')}
           value={String(totals.plays)}
-          hint={t('serverstats.playsHint', { movies: totals.movies, episodes: totals.episodes })}
+          hint={mediaSplit(t, {
+            movies: totals.movies,
+            episodes: totals.episodes,
+            audio: totals.audio,
+            total: totals.plays,
+          })}
         />
         <StatCard
           label={t('serverstats.libraryItems')}
-          value={String(library.length)}
+          value={String(library.length + audioTracks)}
+          hint={mediaSplit(t, {
+            movies: libraryMovies,
+            shows: library.length - libraryMovies,
+            audio: audioTracks,
+          })}
           info={t('serverstats.libraryItemsInfo')}
         />
         <StatCard

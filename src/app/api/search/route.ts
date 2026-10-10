@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { searchLibrary } from '@/server/library';
 import { getSession } from '@/server/session';
+import { getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,7 @@ export async function GET(request: Request) {
 
   const needle = `%${q}%`;
   const results: SearchResult[] = [];
+  const t = await getT();
 
   // SQLite's LIKE is already case-insensitive for ASCII, so no ILIKE is needed.
   const titles = await db.all<{ label: string; plays: number }>(sql`
@@ -48,12 +50,12 @@ export async function GET(request: Request) {
     ORDER BY max(watched_at) DESC
     LIMIT ${PER_KIND}
   `);
-  for (const t of titles) {
+  for (const title of titles) {
     results.push({
       kind: 'title',
-      label: t.label,
-      sub: `${Number(t.plays)} plays`,
-      href: `/title/${encodeURIComponent(t.label)}`,
+      label: title.label,
+      sub: t('common.plays', { count: Number(title.plays) }),
+      href: `/title/${encodeURIComponent(title.label)}`,
     });
   }
 

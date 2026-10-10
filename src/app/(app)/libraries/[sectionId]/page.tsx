@@ -66,7 +66,11 @@ export default async function LibraryDetailPage({
       <h1>{section.name}</h1>
       <p className="subtitle">
         {t('library.items', { count: items.length })} ·{' '}
-        {section.mediaType === 'movie' ? t('libraries.moviesLower') : t('common.series')}
+        {section.mediaType === 'movie'
+          ? t('libraries.moviesLower')
+          : section.mediaType === 'audio'
+            ? t('libraries.typeAudio')
+            : t('common.series')}
         {isAdmin(session.user) ? ` · ${t('library.serverWide')}` : ` · ${t('library.yoursOnly')}`}
       </p>
 

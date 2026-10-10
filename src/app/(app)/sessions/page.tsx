@@ -6,9 +6,9 @@ import Beam from '@/components/Beam';
 import AutoRefresh from '@/components/AutoRefresh';
 import { BarChart, StatCard } from '@/components/Charts';
 import TitleLink from '@/components/TitleLink';
-import { formatDate, formatDuration } from '@/components/format';
+import { formatDate, formatDuration, mediaSplit } from '@/components/format';
 import { getStreak, getTopTitles, getTotals } from '@/server/stats';
-import { liveSessionFilter, reportSyncError, syncHistory } from '@/server/sync';
+import { liveSessionFilter, syncHistory, runInBackground } from '@/server/sync';
 import { requireUser } from '@/server/session';
 import { getT } from '@/i18n/server';
 import type { Translate } from '@/i18n';
@@ -24,7 +24,7 @@ export default async function SessionsPage() {
   const session = await requireUser();
   const t = await getT();
   // syncActivity already ran in the layout.
-  await syncHistory(session).catch(reportSyncError('history sync'));
+  runInBackground(syncHistory(session), 'history sync');
 
   const scope = { userId: session.user.id };
   const [mine, everyone, totals, streak, titles, recent] = await Promise.all([
@@ -96,7 +96,12 @@ export default async function SessionsPage() {
         <StatCard
           label={t('overview.plays')}
           value={String(totals.plays)}
-          hint={t('overview.playsHint', { movies: totals.movies, episodes: totals.episodes })}
+          hint={mediaSplit(t, {
+            movies: totals.movies,
+            episodes: totals.episodes,
+            audio: totals.audio,
+            total: totals.plays,
+          })}
         />
         <StatCard label={t('stats.activeDays')} value={`${totals.activeDays} / 30`} />
         <StatCard

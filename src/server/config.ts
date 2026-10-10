@@ -1,7 +1,7 @@
 import 'server-only';
 import { randomBytes } from 'node:crypto';
 import { asc, eq } from 'drizzle-orm';
-import { applyTimezone, db } from '@/db';
+import { applyTimezone, db, resetTimezone } from '@/db';
 import { appConfig, appSettings, users } from '@/db/schema';
 import { DEFAULT_LOCALE, isLocale } from '@/i18n';
 import { createAdapter, type MediaServerAdapter, type ServerType } from './adapters';
@@ -199,6 +199,7 @@ export interface AppSettings {
   newsletterUniqueId: string;
   newsletterLastSentAt: Date | null;
   newsletterLastHtml: string | null;
+  newsletterLastHtmlByLocale: Record<string, string> | null;
   updateCheckedAt: Date | null;
   updateLatestVersion: string | null;
 }
@@ -241,6 +242,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   newsletterUniqueId: 'newsletter',
   newsletterLastSentAt: null,
   newsletterLastHtml: null,
+  newsletterLastHtmlByLocale: null,
   updateCheckedAt: null,
   updateLatestVersion: null,
 };
@@ -287,6 +289,7 @@ export async function getSettings(): Promise<AppSettings> {
     newsletterUniqueId: row.newsletterUniqueId,
     newsletterLastSentAt: row.newsletterLastSentAt,
     newsletterLastHtml: row.newsletterLastHtml,
+    newsletterLastHtmlByLocale: row.newsletterLastHtmlByLocale ?? null,
     updateCheckedAt: row.updateCheckedAt,
     updateLatestVersion: row.updateLatestVersion,
   };
@@ -337,6 +340,7 @@ export async function updateSettings(input: {
   newsletterUniqueId?: string;
   newsletterLastSentAt?: Date;
   newsletterLastHtml?: string;
+  newsletterLastHtmlByLocale?: Record<string, string>;
   updateCheckedAt?: Date;
   updateLatestVersion?: string | null;
 }): Promise<void> {
@@ -354,7 +358,12 @@ export async function updateSettings(input: {
     // Applied to the running process as well as stored: the aggregates would otherwise
     // keep bucketing in the old zone until the next restart, and an admin comparing the
     // chart against their clock would conclude the setting does nothing.
-    if (zone === null || applyTimezone(zone)) patch.timezone = zone;
+    if (zone === null) {
+      resetTimezone();
+      patch.timezone = null;
+    } else if (applyTimezone(zone)) {
+      patch.timezone = zone;
+    }
   }
   if (input.apiKey !== undefined) {
     patch.apiKey = input.apiKey ? encryptSecret(input.apiKey) : null;
@@ -440,6 +449,7 @@ export async function updateSettings(input: {
   }
   if (input.newsletterLastSentAt) patch.newsletterLastSentAt = input.newsletterLastSentAt;
   if (input.newsletterLastHtml !== undefined) patch.newsletterLastHtml = input.newsletterLastHtml;
+  if (input.newsletterLastHtmlByLocale !== undefined) patch.newsletterLastHtmlByLocale = input.newsletterLastHtmlByLocale;
   if (input.updateCheckedAt) patch.updateCheckedAt = input.updateCheckedAt;
   if (input.updateLatestVersion !== undefined) patch.updateLatestVersion = input.updateLatestVersion;
   if (!Object.keys(patch).length) return;

@@ -189,13 +189,17 @@ export default async function LibrariesPage({
               {visible.map((row) => (
                 <tr key={row.id}>
                   <td>
-                    <Icon name={row.mediaType === 'movie' ? 'film' : 'tv'} />
+                    <Icon name={row.mediaType === 'movie' ? 'film' : row.mediaType === 'audio' ? 'music' : 'tv'} />
                   </td>
                   <td>
                     <Link href={`/libraries/${encodeURIComponent(row.id)}`}>{row.name}</Link>
                   </td>
                   <td className="muted">
-                    {row.mediaType === 'movie' ? t('libraries.typeMovie') : t('libraries.typeShow')}
+                    {row.mediaType === 'movie'
+                      ? t('libraries.typeMovie')
+                      : row.mediaType === 'audio'
+                        ? t('libraries.typeAudio')
+                        : t('libraries.typeShow')}
                   </td>
                   <td className="num">{row.items}</td>
                   <td className="num muted">{row.seasons ?? '—'}</td>

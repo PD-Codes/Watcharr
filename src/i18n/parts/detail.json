@@ -111,5 +111,9 @@
   "system.storedSnapshots": { "en": "Stored snapshots", "de": "Gespeicherte Snapshots" },
   "system.file": { "en": "File", "de": "Datei" },
   "system.size": { "en": "Size", "de": "Größe" },
-  "system.created": { "en": "Created", "de": "Erstellt" }
+  "system.created": { "en": "Created", "de": "Erstellt" },
+  "title.notWatchedYet": {
+    "en": "In your library, not watched yet",
+    "de": "In deiner Bibliothek, noch nicht gesehen"
+  }
 }

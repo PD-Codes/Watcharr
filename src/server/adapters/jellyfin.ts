@@ -354,8 +354,9 @@ export class JellyfinAdapter implements MediaServerAdapter {
       this.url('/Library/VirtualFolders'),
       { headers: this.headers() },
     );
+    const audio = (f: { CollectionType?: string }) => f.CollectionType === 'music' || f.CollectionType === 'books';
     const wanted = folders.filter(
-      (f) => f.CollectionType === 'movies' || f.CollectionType === 'tvshows',
+      (f) => f.CollectionType === 'movies' || f.CollectionType === 'tvshows' || audio(f),
     );
 
     // Counts come from separate requests per library: Jellyfin reports the total in the
@@ -377,6 +378,11 @@ export class JellyfinAdapter implements MediaServerAdapter {
 
     return Promise.all(
       wanted.map(async (folder) => {
+        // Music and audiobooks as one kind, counted in tracks (a "books" library may also hold
+        // e-books, which are not counted).
+        if (audio(folder)) {
+          return { id: folder.ItemId, name: folder.Name, mediaType: 'audio', itemCount: await countOf(folder.ItemId, 'Audio,AudioBook') };
+        }
         const isMovies = folder.CollectionType === 'movies';
         const [itemCount, seasonCount, episodeCount] = await Promise.all([
           countOf(folder.ItemId, isMovies ? 'Movie' : 'Series'),

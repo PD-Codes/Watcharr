@@ -4,9 +4,28 @@
  * never settles, the catch() around the sync never runs, and because the sync sits in the
  * app layout, every single page hangs forever instead of rendering without live data.
  */
+import { isStrainSignal, markStrained } from '../strain';
+
 const DEFAULT_TIMEOUT_MS = 8_000;
 
 export type HttpError = Error & { status?: number };
+
+/** Starts (and logs, once per pause) the backoff for an overloaded host. */
+function strained(url: string, reason: string) {
+  const pause = markStrained(url, reason);
+  if (pause !== null) {
+    const host = new URL(url).host;
+    const what =
+      reason === 'database is locked'
+        ? // Said outright: the same words from Watcharr's own SQLite would mean something else entirely.
+          `${host} reports "database is locked" — that is the media server's own database (Plex/Jellyfin), not Watcharr's`
+        : `${host} looks overloaded (${reason})`;
+    console.warn(
+      `[watcharr] ${what}; backing off for ${Math.round(pause / 60_000)} min: ` +
+        'live polling every 30 s, library, history and artwork jobs paused',
+    );
+  }
+}
 
 /** True when the media server refused the credentials rather than the request. */
 export function isUnauthorized(error: unknown): boolean {
@@ -20,14 +39,25 @@ export async function apiFetch<T>(
   init: RequestInit & { timeoutMs?: number } = {},
 ): Promise<T> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, ...rest } = init;
-  const res = await fetch(url, {
-    ...rest,
-    headers: { Accept: 'application/json', ...rest.headers },
-    cache: 'no-store',
-    signal: rest.signal ?? AbortSignal.timeout(timeoutMs),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...rest,
+      headers: { Accept: 'application/json', ...rest.headers },
+      cache: 'no-store',
+      signal: rest.signal ?? AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    // Only our own timeout: a refused connection is a server that is down, which the sync's
+    // down-backoff already handles, and a caller's abort is not the server's fault.
+    if ((error as Error | null)?.name === 'TimeoutError') strained(url, `no answer within ${timeoutMs / 1000} s`);
+    throw error;
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
+    if (isStrainSignal(res.status, body)) {
+      strained(url, /database is locked/i.test(body) ? 'database is locked' : `HTTP ${res.status}`);
+    }
     const error = new Error(
       `${init.method ?? 'GET'} ${url} failed: ${res.status} ${body.slice(0, 200)}`,
     );

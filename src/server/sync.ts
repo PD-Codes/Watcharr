@@ -4,7 +4,7 @@ import { db } from '@/db';
 import { appConfig, playbackSessions, users, watchHistory, watchlist } from '@/db/schema';
 import { createAdapter, type ServerType } from './adapters';
 import { isUnauthorized } from './adapters/http';
-import { getAdapter, getSettings, listServers, type ServerRow } from './config';
+import { getAdapter, getServer, getSettings, listServers, type ServerRow } from './config';
 import { isEnabled } from './features';
 import { isPrivateAddress } from './net';
 import { checkAutoBackup } from './autobackup';
@@ -19,6 +19,13 @@ import { revokeSession, type Session } from './session';
 import { notify } from './notifications';
 import { ensureUsers } from './userroster';
 import { globalState } from './state';
+import { singleFlight, timed } from './jobs';
+import { isStrained } from './strain';
+
+/** TMDB is throttled like a media server when it answers 429. */
+const TMDB_URL = 'https://api.themoviedb.org';
+/** How often a strained server is still asked what is playing. */
+const STRAINED_POLL_MS = 30_000;
 
 // Shared across Next's module graphs (see state.ts): the throttles and the failed-server memory
 // below used to exist once for the background tick and once for page renders, and one server
@@ -53,9 +60,17 @@ export function reportSyncError(what: string) {
     // A 401 is the one failure with an obvious fix, and the raw line does not say so: the
     // stored media server token was revoked or expired. The session carrying it has just
     // been dropped, so the hint says what already happened rather than asking for it.
+    const code = (error as { code?: unknown } | null)?.code;
     const hint = isUnauthorized(error)
       ? ' — the media server rejected the stored token; the session was signed out and the next sign-in replaces it'
-      : '';
+      : typeof (error as { status?: unknown } | null)?.status === 'number' && /database is locked/i.test(message)
+        ? // An HTTP answer, so it came from the media server: its database, not ours.
+          ' — the media server\'s own database is locked (not Watcharr\'s); requests to it are paused for a few minutes'
+        : typeof code === 'string' && code.startsWith('SQLITE_BUSY')
+        ? // This process has one writing connection, so a lock it cannot get is held by someone else.
+          ' — Watcharr\'s own database is locked by another process: a second Watcharr container or instance on the same ' +
+          'data folder, or a network share (see the system check; WATCHARR_DB_LOCKING=exclusive)'
+        : '';
     console.warn(`[watcharr] ${what} failed: ${message}${hint}`);
   };
 }
@@ -71,12 +86,36 @@ function throttled(key: string, everyMs: number): boolean {
   return false;
 }
 
+/**
+ * Starts a sync from a page without waiting for it: the page renders what is already stored,
+ * and whatever the sync brings in shows on the next reload (most pages refresh themselves).
+ *
+ * Pages used to await the whole thing. The activity sync in the layout carries the ten-minute
+ * jobs (the full media-server library, up to 25 sequential TMDB lookups, the automatic backup,
+ * retention), and whoever opened a page at that moment waited for all of it — on a slow or busy
+ * Plex half a minute. The background tick (instrumentation.ts) does the same work anyway, and
+ * singleFlight() makes a page's call join a run in flight rather than start a second one.
+ */
+export function runInBackground(task: Promise<unknown>, what: string): void {
+  void task.catch(reportSyncError(what));
+}
+
 /** Pulls new history entries for one user. Duplicates are dropped by the unique index. */
 export async function syncHistory(session: Session) {
   if (session.preview) return; // an admin's preview never pulls on the viewed user's behalf
   const user = session.user;
   const userId = user.id;
+  const server = await getServer(user.serverId);
+  // While the server is paused for load the history waits; the throttle is not consumed, so
+  // the first page after the pause pulls it.
+  if (!server || isStrained(server.serverUrl)) return;
   if (throttled(`history:${userId}`, 60_000)) return;
+  return singleFlight(`history:${userId}`, () => timed(`history sync for ${user.username}`, () => pullHistory(session)));
+}
+
+async function pullHistory(session: Session) {
+  const user = session.user;
+  const userId = user.id;
 
   const adapter = await getAdapter(user.serverId);
   const entries = await adapter
@@ -131,18 +170,29 @@ export function liveSessionFilter() {
  * Records what the server is currently playing. Rows are kept after playback ends so the
  * client, codec and transcoding statistics have something to aggregate over.
  */
-export async function syncActivity(force = false) {
+export function syncActivity(force = false): Promise<void> {
   // The live socket calls this the moment a server reports a change, which is the one
   // caller allowed past the poll interval — otherwise the socket would only ever shorten
   // the wait to whatever is left of the five seconds.
-  if (!force && throttled('activity', 5_000)) return;
+  if (!force && throttled('activity', 5_000)) return Promise.resolve();
+  // Ticks, socket frames and page renders all land here; while one pass runs, the others
+  // join it instead of asking the media server the same questions a second time.
+  return singleFlight('activity', () => timed('activity sync', runActivity));
+}
+
+async function runActivity() {
   for (const server of await listServers()) {
     // A server that just failed is skipped for a while. The sync runs in the app layout,
     // so without this every page load would pay the connection timeout again.
     if ((downUntil.get(server.id) ?? 0) > Date.now()) continue;
+    // Overloaded (Plex's own "database is locked", 5xx, timeouts): everything that can wait
+    // does, and what is playing is asked twice a minute instead of every five seconds.
+    const strained = isStrained(server.serverUrl);
+    if (strained && throttled(`strained-poll:${server.id}`, STRAINED_POLL_MS)) continue;
 
-    // Cheap enough to sit in the same loop, but on its own, much slower clock.
-    if (!throttled(`added:${server.id}`, 10 * 60_000)) {
+    // Cheap enough to sit in the same loop, but on its own, much slower clock. Not consumed
+    // while strained, so it runs as soon as the pause is over.
+    if (!strained && !throttled(`added:${server.id}`, 10 * 60_000)) {
       // Before the recently-added check, so a new arrival can already be matched to its
       // library. Warmed here rather than left to the poster prefetch, which only runs with
       // a TMDB key — the library filter must not depend on an unrelated setting.
@@ -151,23 +201,26 @@ export async function syncActivity(force = false) {
     }
     // The roster rarely changes; every few hours is plenty, and the first pass fills a fresh
     // install. Streams add anybody missed in between (see syncServerActivity).
-    if (!throttled(`roster:${server.id}`, 6 * 3_600_000)) {
+    if (!strained && !throttled(`roster:${server.id}`, 6 * 3_600_000)) {
       await syncRoster(server).catch(reportSyncError(`user list of ${server.label}`));
     }
     // One unreachable server must not stop the others from being polled.
-    await syncServerActivity(server).catch(() => {
+    await syncServerActivity(server).catch((error: unknown) => {
       downUntil.set(server.id, Date.now() + DOWN_BACKOFF_MS);
       // ponytail: reachability is remembered in process memory, so a restart can repeat a
       // server.down notification. A column would survive restarts; not worth one yet.
       if (reachable.get(server.id) !== false) {
         reachable.set(server.id, false);
+        console.warn(
+          `[watcharr] ${server.label} is not reachable (${error instanceof Error ? error.message : String(error)}); retrying every minute`,
+        );
         notify('server.down', { server: { id: server.id, label: server.label, slug: server.slug } });
       }
     });
   }
   // Artwork for the poster grids is filled here rather than while a page renders: a grid
   // of two dozen tiles would otherwise fire two dozen TMDB searches on its first view.
-  if (!throttled('tmdb', 10 * 60_000)) {
+  if (!isStrained(TMDB_URL) && !throttled('tmdb', 10 * 60_000)) {
     const looked = await prefetchArtwork().catch((e: unknown) => (reportSyncError('TMDB prefetch')(e), 0));
     // While there is a backlog (a fresh install has the whole library to fetch), come back in
     // a minute instead of ten: 25 titles per ten minutes would take a day for a large library.
@@ -308,6 +361,7 @@ async function syncServerActivity(server: ServerRow) {
     server.serverToken,
   );
   const sessions = await adapter.getSessions();
+  if (reachable.get(server.id) === false) console.log(`[watcharr] ${server.label} is reachable again`);
   reachable.set(server.id, true);
   downUntil.delete(server.id);
   // Somebody streaming who never signed in here still gets an account row, or the stream
@@ -570,7 +624,11 @@ async function recordFinishedPlays(
 }
 
 /** Mirrors the server-side watchlist (Plex only) into the local watchlist. */
-export async function syncWatchlist(session: Session) {
+export function syncWatchlist(session: Session): Promise<void> {
+  return singleFlight(`watchlist:${session.user.id}`, () => pullWatchlist(session));
+}
+
+async function pullWatchlist(session: Session) {
   if (session.preview) return;
   const user = session.user;
   const userId = user.id;

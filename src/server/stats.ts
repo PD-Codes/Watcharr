@@ -7,8 +7,13 @@ export interface Totals {
   watchtimeMs: number;
   movies: number;
   episodes: number;
+  /** Music and audiobooks: Plex says 'track', Jellyfin/Emby 'audio' and 'audiobook'. */
+  audio: number;
   activeDays: number;
 }
+
+/** media_type values that are listened to rather than watched. */
+export const AUDIO_TYPES = ['track', 'audio', 'audiobook'];
 
 export interface LabelledValue {
   label: string;
@@ -47,12 +52,14 @@ export async function getTotals(scope: Scope, days?: number): Promise<Totals> {
     watchtime: number;
     movies: number;
     episodes: number;
+    audio: number;
     active_days: number;
   }>(sql`
     SELECT count(*) AS plays,
            coalesce(sum(duration_ms), 0) AS watchtime,
            count(*) FILTER (WHERE media_type = 'movie') AS movies,
            count(*) FILTER (WHERE media_type = 'episode') AS episodes,
+           count(*) FILTER (WHERE media_type IN ('track', 'audio', 'audiobook')) AS audio,
            count(DISTINCT ${localDay('watched_at')}) AS active_days
     FROM watch_history
     WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
@@ -62,6 +69,7 @@ export async function getTotals(scope: Scope, days?: number): Promise<Totals> {
     watchtimeMs: Number(row?.watchtime ?? 0),
     movies: Number(row?.movies ?? 0),
     episodes: Number(row?.episodes ?? 0),
+    audio: Number(row?.audio ?? 0),
     activeDays: Number(row?.active_days ?? 0),
   };
 }
@@ -202,12 +210,13 @@ export async function getTopGenres(
   scope: Scope,
   limit = 8,
   by: RankBy = 'count',
+  days?: number,
 ): Promise<LabelledValue[]> {
   // genres is a JSON array column; json_each expands it into one row per genre.
   const rows = await db.all<{ genre: string; total: number }>(sql`
     SELECT genre.value AS genre, ${metric(by)} AS total
     FROM watch_history, json_each(watch_history.genres) AS genre
-    WHERE ${scopeFilter(scope, 'watch_history.')}
+    WHERE ${scopeFilter(scope, 'watch_history.')} AND ${sinceFilter(days, 'watch_history.')}
     GROUP BY genre.value
     ORDER BY total DESC, genre ASC
     LIMIT ${limit}
@@ -224,11 +233,12 @@ export async function getTopTitles(
   scope: Scope,
   limit = 8,
   by: RankBy = 'count',
+  days?: number,
 ): Promise<LabelledValue[]> {
   const rows = await db.all<{ label: string; total: number }>(sql`
     SELECT coalesce(grandparent_title, title) AS label, ${metric(by)} AS total
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
     GROUP BY label
     ORDER BY total DESC, label ASC
     LIMIT ${limit}
@@ -324,12 +334,12 @@ export function getTopTitlesByTime(scope: Scope, limit = 8): Promise<LabelledVal
 }
 
 /** Watch time per weekday, Monday first. */
-export async function getWeekdayActivity(scope: Scope): Promise<LabelledValue[]> {
+export async function getWeekdayActivity(scope: Scope, days?: number): Promise<LabelledValue[]> {
   const rows = await db.all<{ weekday: string; minutes: number }>(sql`
     SELECT strftime('%w', watched_at / 1000, 'unixepoch', 'localtime') AS weekday,
            sum(duration_ms) / 60000 AS minutes
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
     GROUP BY weekday
   `);
   // strftime('%w') is 0 = Sunday, so the labels are rotated to start on Monday.
@@ -343,11 +353,12 @@ export async function getTopDevices(
   scope: Scope,
   limit = 8,
   by: RankBy = 'time',
+  days?: number,
 ): Promise<LabelledValue[]> {
   const rows = await db.all<{ label: string; total: number }>(sql`
     SELECT coalesce(device_name, 'Unknown') AS label, ${metric(by)} AS total
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
     GROUP BY label
     ORDER BY total DESC, label ASC
     LIMIT ${limit}
@@ -362,11 +373,11 @@ export interface Highlights {
   distinctTitles: number;
 }
 
-export async function getHighlights(scope: Scope): Promise<Highlights> {
+export async function getHighlights(scope: Scope, days?: number): Promise<Highlights> {
   const [busiest] = await db.all<{ day: string; minutes: number }>(sql`
     SELECT ${localDay('watched_at')} AS day, sum(duration_ms) / 60000 AS minutes
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
     GROUP BY day
     ORDER BY minutes DESC
     LIMIT 1
@@ -376,23 +387,23 @@ export async function getHighlights(scope: Scope): Promise<Highlights> {
     SELECT coalesce(avg(duration_ms), 0) AS average,
            count(DISTINCT coalesce(grandparent_title, title)) AS titles
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
   `);
 
   return {
     busiestDay: busiest ? { day: busiest.day, minutes: Number(busiest.minutes) } : null,
     averagePlayMs: Math.round(Number(aggregate?.average ?? 0)),
-    longestStreak: await getLongestStreak(scope),
+    longestStreak: await getLongestStreak(scope, days),
     distinctTitles: Number(aggregate?.titles ?? 0),
   };
 }
 
 /** Longest run of consecutive days with at least one play, anywhere in the history. */
-export async function getLongestStreak(scope: Scope): Promise<number> {
+export async function getLongestStreak(scope: Scope, period?: number): Promise<number> {
   const days = await db.all<{ day: string }>(sql`
     SELECT DISTINCT ${localDay('watched_at')} AS day
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(period)}
     ORDER BY day ASC
   `);
 
@@ -409,12 +420,12 @@ export async function getLongestStreak(scope: Scope): Promise<number> {
 }
 
 /** Plays per hour of day (0-23), used to spot peak times. */
-export async function getPeakHours(scope: Scope): Promise<LabelledValue[]> {
+export async function getPeakHours(scope: Scope, days?: number): Promise<LabelledValue[]> {
   const rows = await db.all<{ hour: number; plays: number }>(sql`
     SELECT cast(strftime('%H', watched_at / 1000, 'unixepoch', 'localtime') AS INTEGER) AS hour,
            count(*) AS plays
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
     GROUP BY hour
   `);
   const found = new Map(rows.map((r) => [Number(r.hour), Number(r.plays)]));
@@ -453,12 +464,14 @@ export async function getStreak(scope: Scope): Promise<number> {
 export async function getUserLeaderboard(
   serverId?: number,
   limit = 10,
+  days?: number,
 ): Promise<LabelledValue[]> {
   const onServer = serverId === undefined ? sql`1 = 1` : sql`u.server_id = ${serverId}`;
   const rows = await db.all<{ username: string; minutes: number }>(sql`
     SELECT u.username AS username, coalesce(sum(h.duration_ms), 0) / 60000 AS minutes
     FROM users u
-    LEFT JOIN watch_history h ON h.user_id = u.id
+    -- The period sits in the join, not the WHERE: a user without plays in it still counts as zero.
+    LEFT JOIN watch_history h ON h.user_id = u.id AND ${sinceFilter(days, 'h.')}
     WHERE ${onServer}
     GROUP BY u.id
     ORDER BY minutes DESC
@@ -484,13 +497,13 @@ export async function getMonthlyActivity(scope: Scope, year?: number): Promise<L
 }
 
 /** Minutes watched per weekday and hour — 7 rows, 24 columns, Monday first. */
-export async function getWeekHourGrid(scope: Scope): Promise<number[][]> {
+export async function getWeekHourGrid(scope: Scope, days?: number): Promise<number[][]> {
   const rows = await db.all<{ weekday: string; hour: string; minutes: number }>(sql`
     SELECT strftime('%w', watched_at / 1000, 'unixepoch', 'localtime') AS weekday,
            strftime('%H', watched_at / 1000, 'unixepoch', 'localtime') AS hour,
            sum(duration_ms) / 60000 AS minutes
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
     GROUP BY weekday, hour
   `);
 
@@ -509,11 +522,11 @@ export interface RewatchSplit {
 }
 
 /** How much of the watching is new material versus something seen before. */
-export async function getRewatchSplit(scope: Scope): Promise<RewatchSplit> {
+export async function getRewatchSplit(scope: Scope, days?: number): Promise<RewatchSplit> {
   const [row] = await db.all<{ total: number; distinct_items: number }>(sql`
     SELECT count(*) AS total, count(DISTINCT item_id) AS distinct_items
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${scopeFilter(scope)} AND ${sinceFilter(days)}
   `);
   const total = Number(row?.total ?? 0);
   const fresh = Number(row?.distinct_items ?? 0);
@@ -530,9 +543,10 @@ export interface Records {
 }
 
 /** Superlatives: the numbers people actually enjoy looking at. */
-export async function getRecords(scope: Scope): Promise<Records> {
+export async function getRecords(scope: Scope, days?: number): Promise<Records> {
+  const where = sql`${scopeFilter(scope)} AND ${sinceFilter(days)}`;
   const [longest] = await db.all<{ duration_ms: number }>(sql`
-    SELECT max(duration_ms) AS duration_ms FROM watch_history WHERE ${scopeFilter(scope)}
+    SELECT max(duration_ms) AS duration_ms FROM watch_history WHERE ${where}
   `);
 
   const [binge] = await db.all<{ label: string; day: string; plays: number }>(sql`
@@ -540,7 +554,7 @@ export async function getRecords(scope: Scope): Promise<Records> {
            ${localDay('watched_at')} AS day,
            count(*) AS plays
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${where}
     GROUP BY label, day
     ORDER BY plays DESC
     LIMIT 1
@@ -549,7 +563,7 @@ export async function getRecords(scope: Scope): Promise<Records> {
   const [totals] = await db.all<{ items: number; last_play: number | null }>(sql`
     SELECT count(DISTINCT item_id) AS items, max(watched_at) AS last_play
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    WHERE ${where}
   `);
 
   return {

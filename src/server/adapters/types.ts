@@ -106,7 +106,7 @@ export interface LibraryItem {
 export interface LibrarySection {
   id: string;
   name: string;
-  /** 'movie' | 'show' | whatever the backend calls it. */
+  /** 'movie' | 'show' | 'audio' (music and audiobooks, counted in tracks). */
   mediaType: string;
   /** Movies, or series — the top level of the library, never its children. */
   itemCount: number;

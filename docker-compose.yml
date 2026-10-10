@@ -17,6 +17,11 @@ services:
       # Days, weekdays and hours are counted in the app's configured zone; this is only
       # the fallback for an installation that has not chosen one under Settings.
       TZ: ${TZ:-UTC}
+      # Parallel read-only connections for the statistics (0 turns them off).
+      # WATCHARR_DB_READERS: "2"
+      # On a network share (NFS/SMB) or a Docker Desktop bind mount the app switches SQLite to an
+      # exclusive lock by itself; "normal" or "exclusive" overrides that detection.
+      # WATCHARR_DB_LOCKING: exclusive
     volumes:
       - watcharr-data:/app/data
       # Uncomment to import from Tautulli: mount its folder read-only and point the import

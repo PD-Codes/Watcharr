@@ -18,7 +18,13 @@ export async function POST(request: Request) {
 
   const [target] = await db.select().from(users).where(eq(users.id, body.userId));
   // 404 for both "no such user" and "not yours to see": no hint that an account exists.
-  if (!target || target.id === session.user.id || !canSee(session.user, target)) {
+  if (
+    !target ||
+    target.id === session.user.id ||
+    !canSee(session.user, target) ||
+    // Only a global admin may look at another global admin (getSession caps the rights anyway).
+    (target.globalAdmin && !session.user.globalAdmin)
+  ) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
   await setViewAs(session.id, target.id);

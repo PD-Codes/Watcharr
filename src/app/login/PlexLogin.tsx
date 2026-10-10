@@ -55,6 +55,15 @@ export default function PlexLogin({ serverId, askSetupToken }: { serverId: numbe
       }
       const next = (await res.json()) as Pin;
       setPin(next);
+      // On a phone this tab sleeps and the return tab (/login/plex-done) finishes the login;
+      // it can only claim admin if it knows the setup token too. Keyed by PIN, read once.
+      if (setupToken) {
+        try {
+          localStorage.setItem(`watcharr.setup.${next.pinId}`, setupToken);
+        } catch {
+          // Blocked storage: the setup token then only works in this tab.
+        }
+      }
       if (popup) popup.location.href = next.authUrl;
       else window.open(next.authUrl, '_blank', 'noopener');
 

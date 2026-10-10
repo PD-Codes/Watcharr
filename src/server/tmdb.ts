@@ -4,6 +4,7 @@ import { db } from '@/db';
 import { tmdbCache } from '@/db/schema';
 import { apiFetch } from './adapters/http';
 import { scopeFilter, type Scope } from './stats';
+import { LOCALES } from '@/i18n';
 
 const BASE = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p';
@@ -55,7 +56,27 @@ export interface TmdbMeta {
   runtimeMinutes?: number;
   genres: string[];
   cast: TmdbCastMember[];
+  /**
+   * Title, synopsis and tagline per app language other than English, keyed by ISO 639-1.
+   * TMDB answers in English unless asked; one `translations` append carries every language
+   * at once, so a German reader costs no second request. Absent on entries cached before it
+   * existed — those count as stale and are fetched again.
+   */
+  text?: Record<string, { title?: string; overview?: string; tagline?: string }>;
 }
+
+/** The meta as a reader of `locale` should see it; English and untranslated fields stay as stored. */
+export function localizedMeta(meta: TmdbMeta, locale: string): TmdbMeta;
+export function localizedMeta(meta: TmdbMeta | null | undefined, locale: string): TmdbMeta | null;
+export function localizedMeta(meta: TmdbMeta | null | undefined, locale: string): TmdbMeta | null {
+  if (!meta) return null;
+  const own = meta.text?.[locale.slice(0, 2)];
+  if (!own) return meta;
+  return { ...meta, overview: own.overview || meta.overview, tagline: own.tagline || meta.tagline };
+}
+
+/** Languages worth keeping from TMDB's translation list: the app's own, minus English. */
+const TEXT_LANGUAGES = LOCALES.map((l) => l.split('-')).filter(([lang]) => lang !== 'en');
 
 export interface TmdbPerson {
   id: number;
@@ -92,11 +113,16 @@ function toTitle(r: TmdbResult): TmdbTitle {
  * Reads through the cache table. `null` is a real, cached answer ("TMDB does not know this
  * title") — without storing it, every page view of an obscure title would search again.
  */
-async function cached<T>(key: string, load: () => Promise<T | null>): Promise<T | null> {
+async function cached<T>(
+  key: string,
+  load: () => Promise<T | null>,
+  current: (payload: T) => boolean = () => true,
+): Promise<T | null> {
   const [row] = await db.select().from(tmdbCache).where(eq(tmdbCache.key, key));
   if (row) {
     const age = Date.now() - row.fetchedAt.getTime();
-    if (age < (row.payload === null ? MISS_TTL_MS : HIT_TTL_MS)) return row.payload as T | null;
+    const fresh = age < (row.payload === null ? MISS_TTL_MS : HIT_TTL_MS);
+    if (fresh && (row.payload === null || current(row.payload as T))) return row.payload as T | null;
   }
 
   let value: T | null = null;
@@ -315,7 +341,10 @@ export async function prefetchTitleMeta(
       .where(inArray(tmdbCache.key, keys.slice(i, i + 500)))
       .catch(() => []);
     for (const row of known) {
-      if (isStale(row.payload === null, row.fetchedAt)) stale.push({ key: row.key, at: row.fetchedAt.getTime() });
+      // An entry from before translations were stored is renewed like an expired one, so a
+      // German synopsis arrives within days instead of after the month-long TTL.
+      const untranslated = row.payload !== null && !(row.payload as TmdbMeta).text;
+      if (untranslated || isStale(row.payload === null, row.fetchedAt)) stale.push({ key: row.key, at: row.fetchedAt.getTime() });
       else wanted.delete(row.key);
     }
   }
@@ -340,6 +369,13 @@ type TmdbDetails = TmdbResult & {
   genres?: { id: number; name: string }[];
   credits?: {
     cast?: { id: number; name: string; character?: string; profile_path?: string | null }[];
+  };
+  translations?: {
+    translations?: {
+      iso_639_1: string;
+      iso_3166_1: string;
+      data?: { title?: string; name?: string; overview?: string; tagline?: string };
+    }[];
   };
 };
 
@@ -367,9 +403,26 @@ async function loadMeta(
   if (!match) return null;
 
   const details = await apiFetch<TmdbDetails>(
-    `${BASE}/${kind}/${match.id}?api_key=${apiKey}&append_to_response=credits`,
+    `${BASE}/${kind}/${match.id}?api_key=${apiKey}&append_to_response=credits,translations`,
   );
   const date = details.release_date ?? details.first_air_date;
+
+  const text: NonNullable<TmdbMeta['text']> = {};
+  const translations = details.translations?.translations ?? [];
+  for (const [lang, region] of TEXT_LANGUAGES) {
+    // The app's own region first ("de-DE" over "de-AT"), then any variant of the language.
+    const hit =
+      translations.find((t) => t.iso_639_1 === lang && t.iso_3166_1 === region) ??
+      translations.find((t) => t.iso_639_1 === lang);
+    const data = hit?.data;
+    if (data && (data.overview || data.tagline)) {
+      text[lang] = {
+        title: data.title || data.name || undefined,
+        overview: data.overview || undefined,
+        tagline: data.tagline || undefined,
+      };
+    }
+  }
 
   return {
     tmdbId: details.id,
@@ -384,6 +437,7 @@ async function loadMeta(
     voteCount: details.vote_count || undefined,
     runtimeMinutes: details.runtime ?? details.episode_run_time?.[0],
     genres: (details.genres ?? []).map((g) => g.name),
+    text,
     cast: (details.credits?.cast ?? []).slice(0, CAST_LIMIT).map((c) => ({
       id: c.id,
       name: c.name,
@@ -406,12 +460,16 @@ export async function getTitleMeta(
   label: string,
   mediaType: string,
   year?: number | null,
+  locale?: string,
 ): Promise<TmdbMeta | null> {
   if (!apiKey || !label.trim()) return null;
   const kind = tmdbKind(mediaType);
-  return cached<TmdbMeta>(metaKey(label, mediaType, year), () =>
-    loadMeta(apiKey, label.trim(), kind, year ?? undefined),
+  const meta = await cached<TmdbMeta>(
+    metaKey(label, mediaType, year),
+    () => loadMeta(apiKey, label.trim(), kind, year ?? undefined),
+    (payload) => Boolean(payload.text),
   );
+  return locale ? localizedMeta(meta, locale) : meta;
 }
 
 type TmdbPersonDetails = {

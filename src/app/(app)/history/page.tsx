@@ -6,7 +6,7 @@ import { Icon } from '@/components/Icons';
 import TitleLink from '@/components/TitleLink';
 import { firstParam, formatDate, formatDuration, intParam, isoDay } from '@/components/format';
 import { historyFilters } from '@/server/history';
-import { reportSyncError, syncHistory } from '@/server/sync';
+import { syncHistory, runInBackground } from '@/server/sync';
 import { requireUser } from '@/server/session';
 import { getT } from '@/i18n/server';
 import type { TranslationKey } from '@/i18n';
@@ -55,7 +55,7 @@ export default async function HistoryPage({
 }) {
   const session = await requireUser();
   const t = await getT();
-  await syncHistory(session).catch(reportSyncError('history sync'));
+  runInBackground(syncHistory(session), 'history sync');
 
   const raw = await searchParams;
   // A repeated key arrives as an array, and an array reaching a bound SQL parameter is a 500.

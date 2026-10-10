@@ -11,7 +11,8 @@ import {
   type ScreenStats,
   type ScreenStream,
 } from '@/server/screen-core';
-import { adminScope, isAdmin, requireUser } from '@/server/session';
+import { isAdmin, requireUser } from '@/server/session';
+import { resolveView, viewQuery } from '@/server/viewscope';
 import { globalState } from '@/server/state';
 import { getRecentPlays, getStreak, getTotals } from '@/server/stats';
 import { cachedPosters } from '@/server/tmdb';
@@ -63,21 +64,30 @@ function toStream(row: LiveSession, admin: boolean, now: number): ScreenStream {
  * The lobby display: full-screen, hands-off, readable across a room. Everything on it is
  * the dashboard's own data under the dashboard's own visibility rule, so a non-admin sees
  * their own streams and their own numbers here too and nobody else's.
+ *
+ * An admin chooses between the whole server (the default, what a display in the hallway is
+ * for) and their own streams (`?view=me`); a global admin with several servers picks one.
  */
-export default async function ScreenPage() {
+export default async function ScreenPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string; server?: string }>;
+}) {
   const session = await requireUser();
   const t = await getT();
   const locale = await getLocale();
   const now = Date.now();
 
   const admin = isAdmin(session.user);
-  const scope = admin ? adminScope(session.user) : { userId: session.user.id };
-  const serverId = session.user.serverId;
+  const view = await resolveView(session, await searchParams, 'server');
+  const scope = view.scope;
+  const serverId = view.server.id;
 
   const live = await getLiveSessions({
-    userId: admin ? undefined : session.user.id,
+    userId: view.kind === 'me' ? session.user.id : undefined,
     serverId,
-    globalAdmin: session.user.globalAdmin,
+    // Never every server at once: the server view is one server, picked or the reader's own.
+    globalAdmin: false,
   });
   const streams = orderStreams(live.map((row) => toStream(row, admin, now)));
 
@@ -125,7 +135,21 @@ export default async function ScreenPage() {
       <AutoRefresh seconds={4} />
       <ScreenClient
         locale={locale}
-        serverSlug={session.server.slug}
+        serverSlug={view.server.slug}
+        scopeLabel={view.kind === 'server' && view.servers.length > 1 ? view.server.label : null}
+        views={
+          view.canServer
+            ? [
+                { key: 'me', label: t('view.me'), href: `/screen${viewQuery({ kind: 'me' })}`, on: view.kind === 'me' },
+                ...view.servers.map((server) => ({
+                  key: `server:${server.slug}`,
+                  label: view.servers.length > 1 ? server.label : t('view.server'),
+                  href: `/screen${viewQuery({ kind: 'server', server: view.servers.length > 1 ? server.slug : undefined })}`,
+                  on: view.kind === 'server' && view.server.id === server.id,
+                })),
+              ]
+            : []
+        }
         streams={streams}
         slides={slides}
         stats={stats}

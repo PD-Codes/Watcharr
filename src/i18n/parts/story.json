@@ -70,5 +70,16 @@
 
   "story.card.eyebrow": { "en": "Year in review", "de": "Jahresrückblick" },
   "story.card.topTitle": { "en": "Most watched", "de": "Am meisten gesehen" },
-  "story.card.topGenre": { "en": "Top genre", "de": "Top-Genre" }
+  "story.card.topGenre": { "en": "Top genre", "de": "Top-Genre" },
+
+  "story.server.intro.eyebrow": { "en": "The server's year in review", "de": "Jahresrückblick des Servers" },
+  "story.server.intro.name": { "en": "{name}: here is what everyone watched.", "de": "{name}: das haben alle geschaut." },
+  "story.server.time.eyebrow": { "en": "Together you watched for", "de": "Zusammen habt ihr geschaut" },
+  "story.server.plays.eyebrow": { "en": "Play was pressed", "de": "Play wurde gedrückt" },
+  "story.server.top.eyebrow": { "en": "The server's number one", "de": "Spitzenreiter des Servers" },
+  "story.server.genre.eyebrow": { "en": "The server's top genre", "de": "Top-Genre des Servers" },
+  "story.server.genre.share": { "en": "of everything watched here", "de": "von allem, was hier gesehen wurde" },
+  "story.server.days.eyebrow": { "en": "The big days", "de": "Die großen Tage" },
+  "story.server.when.eyebrow": { "en": "Prime time", "de": "Primetime" },
+  "story.server.outro.preview": { "en": "The server's {year} summary card", "de": "Zusammenfassung {year} des Servers" }
 }

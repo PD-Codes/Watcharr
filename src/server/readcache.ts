@@ -2,6 +2,7 @@ import 'server-only';
 import type { SQL } from 'drizzle-orm';
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import { db } from '@/db';
+import { readOnWorker, ReadersUnavailable } from '@/db/readers';
 import { globalState } from './state';
 
 /**
@@ -32,9 +33,16 @@ async function all<T>(query: SQL): Promise<T[]> {
   const hit = kept.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return (hit.rows as T[]).slice();
 
-  const started = performance.now();
-  const rows = await db.all<T>(query);
-  if (performance.now() - started >= SLOW_MS) {
+  // On a reader thread when there is one, so a slow aggregate no longer stops every other
+  // request; on the main connection otherwise (exclusive locking, readers off or failed).
+  // "Slow" is the query's own time: a reader's start-up or queue says nothing about it.
+  const { rows, ms } = await readOnWorker<T>(sql, params).catch(async (error: unknown) => {
+    if (!(error instanceof ReadersUnavailable)) throw error;
+    const started = performance.now();
+    const local = await db.all<T>(query);
+    return { rows: local, ms: performance.now() - started };
+  });
+  if (ms >= SLOW_MS) {
     kept.delete(key);
     kept.set(key, { at: Date.now(), rows });
     if (kept.size > MAX_ENTRIES) {

@@ -55,7 +55,7 @@ export default async function NotificationsPage() {
           email={prefs.email}
           suggestedEmail={user.email ?? ''}
           events={prefs.events}
-          selectable={selectableEvents(user.isAdmin || user.globalAdmin)}
+          selectable={selectableEvents(user.isAdmin, user.globalAdmin)}
           mailConfigured={mailConfigured}
         />
       </section>

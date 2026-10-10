@@ -6,12 +6,12 @@ import type { LibraryItem } from './adapters';
 import { publicArtUrl } from './artlink';
 import { createAdapter, type ServerType } from './adapters';
 import { getSettings, listServers, updateSettings, type ServerRow } from './config';
-import { DEFAULT_LOCALE, isLocale, translator, type Locale } from '@/i18n';
+import { DEFAULT_LOCALE, isLocale, LOCALES, translator, type Locale } from '@/i18n';
 import { getDefaultLocale } from '@/i18n/server';
 import { sectionKey } from './library';
 import { sendMail } from './notifications';
 import { buildNewsletterHtml, type MailCard, type MailModel } from './newsletter-html';
-import { cachedMeta, getTitleMeta, type TmdbMeta } from './tmdb';
+import { cachedMeta, getTitleMeta, localizedMeta, type TmdbMeta } from './tmdb';
 import { globalState } from './state';
 
 // The recently-added newsletter. Two owners on purpose: a global admin decides the
@@ -163,7 +163,8 @@ function toCards(entries: NewsletterEntry[], appUrl: string | undefined) {
   return [...cards.values()].sort((a, b) => (b.addedAt?.getTime() ?? 0) - (a.addedAt?.getTime() ?? 0));
 }
 
-function applyMeta(card: MailCard, meta: TmdbMeta | null | undefined) {
+function applyMeta(card: MailCard, raw: TmdbMeta | null | undefined, locale: Locale) {
+  const meta = localizedMeta(raw, locale);
   if (!meta) return;
   // TMDB images are public, so they reach every mail client; the signed media-server link only
   // works while APP_URL is reachable from outside.
@@ -207,12 +208,12 @@ export async function renderNewsletter(
   const head = cards.slice(0, ENRICH_LIMIT);
   const asRef = (c: (typeof cards)[number]) => ({ itemId: c.itemId, title: c.title, mediaType: c.kind === 'movie' ? 'movie' : 'show', year: c.year });
   const fetched = await Promise.all(
-    head.map((c) => getTitleMeta(apiKey, c.title, c.kind === 'movie' ? 'movie' : 'show', c.year).catch(() => null)),
+    head.map((c) => getTitleMeta(apiKey, c.title, c.kind === 'movie' ? 'movie' : 'show', c.year, locale).catch(() => null)),
   );
-  head.forEach((c, i) => applyMeta(c, fetched[i]));
+  head.forEach((c, i) => applyMeta(c, fetched[i], locale));
   const rest = cards.slice(ENRICH_LIMIT);
   const cached = await cachedMeta(rest.map(asRef));
-  for (const c of rest) applyMeta(c, cached.get(c.itemId));
+  for (const c of rest) applyMeta(c, cached.get(c.itemId), locale);
 
   // The pick is the best-rated of the newest titles that has a wide image; without ratings
   // (no TMDB key) it is simply the newest one.
@@ -328,15 +329,21 @@ export async function sendNewsletter(): Promise<{ ok: boolean; sent: number; err
     byLocale.set(locale, [...(byLocale.get(locale) ?? []), subscriber.email]);
   }
 
-  // The static URL serves the deployment's own language: it is one stored issue, and the
-  // person opening it is not necessarily one of the recipients.
-  const stored = await renderNewsletter(entries, fallback);
-  await updateSettings({ newsletterLastHtml: stored, newsletterLastSentAt: new Date() });
+  // The static URL is read by whoever opens it, so every app language is kept (two today);
+  // the deployment's own language stays the plain column, for readers of an unknown one.
+  const rendered: Record<string, string> = {};
+  for (const locale of LOCALES) rendered[locale] = await renderNewsletter(entries, locale);
+  const stored = rendered[fallback];
+  await updateSettings({
+    newsletterLastHtml: stored,
+    newsletterLastHtmlByLocale: rendered,
+    newsletterLastSentAt: new Date(),
+  });
   if (!subscribers.length) return { ok: true, sent: 0 };
 
   let error: string | undefined;
   for (const [locale, recipients] of byLocale) {
-    const html = locale === fallback ? stored : await renderNewsletter(entries, locale);
+    const html = rendered[locale] ?? stored;
     const result = await sendMail(recipients, settings.newsletterSubject, html);
     // One broken group must not hide that the others went out.
     if (!result.ok) error ??= result.error;

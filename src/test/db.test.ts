@@ -1095,7 +1095,7 @@ async function main() {
         durationMs: 0,
       })),
     );
-    const wrapped = await getWrapped(streaker.id, year);
+    const wrapped = await getWrapped({ userId: streaker.id }, year);
     assert.equal(wrapped.activeDays, 3);
     assert.equal(wrapped.longestStreak, 3, 'zero-minute plays still make the days consecutive');
     await db.delete(users).where(eq(users.id, streaker.id));
@@ -1111,6 +1111,181 @@ async function main() {
       't\n\'=1+1\n\'@SUM(A1)\n\'-5\n-5\nplain\n"a\rb"',
     );
     console.log('ok - CSV cells cannot start a formula');
+  }
+
+  // Where the file lives decides the locking: a share gets an exclusive lock unless overridden.
+  {
+    const { chooseLocking, remoteFileSystem } = await import('../db/storage');
+    assert.equal(remoteFileSystem('/x', () => ({ type: 0x6969 })), 'nfs');
+    assert.equal(remoteFileSystem('/x', () => ({ type: 0xff534d42 | 0 })), 'cifs', 'a sign-extended magic still matches');
+    assert.equal(remoteFileSystem('/x', () => ({ type: 0xef53 })), null, 'ext4 is local');
+    assert.equal(remoteFileSystem('/x', () => { throw new Error('no statfs'); }), null);
+    assert.equal(chooseLocking(undefined, null), 'normal');
+    assert.equal(chooseLocking(undefined, 'smb'), 'exclusive');
+    assert.equal(chooseLocking('normal', 'smb'), 'normal', 'an explicit setting wins');
+    assert.equal(chooseLocking(' EXCLUSIVE ', null), 'exclusive');
+    assert.equal(chooseLocking('nonsense', null), 'normal');
+    const { dbInfo } = await import('../db');
+    assert.equal(dbInfo().journalMode, 'wal');
+    console.log('ok - storage decides the locking mode');
+  }
+
+  // Statistics run on reader threads: same rows as the main connection, and the main thread
+  // stays free while a slow one runs.
+  {
+    const { readOnWorker, readerStatus, readerCount } = await import('../db/readers');
+    const { sql } = await import('drizzle-orm');
+    const { SQLiteSyncDialect } = await import('drizzle-orm/sqlite-core');
+    assert.equal(readerCount(undefined), 2);
+    assert.equal(readerCount('0'), 0);
+    assert.equal(readerCount('x'), 2);
+    assert.ok(readerStatus(), 'the pool is set up for a local WAL database');
+    const query = sql`SELECT user_id, count(*) AS n FROM watch_history WHERE duration_ms >= ${0} GROUP BY user_id ORDER BY user_id`;
+    const { sql: text, params } = new SQLiteSyncDialect().sqlToQuery(query);
+    assert.deepEqual((await readOnWorker(text, params)).rows, await db.all(query));
+    // A committed write is visible to the reader at once (WAL snapshot per statement).
+    const before = (await readOnWorker<{ n: number }>('SELECT count(*) AS n FROM users', [])).rows[0].n;
+    const [probe] = await db.insert(users).values({ serverUserId: 'reader-probe', username: 'reader-probe' }).returning();
+    assert.equal((await readOnWorker<{ n: number }>('SELECT count(*) AS n FROM users', [])).rows[0].n, before + 1);
+    await db.delete(users).where(eq(users.id, probe.id));
+    // The main thread keeps ticking while a reader is busy.
+    let ticks = 0;
+    const timer = setInterval(() => ticks++, 10);
+    await readOnWorker('WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 3000000) SELECT count(*) AS n FROM c', []);
+    clearInterval(timer);
+    assert.ok(ticks >= 3, `the event loop ran during the query (${ticks} ticks)`);
+    await assert.rejects(readOnWorker('SELECT * FROM no_such_table', []), /no such table/);
+    console.log('ok - reader threads answer like the main connection without blocking it');
+  }
+
+  // VACUUM only when a real share of the file is free.
+  {
+    const { vacuum } = await import('../db');
+    vacuum(); // the suite above deleted plenty, so this one may run
+    assert.equal(vacuum(), false, 'right after a VACUUM there is nothing free, so it is skipped');
+    console.log('ok - vacuum skips a database with little free space');
+  }
+
+  // Every tile of the statistics pages follows the chosen period.
+  {
+    const { getHighlights, getRecords, getTopTitles, getUserLeaderboard } = await import('../server/stats');
+    const { clearReadCache } = await import('../server/readcache');
+    clearReadCache();
+    const [old] = await db.insert(users).values({ serverUserId: 'period', username: 'period' }).returning();
+    await db.insert(watchHistory).values([
+      { userId: old.id, itemId: 'p-old', title: 'Old Show Ep', grandparentTitle: 'Old Show', mediaType: 'episode', genres: [], watchedAt: new Date(Date.now() - 200 * 86_400_000), durationMs: 3_600_000 },
+      { userId: old.id, itemId: 'p-new', title: 'New Film', mediaType: 'movie', genres: [], watchedAt: new Date(Date.now() - 2 * 86_400_000), durationMs: 600_000 },
+    ]);
+    const scope = { userId: old.id };
+    assert.equal((await getHighlights(scope)).distinctTitles, 2);
+    assert.equal((await getHighlights(scope, 30)).distinctTitles, 1);
+    assert.deepEqual((await getTopTitles(scope, 8, 'count', 30)).map((r) => r.label), ['New Film']);
+    assert.equal((await getRecords(scope, 30)).longestPlayMs, 600_000);
+    const board = await getUserLeaderboard(undefined, 1000, 30);
+    assert.equal(board.find((r) => r.label === 'period')?.value, 10, 'only the minutes inside the period');
+    await db.delete(users).where(eq(users.id, old.id));
+    console.log('ok - statistics follow the period');
+  }
+
+  // A server's year: everyone on that server, nobody from another, and who watched most.
+  {
+    const { getWrapped, getWrappedYears } = await import('../server/wrapped');
+    const year = new Date().getFullYear() - 1;
+    const made = await db
+      .insert(users)
+      .values([
+        { serverId: 71, serverUserId: 'w-a', username: 'wa' },
+        { serverId: 71, serverUserId: 'w-b', username: 'wb' },
+        { serverId: 72, serverUserId: 'w-c', username: 'wc' },
+      ])
+      .returning();
+    await db.insert(watchHistory).values(
+      made.map((u, i) => ({
+        userId: u.id,
+        itemId: `w-${i}`,
+        title: `Year Film ${i}`,
+        mediaType: 'movie',
+        genres: [],
+        watchedAt: new Date(year, 2, 3 + i, 20),
+        durationMs: (i + 1) * 60_000,
+      })),
+    );
+    const server = { userId: null, serverId: 71 } as const;
+    const wrapped = await getWrapped(server, year);
+    assert.equal(wrapped.plays, 2, 'the other server is not counted');
+    assert.equal(wrapped.viewers, 2);
+    assert.deepEqual(wrapped.topViewers.map((v) => v.label), ['wb', 'wa']);
+    assert.equal((await getWrapped({ userId: made[0].id }, year)).topViewers.length, 0, 'no ranking on a personal year');
+    assert.ok((await getWrappedYears(server)).includes(year));
+    await db.delete(users).where(inArray(users.id, made.map((u) => u.id)));
+    console.log('ok - a server year covers that server and ranks its people');
+  }
+
+  // TMDB text in the reader's language, English where there is no translation.
+  {
+    const { localizedMeta } = await import('../server/tmdb');
+    const meta = { tmdbId: 1, kind: 'movie' as const, title: 'X', overview: 'English', tagline: 'Tag', genres: [], cast: [], text: { de: { overview: 'Deutsch' } } };
+    assert.equal(localizedMeta(meta, 'de-DE').overview, 'Deutsch');
+    assert.equal(localizedMeta(meta, 'de-DE').tagline, 'Tag', 'a missing translation keeps the English field');
+    assert.equal(localizedMeta(meta, 'en-US').overview, 'English');
+    assert.equal(localizedMeta(null, 'de-DE'), null);
+    console.log('ok - TMDB text follows the reader language');
+  }
+
+  // A page never waits for a sync, and a failed one is reported instead of thrown.
+  {
+    const { runInBackground } = await import('../server/sync');
+    let reported = false;
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => void (reported ||= String(args[0]).includes('plex down'));
+    runInBackground(new Promise(() => {}), 'probe');
+    runInBackground(Promise.reject(new Error('plex down')), 'probe-fail');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    console.warn = warn;
+    assert.ok(reported, 'the failure lands in the log');
+    console.log('ok - pages start syncs without waiting for them');
+  }
+
+  // One run per job: a second caller joins the run in flight.
+  {
+    const { singleFlight, timed } = await import('../server/jobs');
+    let starts = 0;
+    const job = () => singleFlight('probe', async () => {
+      starts++;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return starts;
+    });
+    const results = await Promise.all([job(), job(), job()]);
+    assert.equal(starts, 1);
+    assert.deepEqual(results, [1, 1, 1]);
+    assert.equal(await job(), 2, 'a later call starts a fresh run');
+    await assert.rejects(singleFlight('boom', async () => { throw new Error('x'); }), /x/);
+    assert.equal(await singleFlight('boom', async () => 'ok'), 'ok', 'a failed run does not block the key');
+    assert.equal(await timed('probe', async () => 5), 5);
+    console.log('ok - jobs run once at a time');
+  }
+
+  // Backpressure: overload signals pause a host, repeats pause longer, other hosts are untouched.
+  {
+    const { isStrainSignal, markStrained, isStrained, resetStrain, STRAIN_BASE_MS, STRAIN_MAX_MS } = await import('../server/strain');
+    resetStrain();
+    assert.ok(isStrainSignal(500, 'SQLite3: database is locked'));
+    assert.ok(isStrainSignal(503));
+    assert.ok(isStrainSignal(429));
+    assert.ok(!isStrainSignal(500, 'NullReferenceException'), 'a plain 500 is a fault, not load');
+    assert.ok(!isStrainSignal(404));
+    const t0 = 1_000_000;
+    assert.equal(markStrained('http://plex:32400/status/sessions', 'x', t0), STRAIN_BASE_MS);
+    assert.equal(markStrained('http://plex:32400/other', 'x', t0 + 1), null, 'one pause at a time, one log line');
+    assert.ok(isStrained('http://PLEX:32400/', t0 + 1000));
+    assert.ok(!isStrained('http://jellyfin:8096/', t0 + 1000));
+    assert.ok(!isStrained('http://plex:32400/', t0 + STRAIN_BASE_MS + 1), 'the pause ends');
+    assert.equal(markStrained('http://plex:32400/', 'x', t0 + STRAIN_BASE_MS + 60_000), STRAIN_BASE_MS * 2, 'a repeat doubles');
+    let t = t0 + STRAIN_BASE_MS * 10;
+    for (let i = 0; i < 6; i++) t += (markStrained('http://plex:32400/', 'x', t) ?? 0) + 1000;
+    assert.ok(markStrained('http://plex:32400/', 'x', t)! <= STRAIN_MAX_MS, 'capped');
+    resetStrain();
+    console.log('ok - an overloaded host is paused, longer when it repeats');
   }
 
   // WAL files stay locked on Windows until the handle is closed.
