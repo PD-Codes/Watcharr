@@ -1,16 +1,16 @@
 # Debian based rather than Alpine so better-sqlite3 installs a prebuilt binary.
-FROM node:24-slim AS deps
+FROM node:22.23.4-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --ignore-scripts
 
-FROM node:24-slim AS builder
+FROM node:22.23.4-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:24-slim AS runner
+FROM node:22.23.4-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV DATABASE_PATH=/app/data/watcharr.db
