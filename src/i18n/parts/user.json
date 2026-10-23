@@ -551,9 +551,17 @@
     "en": "The media server did not report any items for this library.",
     "de": "Der Media-Server hat für diese Bibliothek keine Einträge gemeldet."
   },
-  "library.showingLimited": {
-    "en": "Showing {shown} of {total}. The CSV export has all of them.",
-    "de": "Es werden {shown} von {total} angezeigt. Der CSV-Export enthält alle."
+  "library.searchPlaceholder": {
+    "en": "Title or year…",
+    "de": "Titel oder Jahr…"
+  },
+  "library.searchResult": {
+    "en": "{count} of {total} titles match “{query}”.",
+    "de": "{count} von {total} Titeln passen zu „{query}“."
+  },
+  "library.noMatch": {
+    "en": "Nothing in this library matches “{query}”.",
+    "de": "In dieser Bibliothek passt nichts zu „{query}“."
   },
   "library.nothingNew": {
     "en": "Nothing new in this library.",

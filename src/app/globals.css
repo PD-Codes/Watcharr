@@ -1502,6 +1502,35 @@ td a:hover {
   -webkit-overflow-scrolling: touch;
 }
 
+/* A key/value table: the value column carries URLs and dates, so it must wrap instead of
+   widening the page; on a phone each row stacks the label above its value. */
+table.kv td {
+  overflow-wrap: anywhere;
+}
+
+table.kv th {
+  position: static;
+}
+
+@media (max-width: 520px) {
+  table.kv,
+  table.kv tbody,
+  table.kv tr,
+  table.kv th,
+  table.kv td {
+    display: block;
+    width: auto;
+  }
+
+  table.kv th {
+    white-space: normal;
+    background: none;
+    padding-bottom: 0;
+    box-shadow: none;
+    color: var(--text-dim);
+  }
+}
+
 /* ============================================================
    Forms — M3 filled fields
    ============================================================ */

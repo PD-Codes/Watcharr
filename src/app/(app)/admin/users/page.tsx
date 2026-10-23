@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appConfig, users, watchHistory } from '@/db/schema';
-import { formatDate, formatDuration } from '@/components/format';
+import { formatDate, formatDuration, intParam } from '@/components/format';
+import Pager, { PAGE_SIZE } from '@/components/Pager';
 import { requireAdmin } from '@/server/session';
 import { getT } from '@/i18n/server';
 import SyncUsersButton from './SyncUsersButton';
@@ -12,10 +13,21 @@ import ViewAsButton from '../../ViewAsButton';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminUsersPage() {
+export default async function AdminUsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string | string[] }>;
+}) {
   const session = await requireAdmin();
   const t = await getT();
   const global = session.user.globalAdmin;
+
+  // A server admin administers their own server, so other servers' accounts are none of
+  // their business — not even by name.
+  const visibleTo = global ? sql`1 = 1` : eq(users.serverId, session.user.serverId);
+  const [{ total }] = await db.select({ total: sql<number>`count(*)` }).from(users).where(visibleTo);
+  const pages = Math.max(1, Math.ceil(Number(total) / PAGE_SIZE));
+  const page = Math.min(intParam((await searchParams).page, 1), pages);
 
   const rows = await db
     .select({
@@ -31,11 +43,12 @@ export default async function AdminUsersPage() {
     .from(users)
     .leftJoin(watchHistory, sql`${watchHistory.userId} = ${users.id}`)
     .leftJoin(appConfig, eq(appConfig.id, users.serverId))
-    // A server admin administers their own server, so other servers' accounts are none of
-    // their business — not even by name.
-    .where(global ? sql`1 = 1` : eq(users.serverId, session.user.serverId))
+    .where(visibleTo)
     .groupBy(users.id)
-    .orderBy(desc(sql`count(${watchHistory.id})`));
+    // The name and id break ties, otherwise equal play counts could swap places between pages.
+    .orderBy(desc(sql`count(${watchHistory.id})`), users.username, users.id)
+    .limit(PAGE_SIZE)
+    .offset((page - 1) * PAGE_SIZE);
 
   return (
     <>
@@ -116,6 +129,7 @@ export default async function AdminUsersPage() {
           </tbody>
         </table>
       </div>
+      <Pager page={page} pages={pages} />
     </>
   );
 }

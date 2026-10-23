@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createAdapter } from '../server/adapters';
+import { plexTranscodeReason } from '../server/adapters/plex';
 
 /** Minimal fetch stub: maps a URL substring to a JSON payload. */
 function stubFetch(routes: Record<string, unknown>) {
@@ -169,7 +170,12 @@ async function testPlexSessions() {
                 Part: [{ decision: 'transcode' }],
               },
             ],
-            TranscodeSession: { videoDecision: 'transcode', audioDecision: 'copy', container: 'mkv' },
+            TranscodeSession: {
+              videoDecision: 'transcode',
+              audioDecision: 'copy',
+              container: 'mkv',
+              videoCodec: 'hevc',
+            },
           },
         ],
       },
@@ -183,7 +189,18 @@ async function testPlexSessions() {
   assert.equal(session.playMethod, 'transcode');
   assert.equal(session.clientName, 'Plex for Android');
   assert.equal(session.container, 'mkv');
-  assert.equal(session.videoCodec, 'h264');
+  assert.equal(session.videoCodec, 'hevc');
+  assert.equal(session.transcodeReason, 'VideoCodecNotSupported');
+}
+
+async function testPlexTranscodeReason() {
+  const file = { container: 'mkv', videoCodec: 'h264', height: 2160 };
+  assert.equal(plexTranscodeReason({ videoDecision: 'transcode', videoCodec: 'h264', height: 1080 }, file), 'VideoResolutionNotSupported');
+  assert.equal(plexTranscodeReason({ videoDecision: 'transcode', videoCodec: 'h264', height: 2160 }, file), 'ContainerBitrateExceedsLimit');
+  assert.equal(plexTranscodeReason({ videoDecision: 'copy', audioDecision: 'transcode' }, file), 'AudioCodecNotSupported');
+  assert.equal(plexTranscodeReason({ videoDecision: 'copy', audioDecision: 'copy', subtitleDecision: 'burn' }, file), 'SubtitleCodecNotSupported');
+  assert.equal(plexTranscodeReason({ videoDecision: 'copy', audioDecision: 'copy', container: 'ts' }, file), 'ContainerNotSupported');
+  assert.equal(plexTranscodeReason({ videoDecision: 'copy', audioDecision: 'copy', container: 'mkv' }, file), undefined);
 }
 
 async function testPlexDirectPlay() {
@@ -484,6 +501,7 @@ async function main() {
   testJellyfinHistoryFiltersBySince,
   testJellyfinLibraryCounts,
   testPlexSessions,
+  testPlexTranscodeReason,
   testPlexDirectPlay,
   testPlexHistoryUsesLocalAccountAndEnriches,
   testPlexListUsersReadsXml,

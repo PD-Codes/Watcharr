@@ -78,6 +78,8 @@ type PlexMeta = {
     width?: number;
     height?: number;
     transcodeReason?: string;
+    subtitleDecision?: string;
+    sourceVideoCodec?: string;
   };
 };
 
@@ -93,6 +95,35 @@ type PlexContainer = {
     Account?: { id: number | string; name?: string }[];
   };
 };
+
+/**
+ * Plex's session API carries no transcode reason (the web UI works it out client-side), so
+ * derive one from the decisions and the source/delivery difference. Tokens match the ones
+ * Jellyfin reports so both servers land in the same bucket of the reasons chart. Only the
+ * first cause is returned, like the Jellyfin adapter does.
+ */
+export function plexTranscodeReason(
+  transcode: NonNullable<PlexMeta['TranscodeSession']>,
+  media?: NonNullable<PlexMeta['Media']>[number],
+): string | undefined {
+  if (transcode.transcodeReason) return transcode.transcodeReason;
+  if (transcode.videoDecision === 'transcode') {
+    const source = (transcode.sourceVideoCodec ?? media?.videoCodec)?.toLowerCase();
+    if (source && transcode.videoCodec && source !== transcode.videoCodec.toLowerCase()) {
+      return 'VideoCodecNotSupported';
+    }
+    if (transcode.height && media?.height && transcode.height < media.height) {
+      return 'VideoResolutionNotSupported';
+    }
+    return 'ContainerBitrateExceedsLimit';
+  }
+  if (transcode.audioDecision === 'transcode') return 'AudioCodecNotSupported';
+  if (transcode.subtitleDecision === 'burn') return 'SubtitleCodecNotSupported';
+  if (transcode.container && media?.container && transcode.container.toLowerCase() !== media.container.toLowerCase()) {
+    return 'ContainerNotSupported';
+  }
+  return undefined;
+}
 
 type PlexDetails = { durationMs: number; year?: number; genres: string[] };
 
@@ -335,7 +366,7 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
         container: (transcode?.container ?? media?.container)?.toLowerCase(),
         width: transcode?.width ?? media?.width,
         height: transcode?.height ?? media?.height,
-        transcodeReason: transcode?.transcodeReason,
+        transcodeReason: transcode ? plexTranscodeReason(transcode, media) : undefined,
         audioChannels: media?.audioChannels,
         subtitleCodec: part?.Stream?.find((stream) => stream.streamType === 3)?.codec?.toLowerCase(),
         // Media/Part describe the file, TranscodeSession the delivery. Reporting both is

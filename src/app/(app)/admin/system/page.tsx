@@ -75,7 +75,7 @@ export default async function AdminSystemPage() {
       </div>
 
       <div className="card section">
-        <table>
+        <table className="kv">
           <tbody>
             <tr>
               <th scope="row">{t('system.version')}</th>

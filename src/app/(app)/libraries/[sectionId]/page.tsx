@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation';
 import { Icon } from '@/components/Icons';
 import { BarChart, StatCard } from '@/components/Charts';
 import Poster from '@/components/Poster';
-import { artUrl, formatDate, formatDuration } from '@/components/format';
+import { artUrl, firstParam, formatDate, formatDuration, intParam } from '@/components/format';
+import Pager, { PAGE_SIZE } from '@/components/Pager';
 import { getLibrary, getRecentlyAdded, getSections } from '@/server/library';
 import { cachedPosters } from '@/server/tmdb';
 import {
@@ -18,7 +19,6 @@ import { getT } from '@/i18n/server';
 export const dynamic = 'force-dynamic';
 
 const RECENT_LIMIT = 12;
-const MEDIA_ROWS = 200;
 
 /** Bytes as GB/MB. A library table full of raw byte counts is unreadable. */
 function formatBytes(bytes?: number): string {
@@ -29,8 +29,10 @@ function formatBytes(bytes?: number): string {
 
 export default async function LibraryDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ sectionId: string }>;
+  searchParams: Promise<{ q?: string | string[]; page?: string | string[] }>;
 }) {
   const session = await requireUser();
   const t = await getT();
@@ -56,6 +58,17 @@ export default async function LibraryDetailPage({
   ]);
 
   const posters = await cachedPosters(recent);
+
+  // The media list is searched and paged here, in the page, because the library is already
+  // in memory; the CSV export stays the way to get every row.
+  const query = (firstParam((await searchParams).q) ?? '').trim();
+  const needle = query.toLowerCase();
+  const matches = needle
+    ? items.filter((item) => item.title.toLowerCase().includes(needle) || String(item.year ?? '').includes(needle))
+    : items;
+  const pages = Math.max(1, Math.ceil(matches.length / PAGE_SIZE));
+  const page = Math.min(intParam((await searchParams).page, 1), pages);
+  const visible = matches.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <>
@@ -111,7 +124,7 @@ export default async function LibraryDetailPage({
         </section>
       </div>
 
-      <section className="section">
+      <section className="section" id="media">
         <div className="section-head">
           <h2>{t('library.mediaInfo')}</h2>
           <a className="link-out" href={`/api/library/export?sectionId=${encodeURIComponent(sectionId)}`} download>
@@ -122,6 +135,18 @@ export default async function LibraryDetailPage({
         <p className="muted" style={{ margin: '0 0 14px' }}>
           {t('library.mediaInfoHint')}
         </p>
+        <form className="filters" action="#media">
+          <label>
+            {t('action.search')}
+            <input name="q" defaultValue={query} placeholder={t('library.searchPlaceholder')} />
+          </label>
+          <button>{t('action.apply')}</button>
+        </form>
+        {query && items.length > 0 && (
+          <p className="muted" style={{ margin: '0 0 14px' }}>
+            {t('library.searchResult', { count: matches.length, total: items.length, query })}
+          </p>
+        )}
         <div className="card table-wrap">
           <table>
             <thead>
@@ -135,7 +160,7 @@ export default async function LibraryDetailPage({
               </tr>
             </thead>
             <tbody>
-              {items.slice(0, MEDIA_ROWS).map((item) => (
+              {visible.map((item) => (
                 <tr key={item.itemId}>
                   <td>
                     <Link href={`/title/${encodeURIComponent(item.title)}`}>{item.title}</Link>
@@ -149,21 +174,17 @@ export default async function LibraryDetailPage({
                   </td>
                 </tr>
               ))}
-              {items.length === 0 && (
+              {matches.length === 0 && (
                 <tr>
                   <td colSpan={6} className="muted">
-                    {t('library.noItems')}
+                    {items.length === 0 ? t('library.noItems') : t('library.noMatch', { query })}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-        {items.length > MEDIA_ROWS && (
-          <p className="muted" style={{ marginTop: 12 }}>
-            {t('library.showingLimited', { shown: MEDIA_ROWS, total: items.length })}
-          </p>
-        )}
+        <Pager page={page} pages={pages} params={{ q: query }} hash="media" />
       </section>
 
       <section className="section">

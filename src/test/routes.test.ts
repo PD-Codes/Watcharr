@@ -452,7 +452,8 @@ async function main() {
       '/pick',
       '/pick?type=movie&length=quick',
       '/screen',
-      '/screen?view=me',
+      '/screen/me',
+      '/screen/server',
       '/wrapped?view=server',
       '/wrapped/story?view=server',
       '/stats?days=7',
@@ -697,6 +698,7 @@ async function main() {
       ['/pick', ['Pick something for me', 'pick-stage']],
       ['/wrapped/story', ['Your year, as a story']],
       ['/screen', ['Lobby display']],
+      ['/screen/me', ['Lobby display']],
       // The server's year: its own heading, the switch back, and the people ranking.
       ['/wrapped?view=server', ['the year in review', 'view=server', 'Who watched most']],
       ['/', ['skip-link', 'live-pill']],
