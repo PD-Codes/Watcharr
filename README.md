@@ -13,6 +13,12 @@ Watchlist · history · live activity · statistics · suggestions · year in re
 
 </div>
 
+<div align="center">
+
+<img src="docs/images/dashboard.png" alt="Watcharr dashboard in the dark scheme: live sessions, key numbers and the year heatmap" width="900">
+
+</div>
+
 ---
 
 ## ⚠️ Not part of the \*arr stack
@@ -83,6 +89,33 @@ library, no client-side data fetching, no CDN. Dark and light schemes, full keyb
 `prefers-reduced-motion` respected, and a layout that is built for a phone rather than
 merely surviving on one: a Material navigation bar, a modal drawer, thumb-sized targets and
 horizontally scrollable charts.
+
+---
+
+## Screenshots
+
+Captured from the built-in preview data (`npm run preview`), not from a real library.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/statistics.png" alt="Personal statistics with watch time, streaks and daily activity"><br><sub><b>Statistics</b> — every number drills down to the plays behind it.</sub></td>
+    <td width="50%"><img src="docs/images/wrapped.png" alt="Year in review with totals, first and last play of the year"><br><sub><b>Wrapped</b> — a year in review, also as a story and a shareable card.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/transcoding.png" alt="Transcoding statistics with playback method, codecs and reasons"><br><sub><b>Transcoding</b> — direct play vs. transcode, codecs, reasons (admin).</sub></td>
+    <td width="50%"><img src="docs/images/dashboard-light.png" alt="Dashboard in the light scheme"><br><sub><b>Light scheme</b> — dark and light, switchable at any time.</sub></td>
+  </tr>
+</table>
+
+Built for the phone as well: a navigation bar, a modal drawer and thumb-sized targets.
+
+<p align="center">
+  <img src="docs/images/mobile-dashboard.png" alt="Dashboard on a phone" width="240">
+  &nbsp;
+  <img src="docs/images/mobile-statistics.png" alt="Statistics on a phone" width="240">
+  &nbsp;
+  <img src="docs/images/mobile-wrapped.png" alt="Year in review on a phone" width="240">
+</p>
 
 ---
 
