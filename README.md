@@ -388,8 +388,8 @@ somewhere safe and separate.
   allowlist on the item id, an origin match against the
   configured server, an `image/*` response type and an upstream timeout.
 - Login and Plex PIN polling are rate limited.
-- `/api/health` reports database and media server health and backs the container
-  healthcheck.
+- `/api/health` reports database and media server health; the container healthcheck uses
+  `/api/health?live=1`, which only checks the app and its database.
 
 Found something? Please open a
 [security advisory](https://github.com/PD-Codes/watcharr/security/advisories/new) rather

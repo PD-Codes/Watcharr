@@ -11,6 +11,13 @@ export async function register() {
   // there is neither a database file nor any reason to open a socket.
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
   if (process.env.NEXT_PHASE === 'phase-production-build') return;
+  // Next exits with 143 on SIGTERM, which Docker records as a crash and Portainer flags after
+  // every restart, although a stop is exactly what was asked for. The Dockerfile sets
+  // NEXT_MANUAL_SIG_HANDLE so Next leaves the signals alone; exiting 0 still runs the
+  // database's exit hook (WAL checkpoint).
+  if (process.env.NEXT_MANUAL_SIG_HANDLE) {
+    for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => process.exit(0));
+  }
   // Warned about, not refused: an existing install has its tokens encrypted with this value,
   // so a hard stop would be an outage for something the admin has to fix deliberately.
   if (process.env.NODE_ENV === 'production' && process.env.SESSION_SECRET === 'change-me') {

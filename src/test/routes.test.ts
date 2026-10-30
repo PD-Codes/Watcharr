@@ -466,6 +466,7 @@ async function main() {
       '/item/lib-3',
       '/item/lib-3?scope=server',
       '/api/health',
+      '/api/health?live=1',
       '/api/library/search?q=arr',
       '/api/search?q=fire',
       '/api/history/export?type=episode',

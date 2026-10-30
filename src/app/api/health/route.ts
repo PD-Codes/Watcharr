@@ -28,11 +28,12 @@ async function checkServers() {
 }
 
 /**
- * Liveness for the container healthcheck, which needs the status code and nothing else.
+ * Liveness for the container healthcheck (`?live=1`) and full health for everyone else,
+ * which needs the status code and nothing else.
  * The detail (which server is down, its name and version) is only for signed-in admins —
  * to anyone else it would describe the deployment.
  */
-export async function GET() {
+export async function GET(request: Request) {
   // better-sqlite3 is synchronous, so a failing query throws instead of rejecting.
   let database = true;
   try {
@@ -40,6 +41,11 @@ export async function GET() {
   } catch {
     database = false;
   }
+
+  // `?live=1` is the container healthcheck: a media server that is down or slow is not a
+  // reason to mark this container unhealthy (Portainer reports that as a crash), and
+  // waiting for the pings could outlast the healthcheck's own timeout.
+  if (new URL(request.url).searchParams.has('live')) return NextResponse.json({ ok: database }, { status: database ? 200 : 503 });
 
   if (!cache || Date.now() - cache.at > CACHE_MS) cache = { at: Date.now(), servers: await checkServers() };
   const checked = cache.servers;

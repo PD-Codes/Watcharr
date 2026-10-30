@@ -18,6 +18,8 @@ ENV DATABASE_PATH=/app/data/watcharr.db
 # without this it listens on the container's bridge address only and the healthcheck
 # (localhost:3000) never gets an answer.
 ENV HOSTNAME=0.0.0.0
+# Next exits 143 on SIGTERM, which Portainer shows as a crash; instrumentation.ts exits 0 instead.
+ENV NEXT_MANUAL_SIG_HANDLE=1
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public

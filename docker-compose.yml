@@ -28,11 +28,14 @@ services:
       # page at /import/tautulli.db. A Tautulli database is far too large to upload.
       # - /path/to/tautulli:/import:ro
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      # 127.0.0.1, not localhost: the server listens on IPv4 only. ?live=1 checks the app and its
+      # database but not the media servers, whose outage is not the container's fault.
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/health?live=1').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 20s
+      # Migrations (and a VACUUM on a big database) run before the server starts listening.
+      start_period: 60s
 
 volumes:
   watcharr-data:
