@@ -7,10 +7,10 @@ import { getPlaybackTotals, listSessionHistory } from '@/server/playback';
 import { adminScope, requireAdmin } from '@/server/session';
 import { getT } from '@/i18n/server';
 import type { Translate } from '@/i18n';
+import { PAGE_SIZE } from '@/components/Pager';
 
 export const dynamic = 'force-dynamic';
 
-const PAGE_SIZE = 50;
 // Period filters, labelled at render time so the labels follow the request's locale.
 const PERIODS: [string, (t: Translate) => string][] = [
   ['all', (t) => t('common.allTime')],
@@ -37,22 +37,21 @@ export default async function AdminStreamsPage({
   const requested = firstParam(params.days) ?? '30';
   const daysValue = PERIODS.some(([value]) => value === requested) ? requested : '30';
   const days = daysValue === 'all' ? undefined : Number(daysValue);
-  const page = intParam(params.page, 1);
+  let page = intParam(params.page, 1);
   const transcodesOnly = params.transcodes === '1';
   const scope = adminScope(session.user);
 
-  const [history, totals] = await Promise.all([
-    listSessionHistory({
-      scope,
-      days,
-      limit: PAGE_SIZE,
-      offset: (page - 1) * PAGE_SIZE,
-      transcodesOnly,
-    }),
-    getPlaybackTotals(days, scope),
-  ]);
+  const list = (at: number) =>
+    listSessionHistory({ scope, days, limit: PAGE_SIZE, offset: (at - 1) * PAGE_SIZE, transcodesOnly });
+  const [first, totals] = await Promise.all([list(page), getPlaybackTotals(days, scope)]);
 
-  const pages = Math.max(1, Math.ceil(history.total / PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(first.total / PAGE_SIZE));
+  // A page past the end (an old link, a narrowed filter) shows the last page, not an empty table.
+  let history = first;
+  if (page > pages) {
+    page = pages;
+    history = await list(page);
+  }
   const query = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
     for (const [key, value] of Object.entries({

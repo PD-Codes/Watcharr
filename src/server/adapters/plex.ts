@@ -56,7 +56,7 @@ type PlexMeta = {
   accountID?: number;
   Genre?: { tag: string }[];
   User?: { id: string; title: string };
-  Player?: { state?: string; title?: string; product?: string; address?: string; local?: boolean };
+  Player?: { state?: string; title?: string; product?: string; address?: string; local?: boolean; machineIdentifier?: string };
   Session?: { id?: string; bandwidth?: number };
   Media?: {
     container?: string;
@@ -346,7 +346,10 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
       }
 
       return {
-        sessionKey: String(m.ratingKey) + ':' + (m.User?.id ?? ''),
+        // The device is part of the key: one account playing the same title on two devices is
+        // two streams, and without it both would share one row and overwrite each other.
+        sessionKey:
+          String(m.ratingKey) + ':' + (m.User?.id ?? '') + (m.Player?.machineIdentifier ? ':' + m.Player.machineIdentifier : ''),
         serverUserId: m.User?.id ?? '',
         username: m.User?.title ?? 'unknown',
         itemId: m.ratingKey,

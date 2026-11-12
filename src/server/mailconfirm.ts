@@ -2,6 +2,7 @@ import 'server-only';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { escapeHtml } from './newsletter-html';
 import { sendMail } from './notifications';
+import { rateLimit } from './ratelimit';
 import { acceptedHosts } from './sameorigin';
 
 // Mails go out through the deployment's SMTP account, so an address that is not the account's
@@ -50,6 +51,9 @@ export function readConfirmation(
   return { userId, address, kind };
 }
 
+const CONFIRM_LIMIT = 5;
+const CONFIRM_WINDOW_MS = 60 * 60_000;
+
 /** Where the link points: APP_URL, or the address this request came in on. */
 function baseUrl(request: Request): string | null {
   const fromEnv = process.env.APP_URL?.trim().replace(/\/$/, '');
@@ -69,7 +73,13 @@ export async function sendConfirmation(
   address: string,
   kind: MailKind,
   text: { subject: string; body: string; button: string },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; error: string; status?: number }> {
+  // Every call sends a mail from the deployment's SMTP account to an address the caller
+  // picked; unlimited, any signed-in user could use it to flood strangers and get the
+  // account blocked.
+  if (!rateLimit(`mailconfirm:${userId}`, CONFIRM_LIMIT, CONFIRM_WINDOW_MS)) {
+    return { ok: false, error: 'Too many confirmation mails, try again later', status: 429 };
+  }
   const base = baseUrl(request);
   if (!base) return { ok: false, error: 'APP_URL is not set, so no confirmation link can be sent' };
   const link = `${base}/api/mail/confirm?${confirmationQuery(userId, address, kind)}`;

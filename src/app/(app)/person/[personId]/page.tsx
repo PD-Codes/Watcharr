@@ -9,7 +9,7 @@ import { getSettings } from '@/server/config';
 import { getPerson } from '@/server/tmdb';
 import { adminScope, isAdmin, requireUser } from '@/server/session';
 import { scopeFilter, type Scope } from '@/server/stats';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 
 // No loading.tsx in this segment: it calls notFound(). See the streaming note in CLAUDE.md.
 export const dynamic = 'force-dynamic';
@@ -71,6 +71,7 @@ export default async function PersonPage({
 }) {
   const session = await requireUser();
   const t = await getT();
+  const locale = await getLocale();
   const personId = Number((await params).personId);
   const settings = await getSettings();
 
@@ -180,7 +181,7 @@ export default async function PersonPage({
                 </p>
                 {match && (
                   <p className="poster-meta num">
-                    {match.plays}× · {formatDate(match.lastWatched)}
+                    {match.plays}× · {formatDate(match.lastWatched, locale)}
                   </p>
                 )}
               </div>

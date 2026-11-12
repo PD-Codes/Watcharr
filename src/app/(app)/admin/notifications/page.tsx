@@ -4,7 +4,7 @@ import { CHANNEL_TYPES, NOTIFICATION_EVENTS } from '@/server/features';
 import { getSections, sectionKey } from '@/server/library';
 import { listChannels, listNotificationLog } from '@/server/notifications';
 import { requireGlobalAdmin } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 import NotificationsManager from './NotificationsManager';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +33,7 @@ async function libraryOptions(): Promise<{ key: string; label: string }[]> {
 export default async function AdminNotificationsPage() {
   await requireGlobalAdmin();
   const t = await getT();
+  const locale = await getLocale();
   const [channels, log, libraries] = await Promise.all([
     listChannels(),
     listNotificationLog(50),
@@ -85,7 +86,7 @@ export default async function AdminNotificationsPage() {
           <tbody>
             {log.map((entry) => (
               <tr key={entry.id}>
-                <td>{formatDate(entry.createdAt)}</td>
+                <td>{formatDate(entry.createdAt, locale)}</td>
                 <td>
                   {entry.channelName || entry.channelType} · {entry.channelType}
                 </td>

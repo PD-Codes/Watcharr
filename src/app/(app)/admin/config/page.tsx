@@ -2,7 +2,7 @@ import { formatDate } from '@/components/format';
 import { getSettings } from '@/server/config';
 import { listAlerts } from '@/server/monitor';
 import { requireGlobalAdmin } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 import ConfigForm from './ConfigForm';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdminConfigPage() {
   await requireGlobalAdmin();
   const t = await getT();
+  const locale = await getLocale();
   const [settings, alerts] = await Promise.all([getSettings(), listAlerts(20)]);
 
   return (
@@ -57,7 +58,7 @@ export default async function AdminConfigPage() {
           <tbody>
             {alerts.map((alert) => (
               <tr key={alert.id}>
-                <td>{formatDate(alert.createdAt)}</td>
+                <td>{formatDate(alert.createdAt, locale)}</td>
                 <td>{alert.rule}</td>
                 <td>{alert.message}</td>
               </tr>

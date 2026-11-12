@@ -32,6 +32,7 @@ export default async function ItemPage({
 }) {
   const session = await requireUser();
   const t = await getT();
+  const locale = await getLocale();
   const itemId = decodeURIComponent((await params).itemId);
 
   const serverWide = (await searchParams).scope === 'server' && isAdmin(session.user);
@@ -116,8 +117,8 @@ export default async function ItemPage({
       <div className="grid cols-4">
         <StatCard label={t('title.plays')} value={String(detail.plays)} info={t('item.playsInfo')} />
         <StatCard label={t('common.watchTime')} value={formatDuration(detail.watchtimeMs)} />
-        <StatCard label={t('title.firstWatched')} value={detail.firstWatched ? formatDate(detail.firstWatched) : '—'} />
-        <StatCard label={t('title.lastWatched')} value={detail.lastWatched ? formatDate(detail.lastWatched) : '—'} />
+        <StatCard label={t('title.firstWatched')} value={detail.firstWatched ? formatDate(detail.firstWatched, locale) : '—'} />
+        <StatCard label={t('title.lastWatched')} value={detail.lastWatched ? formatDate(detail.lastWatched, locale) : '—'} />
       </div>
 
       <CastStrip cast={meta?.cast ?? []} heading={t('title.cast')} />
@@ -153,7 +154,7 @@ export default async function ItemPage({
             <tbody>
               {detail.plays_list.map((row, index) => (
                 <tr key={`${row.watchedAt.getTime()}-${index}`}>
-                  <td className="num muted">{formatDate(row.watchedAt)}</td>
+                  <td className="num muted">{formatDate(row.watchedAt, locale)}</td>
                   <td className="num">{formatDuration(row.durationMs)}</td>
                   <td className="muted">{row.deviceName ?? '—'}</td>
                 </tr>

@@ -18,17 +18,24 @@ const COOLDOWN_MS = 15 * 60_000;
 // fire once per graph per window.
 const lastAlertAt = globalState('monitor.alertAt', () => new Map<string, number>());
 
-function cooled(rule: string): boolean {
+// The map holds the moment a rule may fire again, not when it last fired: the login rules
+// look back over a configurable window, and one cooldown for all would let the same address
+// alert every 15 minutes for as long as that window still contains it.
+function cooled(rule: string, cooldownMs = COOLDOWN_MS): boolean {
   const now = Date.now();
   // Keys carry IPs and usernames, so an address sweep would grow the map forever. Entries past
   // their cooldown behave exactly like absent ones, so dropping them changes nothing.
   if (lastAlertAt.size > 500) {
-    for (const [key, at] of lastAlertAt) if (now - at >= COOLDOWN_MS) lastAlertAt.delete(key);
+    for (const [key, until] of lastAlertAt) if (until <= now) lastAlertAt.delete(key);
   }
-  const last = lastAlertAt.get(rule) ?? 0;
-  if (now - last < COOLDOWN_MS) return true;
-  lastAlertAt.set(rule, now);
+  if (now < (lastAlertAt.get(rule) ?? 0)) return true;
+  lastAlertAt.set(rule, now + cooldownMs);
   return false;
+}
+
+/** A login alert stays quiet for as long as the window that found it still covers the login. */
+function loginCooldown(windowMin: number): number {
+  return Math.max(COOLDOWN_MS, windowMin * 60_000);
 }
 
 /** Notifies every subscribed channel and records the firing, so past alerts stay visible
@@ -157,7 +164,7 @@ async function checkNewAddresses(t: Translate, windowMin: number) {
   `);
 
   for (const row of rows) {
-    if (cooled(`new_address:${row.username}:${row.ip}`)) continue;
+    if (cooled(`new_address:${row.username}:${row.ip}`, loginCooldown(windowMin))) continue;
     await fire('new_address', t('monitor.newAddress', { username: row.username, ip: row.ip }), 1);
   }
 }
@@ -175,7 +182,7 @@ async function checkFailedLogins(t: Translate, threshold: number, windowMin: num
   `);
 
   for (const row of rows) {
-    if (cooled(`failed_login:${row.ip}`)) continue;
+    if (cooled(`failed_login:${row.ip}`, loginCooldown(windowMin))) continue;
     await fire(
       'failed_logins',
       t('monitor.failedLogins', { count: row.attempts, ip: row.ip, minutes: windowMin }),

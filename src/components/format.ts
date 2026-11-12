@@ -80,8 +80,9 @@ export function formatMinutes(minutes: number): string {
   return formatDuration(minutes * 60000);
 }
 
-export function formatDate(value: Date | string): string {
-  return new Date(value).toLocaleString('en-US', {
+/** `locale` is required so a page cannot forget it: the reader's language also decides the date order. */
+export function formatDate(value: Date | string, locale: string): string {
+  return new Date(value).toLocaleString(locale, {
     year: 'numeric',
     month: 'short',
     day: '2-digit',

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useT } from '@/i18n/client';
+import { useLocale, useT } from '@/i18n/client';
 
 interface Stats {
   tmdb: { entries: number; found: number; misses: number; expired: number; oldest: number | null };
@@ -14,10 +14,13 @@ interface Stats {
 
 const age = (ms: number) =>
   ms < 90_000 ? `${Math.round(ms / 1000)} s` : ms < 5_400_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 3_600_000)} h`;
-const since = (at: number | null) => (at ? new Date(at).toLocaleDateString() : '—');
+
 
 export default function CachesManager({ initial, tmdbConfigured }: { initial: Stats; tmdbConfigured: boolean }) {
   const t = useT();
+  // The account's language, not the browser's: the server render would otherwise disagree.
+  const locale = useLocale();
+  const since = (at: number | null) => (at ? new Date(at).toLocaleDateString(locale) : '—');
   const [stats, setStats] = useState(initial);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);

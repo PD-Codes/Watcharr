@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/db';
-import { users } from '@/db/schema';
 import { getAdapter } from '@/server/config';
 import { getSession } from '@/server/session';
+import { ensureUsers } from '@/server/userroster';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,20 +14,8 @@ export async function POST() {
 
   const adapter = await getAdapter(session.user.serverId);
   const serverUsers = await adapter.listUsers();
-  if (!serverUsers.length) return NextResponse.json({ ok: true, imported: 0 });
-
-  await db
-    .insert(users)
-    .values(
-      serverUsers.map((u) => ({
-        serverId: session.user.serverId,
-        serverUserId: u.serverUserId,
-        username: u.username,
-        email: u.email,
-        avatarUrl: u.avatarUrl,
-        isAdmin: u.isAdmin,
-      })),
-    )
-    .onConflictDoNothing();
-  return NextResponse.json({ ok: true, imported: serverUsers.length });
+  // Through the roster, not a plain insert: a person is the same by id OR name (Plex numbers
+  // its owner 1 in sessions but by plex.tv id here), and a second row would split their history.
+  const imported = await ensureUsers(session.user.serverId, serverUsers);
+  return NextResponse.json({ ok: true, imported });
 }

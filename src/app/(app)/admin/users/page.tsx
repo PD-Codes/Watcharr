@@ -5,7 +5,7 @@ import { appConfig, users, watchHistory } from '@/db/schema';
 import { formatDate, formatDuration, intParam } from '@/components/format';
 import Pager, { PAGE_SIZE } from '@/components/Pager';
 import { requireAdmin } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 import SyncUsersButton from './SyncUsersButton';
 import RoleToggle from './RoleToggle';
 import DeleteUserButton from './DeleteUserButton';
@@ -20,6 +20,7 @@ export default async function AdminUsersPage({
 }) {
   const session = await requireAdmin();
   const t = await getT();
+  const locale = await getLocale();
   const global = session.user.globalAdmin;
 
   // A server admin administers their own server, so other servers' accounts are none of
@@ -105,7 +106,7 @@ export default async function AdminUsersPage({
                 <td className="secondary-col">{row.plays}</td>
                 <td>{formatDuration(Number(row.watchtime))}</td>
                 <td className="when-cell">
-                  {row.lastSeenAt ? formatDate(row.lastSeenAt) : t('common.never')}
+                  {row.lastSeenAt ? formatDate(row.lastSeenAt, locale) : t('common.never')}
                 </td>
                 <td>{row.id !== session.user.id && <ViewAsButton userId={row.id} />}</td>
                 <td>

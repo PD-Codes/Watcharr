@@ -57,6 +57,9 @@ export interface Job {
 
 const state = globalState('importJob', () => ({
   job: null as Job | null,
+  // Set before the first await in startJob(): two quick POSTs would otherwise both pass the
+  // "already running" check and run the same import side by side.
+  starting: false,
   stop: false,
   lastPersist: 0,
   // Writes to job.json run one after another, in call order (see persist()).
@@ -102,9 +105,16 @@ async function resolveSource(params: JobParams): Promise<{ path: string; label: 
 
 /** Starts a job, or continues an interrupted one when `resumeFrom` is given. */
 export async function startJob(params: JobParams, resumeFrom?: Job): Promise<Job> {
-  if (state.job?.status === 'running') throw new Error('An import is already running');
-  if (!(await getServer(params.serverId))) throw new Error('Unknown server');
-  const source = await resolveSource(params);
+  if (state.starting || state.job?.status === 'running') throw new Error('An import is already running');
+  state.starting = true;
+  let source: Awaited<ReturnType<typeof resolveSource>>;
+  try {
+    if (!(await getServer(params.serverId))) throw new Error('Unknown server');
+    source = await resolveSource(params);
+  } catch (error) {
+    state.starting = false;
+    throw error;
+  }
 
   const job: Job = {
     id: resumeFrom?.id ?? `${Date.now()}`,
@@ -115,6 +125,7 @@ export async function startJob(params: JobParams, resumeFrom?: Job): Promise<Job
     summary: resumeFrom?.summary ?? null,
   };
   state.job = job;
+  state.starting = false;
   state.stop = false;
   await persist(job, true);
 
@@ -122,7 +133,9 @@ export async function startJob(params: JobParams, resumeFrom?: Job): Promise<Job
     try {
       // The way back from an import is a backup (there is deliberately no undo button), so the
       // job takes one itself instead of trusting the admin to remember.
-      if (!params.dryRun && params.backup !== false && !resumeFrom) await createManualBackup('pre-import');
+      // A resumed job has one already, unless it failed before it wrote anything: a job that
+      // died on the backup itself must not continue without one.
+      if (!params.dryRun && params.backup !== false && !resumeFrom?.summary) await createManualBackup('pre-import');
       const prior = resumeFrom?.summary;
       const summary = await importFromTautulli(source.path, params.serverId, {
         dryRun: params.dryRun,

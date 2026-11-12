@@ -15,6 +15,7 @@ export const dynamic = 'force-dynamic';
 export default async function NewsletterPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
   const t = await getT();
+  const locale = await getLocale();
   const { id } = await params;
   const settings = await getSettings();
 
@@ -29,7 +30,7 @@ export default async function NewsletterPage({ params }: { params: Promise<{ id:
       <h1>{settings.newsletterSubject}</h1>
       <p className="subtitle">
         {settings.newsletterLastSentAt
-          ? t('newsletter.issueSent', { date: formatDate(settings.newsletterLastSentAt) })
+          ? t('newsletter.issueSent', { date: formatDate(settings.newsletterLastSentAt, locale) })
           : t('newsletter.latestIssue')}
       </p>
 

@@ -25,9 +25,9 @@ export async function GET(request: Request) {
   const [totals, byType, genres, titles, users, daily] = await Promise.all([
     getTotals(scope, days),
     getPlaysByMediaType(scope, days),
-    getTopGenres(scope, 10),
-    getTopTitles(scope, 10),
-    getUserLeaderboard(undefined, 10),
+    getTopGenres(scope, 10, 'count', days),
+    getTopTitles(scope, 10, 'count', days),
+    getUserLeaderboard(undefined, 10, days),
     getDailyPlays(scope, Math.min(days, 90)),
   ]);
 

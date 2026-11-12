@@ -30,7 +30,7 @@ import { canSee, listUserSessions, requireAdmin } from '@/server/session';
 import ViewAsButton from '../../../ViewAsButton';
 import DeleteUserButton from '../DeleteUserButton';
 import type { TranslationKey } from '@/i18n';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 
 // No loading.tsx in this segment: it calls notFound(). See the streaming note in CLAUDE.md.
 export const dynamic = 'force-dynamic';
@@ -63,6 +63,7 @@ export default async function AdminUserDetailPage({
 }) {
   const session = await requireAdmin();
   const t = await getT();
+  const locale = await getLocale();
   const TABS: TabDef[] = TAB_KEYS.map(({ key, labelKey }) => ({ key, label: t(labelKey) }));
   const userId = Number((await params).id);
   const [user] = await db.select().from(users).where(eq(users.id, userId));
@@ -84,7 +85,7 @@ export default async function AdminUserDetailPage({
       <p className="subtitle">
         {user.isAdmin ? t('common.administrator') : t('users.roleUser')} ·{' '}
         {user.lastSeenAt
-          ? t('users.lastSeen', { date: formatDate(user.lastSeenAt) })
+          ? t('users.lastSeen', { date: formatDate(user.lastSeenAt, locale) })
           : t('users.neverSignedIn')}
       </p>
       {user.id !== session.user.id && (
@@ -256,7 +257,7 @@ export default async function AdminUserDetailPage({
               {recent.map((row) => (
                 <tr key={row.id}>
                   <td className="num muted when-cell">
-                    {formatDate(row.watchedAt)}
+                    {formatDate(row.watchedAt, locale)}
                   </td>
                   <td>
                     <TitleLink
@@ -352,7 +353,7 @@ export default async function AdminUserDetailPage({
                           {row.lastPlayer ? ` · ${row.lastPlayer}` : ''}
                         </div>
                       </td>
-                      <td className="muted">{formatDate(row.lastSeen)}</td>
+                      <td className="muted">{formatDate(row.lastSeen, locale)}</td>
                       <td className="num">{row.plays}</td>
                     </tr>
                   ))}
@@ -391,8 +392,8 @@ export default async function AdminUserDetailPage({
           <tbody>
             {sessions.map((s) => (
               <tr key={s.id}>
-                <td>{formatDate(s.createdAt)}</td>
-                <td>{formatDate(s.expiresAt)}</td>
+                <td>{formatDate(s.createdAt, locale)}</td>
+                <td>{formatDate(s.expiresAt, locale)}</td>
                 <td>
                   <RevokeSessionButton id={s.id} />
                 </td>

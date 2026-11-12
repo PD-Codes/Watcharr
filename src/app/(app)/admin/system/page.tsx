@@ -9,13 +9,14 @@ import { getSettings, listServers } from '@/server/config';
 import { adminScope, requireAdmin } from '@/server/session';
 import { getSystemCounts } from '@/server/stats';
 import { getUpdateStatus, RELEASES_PAGE } from '@/server/update';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminSystemPage() {
   const session = await requireAdmin();
   const t = await getT();
+  const locale = await getLocale();
   const all = await listServers();
   // A server admin only gets to see the server they belong to.
   const servers = session.user.globalAdmin
@@ -113,12 +114,12 @@ export default async function AdminSystemPage() {
             <tr>
               <th scope="row">{t('system.lastPlay')}</th>
               <td>
-                {counts.lastPlay ? formatDate(new Date(counts.lastPlay)) : t('system.noneYet')}
+                {counts.lastPlay ? formatDate(new Date(counts.lastPlay), locale) : t('system.noneYet')}
               </td>
             </tr>
             <tr>
               <th scope="row">{t('system.configuredSince')}</th>
-              <td>{servers[0] ? formatDate(servers[0].createdAt) : '—'}</td>
+              <td>{servers[0] ? formatDate(servers[0].createdAt, locale) : '—'}</td>
             </tr>
             {session.user.globalAdmin && (
               <tr>
@@ -158,7 +159,7 @@ export default async function AdminSystemPage() {
                   <tr key={file.name}>
                     <td>{file.name}</td>
                     <td>{(file.size / 1024 / 1024).toFixed(1)} MB</td>
-                    <td>{formatDate(file.createdAt)}</td>
+                    <td>{formatDate(file.createdAt, locale)}</td>
                   </tr>
                 ))}
               </tbody>

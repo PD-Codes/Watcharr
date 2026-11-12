@@ -1,7 +1,7 @@
 import { formatDate } from '@/components/format';
 import { listServers } from '@/server/config';
 import { requireGlobalAdmin } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 import ServersManager from './ServersManager';
 
 // No loading.tsx in this segment. See the streaming note in CLAUDE.md.
@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdminServersPage() {
   const session = await requireGlobalAdmin();
   const t = await getT();
+  const locale = await getLocale();
   const servers = await listServers();
 
   return (
@@ -27,7 +28,7 @@ export default async function AdminServersPage() {
           serverType: server.serverType,
           serverUrl: server.serverUrl,
           serverName: server.serverName,
-          addedAt: formatDate(server.createdAt),
+          addedAt: formatDate(server.createdAt, locale),
         }))}
       />
     </>

@@ -502,8 +502,37 @@ async function main() {
       const ok =
         res.status === 200 &&
         bytes.subarray(0, 15).toString() === 'SQLite format 3' &&
-        Number(res.headers.get('content-length')) === bytes.length;
+        // Next drops Content-Length from route handler responses (16.4.1 and later), so "whole"
+        // is read from the file itself: page size times page count, both in the SQLite header.
+        (bytes.readUInt16BE(16) === 1 ? 65536 : bytes.readUInt16BE(16)) * bytes.readUInt32BE(28) === bytes.length;
       console.log(`${ok ? 'ok  ' : 'FAIL'} - GET /api/admin/backup streams a SQLite file → ${res.status}, ${bytes.length} bytes`);
+      if (!ok) failures += 1;
+    }
+
+    // Confirmation mails go to addresses the caller picks, so they are capped per account.
+    {
+      const statuses: number[] = [];
+      for (let i = 0; i < 6; i += 1) {
+        const res = await fetch(`${base}/api/newsletter`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Cookie: cookie },
+          body: JSON.stringify({ email: `stranger${i}@example.org` }),
+        });
+        statuses.push(res.status);
+      }
+      const ok = statuses.slice(0, 5).every((status) => status !== 429) && statuses[5] === 429;
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - confirmation mails are rate limited per account → ${statuses.join(', ')}`);
+      if (!ok) failures += 1;
+    }
+
+    // "Sync users" goes through the roster: a second run finds everybody and creates nobody.
+    {
+      const sync = () => fetch(`${base}/api/admin/users/sync`, { method: 'POST', headers: { Cookie: cookie } });
+      const first = await sync();
+      const second = await sync();
+      const again = second.status === 200 ? ((await second.json()) as { imported?: number }).imported : null;
+      const ok = first.status === 200 && again === 0;
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - syncing users twice creates no duplicates → ${first.status}, ${again}`);
       if (!ok) failures += 1;
     }
 

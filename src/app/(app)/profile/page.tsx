@@ -6,7 +6,7 @@ import Tabs, { activeTab, type TabDef } from '@/components/Tabs';
 import { getSettings } from '@/server/config';
 import { listUserSessions, requireUser } from '@/server/session';
 import { LOCALE_NAMES, isLocale, type Translate } from '@/i18n';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +25,7 @@ export default async function ProfilePage({
 }) {
   const { user, server } = await requireUser();
   const t = await getT();
+  const locale = await getLocale();
   const TABS = tabs(t);
   const tab = activeTab(TABS, (await searchParams).tab);
   const settings = await getSettings();
@@ -65,8 +66,8 @@ export default async function ProfilePage({
             <tbody>
               {sessions.map((session) => (
                 <tr key={session.id}>
-                  <td>{formatDate(session.createdAt)}</td>
-                  <td>{formatDate(session.expiresAt)}</td>
+                  <td>{formatDate(session.createdAt, locale)}</td>
+                  <td>{formatDate(session.expiresAt, locale)}</td>
                   <td>
                     <RevokeSessionButton id={session.id} />
                   </td>

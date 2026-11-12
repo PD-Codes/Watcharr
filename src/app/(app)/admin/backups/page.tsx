@@ -2,7 +2,7 @@ import { formatDate } from '@/components/format';
 import { canRestart, listBackups, pendingRestore } from '@/server/backups';
 import { getSettings } from '@/server/config';
 import { requireGlobalAdmin } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 import BackupsManager from './BackupsManager';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdminBackupsPage() {
   await requireGlobalAdmin();
   const t = await getT();
+  const locale = await getLocale();
   const [backups, pending, settings] = await Promise.all([listBackups(), pendingRestore(), getSettings()]);
 
   return (
@@ -21,11 +22,11 @@ export default async function AdminBackupsPage() {
         {settings.backupAutoEnabled
           ? t('backups.scheduleOn', { hours: settings.backupIntervalHours, count: settings.backupRetention })
           : t('backups.scheduleOff')}{' '}
-        {settings.backupLastAt && t('backups.lastScheduled', { date: formatDate(settings.backupLastAt) })}{' '}
+        {settings.backupLastAt && t('backups.lastScheduled', { date: formatDate(settings.backupLastAt, locale) })}{' '}
         <a href="/admin/config">{t('backups.changeSchedule')}</a>
       </p>
       <BackupsManager
-        backups={backups.map((b) => ({ ...b, createdAt: formatDate(b.createdAt) }))}
+        backups={backups.map((b) => ({ ...b, createdAt: formatDate(b.createdAt, locale) }))}
         pending={pending}
         canRestart={canRestart()}
       />

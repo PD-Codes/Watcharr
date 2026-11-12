@@ -344,7 +344,7 @@ export default async function StatsPage({
       </h2>
       <p className="subtitle" style={{ marginTop: 0 }}>
         {t('stats.deliverySubtitle', {
-          date: formatDate(records.lastPlayAt ?? new Date()),
+          date: formatDate(records.lastPlayAt ?? new Date(), locale),
           count: playback.sessions,
         })}
       </p>

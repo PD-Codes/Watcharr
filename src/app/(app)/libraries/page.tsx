@@ -9,7 +9,7 @@ import { getLibrary, getSections } from '@/server/library';
 import { getLibraryTotals } from '@/server/librarystats';
 import { adminScope, isAdmin, requireUser } from '@/server/session';
 import { cachedPosters } from '@/server/tmdb';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 import type { Translate, TranslationKey } from '@/i18n';
 
 export const dynamic = 'force-dynamic';
@@ -86,6 +86,7 @@ export default async function LibrariesPage({
 }) {
   const session = await requireUser();
   const t = await getT();
+  const locale = await getLocale();
   const raw = await searchParams;
   // `?q=a&q=b` is an array, and .trim() on one is a 500.
   const params = { ...raw, q: firstParam(raw.q) };
@@ -243,7 +244,7 @@ export default async function LibrariesPage({
                 <p className="poster-title">{item.title}</p>
               </Link>
               <p className="poster-meta">
-                {item.addedAt ? formatDate(item.addedAt) : (item.year ?? '')}
+                {item.addedAt ? formatDate(item.addedAt, locale) : (item.year ?? '')}
               </p>
             </div>
           ))}

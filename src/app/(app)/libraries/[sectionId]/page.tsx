@@ -13,7 +13,7 @@ import {
   getLibraryUsers,
 } from '@/server/librarystats';
 import { adminScope, isAdmin, requireUser } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 
 // No loading.tsx in this segment: it calls notFound(). See the streaming note in CLAUDE.md.
 export const dynamic = 'force-dynamic';
@@ -36,6 +36,7 @@ export default async function LibraryDetailPage({
 }) {
   const session = await requireUser();
   const t = await getT();
+  const locale = await getLocale();
   const { sectionId } = await params;
   const serverId = session.user.serverId;
 
@@ -101,7 +102,7 @@ export default async function LibraryDetailPage({
       {allTime.lastTitle && (
         <p className="muted section" style={{ marginTop: 18 }}>
           {t('library.lastPlayed', { title: allTime.lastTitle })}
-          {allTime.lastPlayedAt ? ` · ${formatDate(allTime.lastPlayedAt)}` : ''}
+          {allTime.lastPlayedAt ? ` · ${formatDate(allTime.lastPlayedAt, locale)}` : ''}
         </p>
       )}
 
@@ -170,7 +171,7 @@ export default async function LibraryDetailPage({
                   <td className="muted">{item.videoCodec?.toUpperCase() ?? '—'}</td>
                   <td className="num">{formatBytes(item.fileSizeBytes)}</td>
                   <td className="muted">
-                    {item.lastPlayedAt ? formatDate(item.lastPlayedAt) : t('common.never')}
+                    {item.lastPlayedAt ? formatDate(item.lastPlayedAt, locale) : t('common.never')}
                   </td>
                 </tr>
               ))}

@@ -25,6 +25,7 @@ export default async function TitlePage({
 }) {
   const session = await requireUser();
   const t = await getT();
+  const locale = await getLocale();
   const label = decodeURIComponent((await params).label);
 
   // Admins can look at a title across the whole server; everyone else sees their own plays.
@@ -115,11 +116,11 @@ export default async function TitlePage({
         />
         <StatCard
           label={t('title.firstWatched')}
-          value={detail.firstWatched ? formatDate(detail.firstWatched) : '—'}
+          value={detail.firstWatched ? formatDate(detail.firstWatched, locale) : '—'}
         />
         <StatCard
           label={t('title.lastWatched')}
-          value={detail.lastWatched ? formatDate(detail.lastWatched) : '—'}
+          value={detail.lastWatched ? formatDate(detail.lastWatched, locale) : '—'}
         />
       </div>
 
@@ -165,7 +166,7 @@ export default async function TitlePage({
                 <span className="ep-meta">
                   {episode.plays}× · {formatDuration(episode.watchtimeMs)}
                 </span>
-                <span className="ep-meta">{formatDate(episode.lastWatched)}</span>
+                <span className="ep-meta">{formatDate(episode.lastWatched, locale)}</span>
               </Link>
             ))}
           </div>
@@ -187,7 +188,7 @@ export default async function TitlePage({
             <tbody>
               {detail.recent.map((row, index) => (
                 <tr key={`${row.title}-${index}`}>
-                  <td>{formatDate(row.watchedAt)}</td>
+                  <td>{formatDate(row.watchedAt, locale)}</td>
                   <td>
                     {/* The single play is a page of its own, so the row leads there
                         instead of repeating the title as plain text. */}

@@ -4,7 +4,7 @@ import { getSections, sectionKey } from '@/server/library';
 import { listChannels } from '@/server/notifications';
 import { listSubscribers, normalizeLibraries } from '@/server/newsletter';
 import { requireGlobalAdmin } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 import NewsletterForm, { type LibraryOption } from './NewsletterForm';
 
 export const dynamic = 'force-dynamic';
@@ -12,6 +12,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdminNewsletterPage() {
   const { user } = await requireGlobalAdmin();
   const t = await getT();
+  const locale = await getLocale();
   const [settings, subscribers, channels, servers] = await Promise.all([
     getSettings(),
     listSubscribers(),
@@ -60,7 +61,7 @@ export default async function AdminNewsletterPage() {
       <h2 className="section">{t('adminNewsletter.subscribers')}</h2>
       <p className="subtitle" style={{ marginTop: -8 }}>
         {settings.newsletterLastSentAt
-          ? t('adminNewsletter.lastSent', { date: formatDate(settings.newsletterLastSentAt) })
+          ? t('adminNewsletter.lastSent', { date: formatDate(settings.newsletterLastSentAt, locale) })
           : t('adminNewsletter.noneSent')}
       </p>
       <div className="card table-wrap">

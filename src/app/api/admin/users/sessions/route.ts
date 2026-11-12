@@ -29,7 +29,10 @@ export async function DELETE(request: Request) {
   if (!row) return NextResponse.json({ error: 'Unknown session' }, { status: 404 });
 
   const own = row.user.id === session.user.id;
-  const allowed = own || ((session.user.isAdmin || session.user.globalAdmin) && canSee(session.user, row.user));
+  // A server admin does not sign a global admin out, the same line delete and view-as draw.
+  const outranked = row.user.globalAdmin && !session.user.globalAdmin;
+  const allowed =
+    own || (!outranked && (session.user.isAdmin || session.user.globalAdmin) && canSee(session.user, row.user));
   // 404 rather than 403, so this cannot be used to probe which session ids exist.
   if (!allowed) return NextResponse.json({ error: 'Unknown session' }, { status: 404 });
 

@@ -1,9 +1,13 @@
 name: CI
 
+# Runs when the version goes up, not on every commit: `version` in pyproject.toml is the one
+# number a release is driven by (see release.yml), so that is the moment the suite has to hold.
+# Anything in between is checked by hand with "Run workflow".
 on:
   push:
     branches: [main]
-  pull_request:
+    paths:
+      - 'pyproject.toml'
   workflow_dispatch:
 
 # Two runs of the same branch help nobody; the newer commit wins.
@@ -19,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # package.json promises >=22, the Docker image ships 24.
+        # package.json promises >=22 and the Docker image ships 22; 24 guards the next upgrade.
         node: ['22.23.4', '24']
 
     steps:
@@ -43,6 +47,8 @@ jobs:
 
   docker:
     name: Docker build
+    # Manual runs only: on a version bump the release workflow builds the image for real.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -51,8 +57,8 @@ jobs:
 
       - uses: docker/setup-buildx-action@v4
 
-      # amd64 only here: this is a "does it still build" check, and emulating arm64 on
-      # every pull request costs far more than it catches. The release workflow builds
+      # amd64 only here: this is a "does it still build" check, and emulating arm64 for
+      # it costs far more than it catches. The release workflow builds
       # both architectures for real.
       - uses: docker/build-push-action@v7
         with:

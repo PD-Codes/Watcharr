@@ -8,12 +8,12 @@ import { firstParam, formatDate, formatDuration, intParam, isoDay } from '@/comp
 import { historyFilters } from '@/server/history';
 import { syncHistory, runInBackground } from '@/server/sync';
 import { requireUser } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 import type { TranslationKey } from '@/i18n';
+import { PAGE_SIZE } from '@/components/Pager';
 
 export const dynamic = 'force-dynamic';
 
-const PAGE_SIZE = 50;
 
 interface Params {
   q?: string;
@@ -55,6 +55,7 @@ export default async function HistoryPage({
 }) {
   const session = await requireUser();
   const t = await getT();
+  const locale = await getLocale();
   runInBackground(syncHistory(session), 'history sync');
 
   const raw = await searchParams;
@@ -62,21 +63,20 @@ export default async function HistoryPage({
   const params: Params = Object.fromEntries(
     Object.entries(raw).map(([key, value]) => [key, firstParam(value)]),
   );
-  const page = intParam(params.page, 1);
   const where = historyFilters(session.user.id, params);
 
-  const [rows, [count]] = await Promise.all([
-    db
-      .select()
-      .from(watchHistory)
-      .where(where)
-      .orderBy(desc(watchHistory.watchedAt))
-      .limit(PAGE_SIZE)
-      .offset((page - 1) * PAGE_SIZE),
-    db.select({ total: sql<number>`count(*)` }).from(watchHistory).where(where),
-  ]);
-
+  // Counted first so a page past the end (an old link, a narrowed filter) lands on the last
+  // page instead of an empty table.
+  const [count] = await db.select({ total: sql<number>`count(*)` }).from(watchHistory).where(where);
   const pages = Math.max(1, Math.ceil((count?.total ?? 0) / PAGE_SIZE));
+  const page = Math.min(intParam(params.page, 1), pages);
+  const rows = await db
+    .select()
+    .from(watchHistory)
+    .where(where)
+    .orderBy(desc(watchHistory.watchedAt))
+    .limit(PAGE_SIZE)
+    .offset((page - 1) * PAGE_SIZE);
   const periods: [string, string][] = [
     ['', t('common.allTime')],
     ['7', t('common.days', { count: 7 })],
@@ -174,7 +174,7 @@ export default async function HistoryPage({
                 <tr key={row.id}>
                   <td className="num muted when-cell">
                     <Link href={`/history?date=${isoDay(row.watchedAt)}`}>
-                      {formatDate(row.watchedAt)}
+                      {formatDate(row.watchedAt, locale)}
                     </Link>
                   </td>
                   <td>

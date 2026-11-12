@@ -3,7 +3,7 @@ import IpLink from './IpLink';
 import TitleLink from './TitleLink';
 import { formatDate, formatDuration, percent } from './format';
 import type { SessionHistoryRow } from '@/server/playback';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 
 // Past streams with the delivery details the media server reported. The live table lives
 // in ActivityTable; this is the same information after the fact, which is the half
@@ -57,6 +57,7 @@ export default async function StreamTable({
   emptyLabel: string;
 }) {
   const t = await getT();
+  const locale = await getLocale();
   if (!rows.length) return <p className="muted">{emptyLabel}</p>;
 
   return (
@@ -78,7 +79,7 @@ export default async function StreamTable({
           {rows.map((row) => (
             <tr key={row.sessionKey}>
               <td className="num muted when-cell">
-                {formatDate(row.startedAt)}
+                {formatDate(row.startedAt, locale)}
               </td>
               {showUser && (
                 <td>

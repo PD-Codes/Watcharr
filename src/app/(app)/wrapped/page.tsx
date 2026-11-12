@@ -15,7 +15,7 @@ import { syncHistory, runInBackground } from '@/server/sync';
 import { requireUser } from '@/server/session';
 import { resolveView, viewQuery } from '@/server/viewscope';
 import ViewSwitch from '@/components/ViewSwitch';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +26,7 @@ export default async function WrappedPage({
 }) {
   const session = await requireUser();
   const t = await getT();
+  const locale = await getLocale();
   runInBackground(syncHistory(session), 'history sync');
 
   const params = await searchParams;
@@ -135,7 +136,7 @@ export default async function WrappedPage({
                     {wrapped.firstPlay.title !== wrapped.firstPlay.label && (
                       <p className="muted" style={{ margin: '2px 0 0' }}>{wrapped.firstPlay.title}</p>
                     )}
-                    <p className="muted">{formatDate(wrapped.firstPlay.watchedAt)}</p>
+                    <p className="muted">{formatDate(wrapped.firstPlay.watchedAt, locale)}</p>
                   </>
                 ) : (
                   <p className="muted">{t('wrapped.noPlays')}</p>
@@ -153,7 +154,7 @@ export default async function WrappedPage({
                     {wrapped.lastPlay.title !== wrapped.lastPlay.label && (
                       <p className="muted" style={{ margin: '2px 0 0' }}>{wrapped.lastPlay.title}</p>
                     )}
-                    <p className="muted">{formatDate(wrapped.lastPlay.watchedAt)}</p>
+                    <p className="muted">{formatDate(wrapped.lastPlay.watchedAt, locale)}</p>
                   </>
                 ) : (
                   <p className="muted">{t('wrapped.noPlays')}</p>

@@ -10,7 +10,7 @@ import { formatDate, formatDuration, mediaSplit } from '@/components/format';
 import { getStreak, getTopTitles, getTotals } from '@/server/stats';
 import { liveSessionFilter, syncHistory, runInBackground } from '@/server/sync';
 import { requireUser } from '@/server/session';
-import { getT } from '@/i18n/server';
+import { getLocale, getT } from '@/i18n/server';
 import type { Translate } from '@/i18n';
 
 export const dynamic = 'force-dynamic';
@@ -23,6 +23,7 @@ export const dynamic = 'force-dynamic';
 export default async function SessionsPage() {
   const session = await requireUser();
   const t = await getT();
+  const locale = await getLocale();
   // syncActivity already ran in the layout.
   runInBackground(syncHistory(session), 'history sync');
 
@@ -147,7 +148,7 @@ export default async function SessionsPage() {
                         />
                       </td>
                       <td className="num muted when-cell" style={{ textAlign: 'right' }}>
-                        {formatDate(row.watchedAt)}
+                        {formatDate(row.watchedAt, locale)}
                       </td>
                     </tr>
                   ))}

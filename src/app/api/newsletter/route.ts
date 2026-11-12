@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     body: t('mail.confirmNewsletter'),
     button: t('mail.confirmButton'),
   });
-  if (!sent.ok) return NextResponse.json({ error: sent.error }, { status: 400 });
+  if (!sent.ok) return NextResponse.json({ error: sent.error }, { status: sent.status ?? 400 });
   return NextResponse.json({ ok: true, pending: true });
 }
 
