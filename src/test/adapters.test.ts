@@ -445,9 +445,12 @@ async function testPlexFindsAnotherRoute() {
   const timeout = () => Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
   const requested: string[] = [];
   let lanMachine = 'abc';
-  globalThis.fetch = (async (input: string | URL | Request) => {
+  const leaked: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     requested.push(url);
+    const sent = new Headers(init?.headers);
+    if (url.endsWith('/identity') && sent.has('X-Plex-Token')) leaked.push(url);
     if (url.startsWith(configured)) throw timeout();
     if (url.includes('plex.tv/api/v2/resources')) return Response.json(resources);
     if (url.includes('192-168-1-5')) throw new TypeError('fetch failed'); // DNS rebind protection
@@ -465,6 +468,7 @@ async function testPlexFindsAnotherRoute() {
     assert.equal(health.ok, true, 'the first request already succeeds through the detour');
     assert.equal(plexRoute(configured), 'http://192.168.1.5:32400', 'the LAN beats the relay');
     assert.equal(isStrained(configured), false, 'a dead route is not reported as an overloaded server');
+    assert.deepEqual(leaked, [], 'probes never carry the admin token: a listed LAN address may be a stranger here');
     requested.length = 0;
     await plex.ping();
     assert.deepEqual(requested, ['http://192.168.1.5:32400/'], 'later requests go straight to the detour');

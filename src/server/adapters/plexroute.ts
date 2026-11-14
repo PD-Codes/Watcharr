@@ -131,6 +131,7 @@ export function routeCandidates(
   return { machineId: server.clientIdentifier, urls: [...new Set(urls)] };
 }
 
+/** Asks an address which server it is. `headers` must not carry a token (see discover). */
 async function probe(url: string, machineId: string, headers: Record<string, string>): Promise<boolean> {
   try {
     const res = await fetch(`${url}/identity`, {
@@ -158,8 +159,12 @@ async function discover(configuredUrl: string, headers: Record<string, string>):
     .then((res) => (res.ok ? res.json() : null))
     .catch(() => null);
   const plan = routeCandidates(resources, configuredUrl);
+  // Never with the token: the LAN addresses plex.tv lists are the server's LAN, and from
+  // where Watcharr runs the same private address can be any other device. /identity answers
+  // without authentication, so nothing is lost by leaving it out.
+  const anonymous = Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== 'x-plex-token'));
   // All at once: the slowest dead address costs the probe timeout once, not once per address.
-  const answers = plan ? await Promise.all(plan.urls.map((u) => probe(u, plan.machineId, headers))) : [];
+  const answers = plan ? await Promise.all(plan.urls.map((u) => probe(u, plan.machineId, anonymous))) : [];
   const found = plan?.urls[answers.indexOf(true)] ?? null;
 
   const before = plexRoute(configuredUrl);

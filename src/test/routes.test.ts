@@ -418,8 +418,11 @@ async function main() {
       console.log(`${lastOneOk ? 'ok  ' : 'FAIL'} - last global admin cannot step down → ${lastOne.status}`);
       if (!lastOneOk) failures += 1;
 
-      const granted = await grant(cookie, { userId: 2, globalAdmin: true });
-      const revoked = granted.ok && (await grant(cookie, { userId: 2, globalAdmin: false })).ok;
+      // Looked up, not assumed to be 2: every sign-in is an upsert, and SQLite's AUTOINCREMENT
+      // spends an id on an upsert that only updates (the /adminlogin check above signs in again).
+      const secondId = rows.find((u) => u.serverId !== rows.find((r) => r.globalAdmin)?.serverId)?.id ?? -1;
+      const granted = await grant(cookie, { userId: secondId, globalAdmin: true });
+      const revoked = granted.ok && (await grant(cookie, { userId: secondId, globalAdmin: false })).ok;
       console.log(`${revoked ? 'ok  ' : 'FAIL'} - a global admin can grant and revoke the role`);
       if (!revoked) failures += 1;
 
