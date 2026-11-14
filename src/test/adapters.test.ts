@@ -402,6 +402,85 @@ async function testPlexSignInRequiresServerAccess() {
   }
 }
 
+/**
+ * The configured URL is the public plex.direct address and the router has no NAT loopback:
+ * every request to it times out. The adapter must find the LAN route through plex.tv instead
+ * of locking everybody out, and must never settle on an address that is a different server.
+ */
+async function testPlexFindsAnotherRoute() {
+  const { resetPlexRoutes, plexRoute, routeCandidates } = await import('../server/adapters/plexroute');
+  const { isStrained, resetStrain } = await import('../server/strain');
+  resetPlexRoutes();
+  resetStrain();
+  const hash = '8e0d3c002fd24bf1a524df4328908c15';
+  const configured = `https://46-1-2-3.${hash}.plex.direct:16415`;
+  const resources = [
+    { clientIdentifier: 'someone-else', provides: 'server', connections: [{ uri: 'http://10.0.0.9:32400', local: true }] },
+    {
+      clientIdentifier: 'abc',
+      provides: 'server',
+      owned: true,
+      connections: [
+        { uri: 'https://relay.plex.direct:8443', relay: true },
+        { uri: configured, address: '46.1.2.3', port: 16415, local: false },
+        { uri: `https://192-168-1-5.${hash}.plex.direct:32400`, address: '192.168.1.5', port: 32400, local: true },
+      ],
+    },
+  ];
+
+  const plan = routeCandidates(resources, configured);
+  assert.deepEqual(plan, {
+    machineId: 'abc',
+    urls: [
+      configured,
+      `https://192-168-1-5.${hash}.plex.direct:32400`,
+      'http://192.168.1.5:32400',
+      'https://relay.plex.direct:8443',
+    ],
+  }, 'configured first, then LAN (with the bare address for routers that block plex.direct), relay last');
+  assert.equal(routeCandidates(resources, 'http://unknown:32400')?.machineId, 'abc',
+    'with one owned server an unmatched URL still finds it');
+  assert.equal(routeCandidates({ error: 'x' }, configured), null);
+
+  const timeout = () => Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+  const requested: string[] = [];
+  let lanMachine = 'abc';
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    requested.push(url);
+    if (url.startsWith(configured)) throw timeout();
+    if (url.includes('plex.tv/api/v2/resources')) return Response.json(resources);
+    if (url.includes('192-168-1-5')) throw new TypeError('fetch failed'); // DNS rebind protection
+    if (url === 'http://192.168.1.5:32400/identity') return Response.json({ MediaContainer: { machineIdentifier: lanMachine } });
+    if (url === 'https://relay.plex.direct:8443/identity') return Response.json({ MediaContainer: { machineIdentifier: 'abc' } });
+    if (url.endsWith('/')) return Response.json({ MediaContainer: { friendlyName: 'Stream Server', version: '1.41' } });
+    throw new Error(`unexpected request: ${url}`);
+  }) as typeof fetch;
+
+  const plex = createAdapter('plex', configured, 'admin-token');
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const health = await plex.ping();
+    assert.equal(health.ok, true, 'the first request already succeeds through the detour');
+    assert.equal(plexRoute(configured), 'http://192.168.1.5:32400', 'the LAN beats the relay');
+    assert.equal(isStrained(configured), false, 'a dead route is not reported as an overloaded server');
+    requested.length = 0;
+    await plex.ping();
+    assert.deepEqual(requested, ['http://192.168.1.5:32400/'], 'later requests go straight to the detour');
+
+    // Another server answering on that LAN address must not be taken for this one.
+    resetPlexRoutes();
+    lanMachine = 'not-abc';
+    await plex.ping();
+    assert.equal(plexRoute(configured), 'https://relay.plex.direct:8443', 'a foreign machine identifier is refused');
+  } finally {
+    console.warn = warn;
+    resetPlexRoutes();
+    resetStrain();
+  }
+}
+
 /** The address a session is attributed to must not carry the client's source port. */
 async function testEndpointAddress() {
   const { endpointAddress } = await import('../server/adapters/jellyfin');
@@ -496,6 +575,7 @@ async function main() {
   testLibraryIsPaged,
   testPlexLibraryChanges,
   testPlexSignInRequiresServerAccess,
+  testPlexFindsAnotherRoute,
   testJellyfinSessions,
   testJellyfinDirectPlayUsesSourceStreams,
   testJellyfinHistoryFiltersBySince,

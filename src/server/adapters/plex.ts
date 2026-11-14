@@ -1,5 +1,6 @@
 import { apiFetch, joinUrl } from './http';
 import { isStrained } from '../strain';
+import { findPlexRoute, isUnreachable, plexRoute, routeIsStale } from './plexroute';
 import type {
   AuthResult,
   HistoryEntry,
@@ -158,9 +159,14 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
   readonly type: ServerType = 'plex';
 
   constructor(
-    private readonly baseUrl: string,
+    private readonly configuredUrl: string,
     private readonly adminToken: string,
   ) {}
+
+  /** Where requests go: the configured URL, or the detour plexroute.ts found to the same server. */
+  private get baseUrl(): string {
+    return plexRoute(this.configuredUrl);
+  }
 
   private plexHeaders(token?: string): Record<string, string> {
     return {
@@ -172,8 +178,20 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     };
   }
 
-  private server<T>(path: string, token = this.adminToken, bulk = false) {
-    return apiFetch<T>(joinUrl(this.baseUrl, path), { headers: this.plexHeaders(token), bulk });
+  private async server<T>(path: string, token = this.adminToken, bulk = false): Promise<T> {
+    const base = this.baseUrl;
+    // A detour is not forever: now and then look again, in the background, for the URL the
+    // admin actually entered (a router that learned NAT loopback, a corrected address).
+    if (routeIsStale(this.configuredUrl)) void findPlexRoute(this.configuredUrl, this.plexHeaders(this.adminToken));
+    try {
+      return await apiFetch<T>(joinUrl(base, path), { headers: this.plexHeaders(token), bulk });
+    } catch (error) {
+      if (!isUnreachable(error)) throw error;
+      // Never reached the server: ask plex.tv how else to get there and try once more.
+      const next = await findPlexRoute(this.configuredUrl, this.plexHeaders(this.adminToken));
+      if (!next || next === base) throw error;
+      return apiFetch<T>(joinUrl(next, path), { headers: this.plexHeaders(token), bulk });
+    }
   }
 
   async ping() {
@@ -317,12 +335,12 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
 
   /** The server's own account table: id 1 is the owner, the rest carry their plex.tv ids. */
   private async accounts(): Promise<{ id: string; name: string }[]> {
-    const hit = accountCache.get(this.baseUrl);
+    const hit = accountCache.get(this.configuredUrl);
     if (hit && Date.now() - hit.at < ACCOUNT_TTL_MS) return hit.accounts;
     const res = await this.server<PlexContainer>('/accounts').catch(() => null);
     const accounts = (res?.MediaContainer.Account ?? []).map((a) => ({ id: String(a.id), name: a.name ?? '' }));
     // An empty answer is not cached, so a hiccup does not hide everybody for ten minutes.
-    if (accounts.length) accountCache.set(this.baseUrl, { at: Date.now(), accounts });
+    if (accounts.length) accountCache.set(this.configuredUrl, { at: Date.now(), accounts });
     return accounts;
   }
 
@@ -623,7 +641,7 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     const found = new Map<string, PlexDetails>();
     const todo: string[] = [];
     for (const key of keys) {
-      const cached = detailCache.get(`${this.baseUrl}|${key}`);
+      const cached = detailCache.get(`${this.configuredUrl}|${key}`);
       if (cached) found.set(key, cached);
       else todo.push(key);
     }
@@ -646,7 +664,7 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
           genres: (meta.Genre ?? []).map((g) => g.tag),
         };
         if (detailCache.size >= MAX_DETAILS) detailCache.clear();
-        detailCache.set(`${this.baseUrl}|${key}`, entry);
+        detailCache.set(`${this.configuredUrl}|${key}`, entry);
         found.set(key, entry);
       }
     };

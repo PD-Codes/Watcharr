@@ -60,6 +60,11 @@ export function isStrained(url: string, now = Date.now()): boolean {
   return (strains().get(hostOf(url))?.until ?? 0) > now;
 }
 
+/** Ends a pause early: a timeout that turned out to be a dead route, not a busy server. */
+export function clearStrained(url: string): void {
+  strains().delete(hostOf(url));
+}
+
 /** Hosts currently paused, for the system check. */
 export function strainedHosts(now = Date.now()): { host: string; until: number; reason: string }[] {
   return [...strains()]

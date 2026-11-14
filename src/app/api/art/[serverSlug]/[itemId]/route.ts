@@ -1,4 +1,4 @@
-import { createAdapter, type ServerType } from '@/server/adapters';
+import { createAdapter, serverRoute, type ServerType } from '@/server/adapters';
 import { verifyArtSignature } from '@/server/artlink';
 import { getServerBySlug, SERVER_SLUG } from '@/server/config';
 import { getSession } from '@/server/session';
@@ -52,7 +52,9 @@ export async function GET(
   let target: URL;
   try {
     target = new URL(adapter.posterUrl(itemId));
-    if (target.origin !== new URL(server.serverUrl).origin) {
+    // The route, not the stored URL: a Plex detour (plexroute.ts) is still this server, and
+    // nothing else is — the detour was confirmed by the server's own machine identifier.
+    if (target.origin !== new URL(serverRoute(server.serverType, server.serverUrl)).origin) {
       return new Response('Bad request', { status: 400 });
     }
   } catch {

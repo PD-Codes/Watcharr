@@ -56,6 +56,9 @@ export default async function LoginPage({
       ) : (
         <LoginForm serverId={selected.id} askSetupToken={askSetupToken} />
       )}
+      <p className="muted">
+        <Link href="/adminlogin">{t('login.adminAccess')}</Link>
+      </p>
     </div>
   );
 }

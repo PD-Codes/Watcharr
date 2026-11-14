@@ -2,7 +2,7 @@ import 'server-only';
 import { and, eq, gte, inArray, like, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appConfig, playbackSessions, users, watchHistory, watchlist } from '@/db/schema';
-import { createAdapter, type ServerType } from './adapters';
+import { createAdapter, serverRoute, type ServerType } from './adapters';
 import { isUnauthorized } from './adapters/http';
 import { getAdapter, getServer, getSettings, listServers, type ServerRow } from './config';
 import { isEnabled } from './features';
@@ -103,12 +103,15 @@ export function runInBackground(task: Promise<unknown>, what: string): void {
 /** Pulls new history entries for one user. Duplicates are dropped by the unique index. */
 export async function syncHistory(session: Session) {
   if (session.preview) return; // an admin's preview never pulls on the viewed user's behalf
+  // Signed in through /adminlogin: there is no media server token to act with, and a 401 for
+  // the empty one would otherwise drop the only session that still works.
+  if (!session.serverToken) return;
   const user = session.user;
   const userId = user.id;
   const server = await getServer(user.serverId);
   // While the server is paused for load the history waits; the throttle is not consumed, so
   // the first page after the pause pulls it.
-  if (!server || isStrained(server.serverUrl)) return;
+  if (!server || isStrained(serverRoute(server.serverType, server.serverUrl))) return;
   if (throttled(`history:${userId}`, 60_000)) return;
   return singleFlight(`history:${userId}`, () => timed(`history sync for ${user.username}`, () => pullHistory(session)));
 }
@@ -195,7 +198,7 @@ async function runActivity() {
     if ((downUntil.get(server.id) ?? 0) > Date.now()) continue;
     // Overloaded (Plex's own "database is locked", 5xx, timeouts): what is playing is asked
     // twice a minute instead of every five seconds.
-    const strained = isStrained(server.serverUrl);
+    const strained = isStrained(serverRoute(server.serverType, server.serverUrl));
     if (strained && throttled(`strained-poll:${server.id}`, STRAINED_POLL_MS)) continue;
     // One unreachable server must not stop the others from being polled.
     await syncServerActivity(server).catch((error: unknown) => {
@@ -221,7 +224,7 @@ async function runActivity() {
 
 async function housekeeping() {
   for (const server of await listServers()) {
-    if ((downUntil.get(server.id) ?? 0) > Date.now() || isStrained(server.serverUrl)) continue;
+    if ((downUntil.get(server.id) ?? 0) > Date.now() || isStrained(serverRoute(server.serverType, server.serverUrl))) continue;
     // Not consumed while strained or down, so it runs as soon as the server is back.
     if (!throttled(`added:${server.id}`, 10 * 60_000)) {
       // Before the recently-added check, so a new arrival can already be matched to its
@@ -706,7 +709,7 @@ export function syncWatchlist(session: Session): Promise<void> {
 }
 
 async function pullWatchlist(session: Session) {
-  if (session.preview) return;
+  if (session.preview || !session.serverToken) return; // see syncHistory
   const user = session.user;
   const userId = user.id;
   const settings = await getSettings();

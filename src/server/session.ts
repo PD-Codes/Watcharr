@@ -10,6 +10,7 @@ import { decryptSecret, encryptSecret } from './crypto';
 import type { MediaServerUser } from './adapters';
 import { getServer } from './config';
 import { lookupCountry } from './geoip';
+import { RECOVERY_SERVER_USER_ID } from './recoveryaccount';
 import { retireSetupToken } from './setuptoken';
 import type { Scope } from './stats';
 
@@ -207,6 +208,14 @@ export async function createSession(
   if ((row.isAdmin || options.claimAdmin) && !row.globalAdmin && (await claimGlobalAdmin(row.id))) {
     row.globalAdmin = true;
     if (options.claimAdmin) retireSetupToken();
+    // A real admin exists now, so the emergency account steps down. Demoted, not deleted: its
+    // login history is the record of who used the back door, and that is worth keeping.
+    if (row.serverUserId !== RECOVERY_SERVER_USER_ID) {
+      await db
+        .update(users)
+        .set({ globalAdmin: false, isAdmin: false })
+        .where(eq(users.serverUserId, RECOVERY_SERVER_USER_ID));
+    }
   }
 
   // Expired rows are cleaned up here instead of by a cron job.
@@ -350,7 +359,14 @@ export async function claimGlobalAdmin(userId: number): Promise<boolean> {
     .where(
       and(
         eq(users.id, userId),
-        notExists(db.select({ one: sql`1` }).from(users).where(eq(users.globalAdmin, true))),
+        // The emergency account from /adminlogin does not count: it only exists because nobody
+        // could sign in, and the server owner takes the role the moment they can.
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(users)
+            .where(and(eq(users.globalAdmin, true), ne(users.serverUserId, RECOVERY_SERVER_USER_ID))),
+        ),
       ),
     )
     .returning({ id: users.id });

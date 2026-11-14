@@ -28,6 +28,7 @@ export async function logStartup(): Promise<void> {
     `servers: ${servers.length ? servers.map((s) => `${s.label} [${s.serverType}]`).join(', ') : 'none yet (open the app to set one up)'}`,
     `time zone: ${settings.timezone ?? process.env.TZ ?? 'UTC'} · TMDB: ${settings.tmdbApiKey ? 'on' : 'off'} · background sync: ${background}`,
     `log: slow jobs and state changes; WATCHARR_LOG=debug lists every sync run`,
+    'admin access without the media server: open /adminlogin, the one-time link is printed here',
   ];
   for (const line of lines) console.log(`[watcharr] ${line}`);
 }

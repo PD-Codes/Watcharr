@@ -257,6 +257,41 @@ async function main() {
 
     const userId = await seedContent();
 
+    // Admin access without the media server: the code only ever appears in the log, works
+    // once, and signs in as the existing global admin.
+    {
+      const page = await fetch(`${base}/adminlogin`);
+      console.log(`${page.ok ? 'ok  ' : 'FAIL'} - GET /adminlogin anonymous → ${page.status}`);
+      if (!page.ok) failures += 1;
+
+      const redeem = (code: string) =>
+        fetch(`${base}/api/auth/admin-recovery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        });
+      const guessed = await redeem('AAAAA-AAAAA-AAAAA-AAAAA');
+      const guessedOk = guessed.status === 401 && !guessed.headers.get('set-cookie');
+      console.log(`${guessedOk ? 'ok  ' : 'FAIL'} - a code nobody requested signs no one in → ${guessed.status}`);
+      if (!guessedOk) failures += 1;
+
+      const asked = await fetch(`${base}/api/auth/admin-recovery/request`, { method: 'POST' });
+      const code = logs.join('').match(/adminlogin\?token=([A-Z0-9]{20})/g)?.pop()?.split('=')[1] ?? '';
+      console.log(`${asked.ok && code ? 'ok  ' : 'FAIL'} - the requested code is printed to the log → ${asked.status}`);
+      if (!asked.ok || !code) failures += 1;
+
+      const used = await redeem(code);
+      const recoveryCookie = (used.headers.get('set-cookie') ?? '').split(';')[0];
+      const adminPage = await fetch(`${base}/admin/servers`, { headers: { Cookie: recoveryCookie }, redirect: 'manual' });
+      const usedOk = used.ok && !!recoveryCookie && adminPage.status === 200;
+      console.log(`${usedOk ? 'ok  ' : 'FAIL'} - the code signs in as the global admin → ${used.status}, /admin/servers ${adminPage.status}`);
+      if (!usedOk) failures += 1;
+
+      const again = await redeem(code);
+      console.log(`${again.status === 401 ? 'ok  ' : 'FAIL'} - a code works only once → ${again.status}`);
+      if (again.status !== 401) failures += 1;
+    }
+
     // Multi-server. The first sign-in claims the global admin role, so this account may
     // add the second server; everything below then checks the boundary between the two.
     {

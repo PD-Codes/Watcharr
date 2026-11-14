@@ -1,9 +1,10 @@
 import 'server-only';
 import { randomInt, timingSafeEqual } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { db } from '@/db';
 import { users } from '@/db/schema';
 import { isRateLimited, rateLimit } from './ratelimit';
+import { RECOVERY_SERVER_USER_ID } from './recoveryaccount';
 import { globalState } from './state';
 
 // Bootstrapping the first admin without trusting the media server's own idea of "admin".
@@ -22,9 +23,13 @@ const WINDOW_MS = 10 * 60_000;
 
 const state = globalState('setupToken', () => ({ token: null as string | null }));
 
-/** True while no account holds the global admin role. */
+/** True while no real account holds the global admin role (the /adminlogin emergency one does not count). */
 export async function setupTokenPending(): Promise<boolean> {
-  const [row] = await db.select({ id: users.id }).from(users).where(eq(users.globalAdmin, true)).limit(1);
+  const [row] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.globalAdmin, true), ne(users.serverUserId, RECOVERY_SERVER_USER_ID)))
+    .limit(1);
   return !row;
 }
 
@@ -45,6 +50,8 @@ export async function announceSetupToken(): Promise<void> {
       '[watcharr] ──────────────────────────────────────────────',
       '[watcharr] No admin exists yet. To become the global admin,',
       `[watcharr] sign in and enter this one-time setup token:  ${shown}`,
+      '[watcharr] Media server not reachable, so nobody can sign in? Open /adminlogin',
+      '[watcharr] and the sign-in link appears here.',
       '[watcharr] ──────────────────────────────────────────────',
       '',
     ].join('\n'),
