@@ -19,6 +19,12 @@ const PLEX_TV = 'https://plex.tv/api/v2';
 const PLEX_METADATA = 'https://metadata.provider.plex.tv';
 const PRODUCT = 'Watcharr';
 const CLIENT_ID = 'watcharr-server';
+/**
+ * plex.tv calls in the sign-in path. /resources lists every server an account can see and
+ * regularly needs well over the default 8 s for accounts with many shared servers, which made
+ * the login fail on every poll for exactly those people.
+ */
+const PLEX_TV_AUTH_TIMEOUT_MS = 25_000;
 /** Items per library request, and the ceiling that keeps a runaway server from filling memory. */
 // 1000, not 5000: Plex builds a page with full media info in one go, and a 5000-item page of a
 // large movie library took long enough to look like an overloaded server.
@@ -214,20 +220,25 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
   async pollPinAuth(pinId: string): Promise<AuthResult | null> {
     const pin = await apiFetch<{ authToken: string | null }>(`${PLEX_TV}/pins/${encodeURIComponent(pinId)}`, {
       headers: this.plexHeaders(),
+      timeoutMs: PLEX_TV_AUTH_TIMEOUT_MS,
     });
     if (!pin.authToken) return null;
     return { user: await this.getUser(pin.authToken), token: pin.authToken };
   }
 
   async getUser(token: string): Promise<MediaServerUser> {
-    const me = await apiFetch<{ id: number; username: string; title?: string; email?: string; thumb?: string }>(
-      `${PLEX_TV}/user`,
-      { headers: this.plexHeaders(token) },
-    );
-    const [root, resources] = await Promise.all([
-      this.server<PlexContainer>('/'),
-      apiFetch<{ clientIdentifier?: string; owned?: boolean }[]>(`${PLEX_TV}/resources?includeHttps=1&includeRelay=1`, {
+    // All three at once: one after the other they added up past what the login poll waits.
+    // /resources without includeHttps/includeRelay: only clientIdentifier and owned are read,
+    // and the extra connection entries make plex.tv's slowest endpoint slower still.
+    const [me, root, resources] = await Promise.all([
+      apiFetch<{ id: number; username: string; title?: string; email?: string; thumb?: string }>(`${PLEX_TV}/user`, {
         headers: this.plexHeaders(token),
+        timeoutMs: PLEX_TV_AUTH_TIMEOUT_MS,
+      }),
+      this.server<PlexContainer>('/'),
+      apiFetch<{ clientIdentifier?: string; owned?: boolean }[]>(`${PLEX_TV}/resources`, {
+        headers: this.plexHeaders(token),
+        timeoutMs: PLEX_TV_AUTH_TIMEOUT_MS,
       }),
     ]);
     // plex.tv issues a valid token to every Plex account there is, so a valid token proves

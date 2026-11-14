@@ -57,6 +57,12 @@ export async function POST(request: Request) {
     if (status && status >= 400 && status < 500) {
       return NextResponse.json({ error: 'The PIN has expired, start again' }, { status: 410 });
     }
+    // plex.tv or the media server too slow: the PIN stays valid and the login page simply asks
+    // again on its next tick, so this is a warning with the host, not an unhandled stack trace.
+    if ((error as Error | null)?.name === 'TimeoutError') {
+      console.warn(`[watcharr] Plex sign-in: ${(error as Error).message}; the login page retries`);
+      return NextResponse.json({ error: 'Plex did not answer in time, retrying' }, { status: 504 });
+    }
     throw error;
   }
   if (!result) return NextResponse.json({ pending: true });

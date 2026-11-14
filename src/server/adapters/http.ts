@@ -56,7 +56,23 @@ export async function apiFetch<T>(
   } catch (error) {
     // Only our own timeout: a refused connection is a server that is down, which the sync's
     // down-backoff already handles, and a caller's abort is not the server's fault.
-    if ((error as Error | null)?.name === 'TimeoutError' && !bulk) strained(url, `no answer within ${timeoutMs / 1000} s`);
+    if ((error as Error | null)?.name === 'TimeoutError') {
+      if (!bulk) strained(url, `no answer within ${timeoutMs / 1000} s`);
+      // The bare DOMException says neither which host nor which call, so a log line from a
+      // multi-request flow (the Plex sign-in asks three hosts) could not be traced. Origin and
+      // path only: query strings may carry keys.
+      const where = (() => {
+        try {
+          const u = new URL(url);
+          return u.origin + u.pathname;
+        } catch {
+          return 'request';
+        }
+      })();
+      const timeout = new Error(`${init.method ?? 'GET'} ${where} got no answer within ${timeoutMs / 1000} s`);
+      timeout.name = 'TimeoutError';
+      throw timeout;
+    }
     throw error;
   }
   if (!res.ok) {
