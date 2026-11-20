@@ -42,6 +42,25 @@ async function main() {
   assert.equal(body.ServerName, 'Stub', 'a normal response still comes through untouched');
   console.log('ok - the timeout does not disturb a healthy request');
 
+  // The error text lands in the log and on the sync status; the query carries X-Plex-Token
+  // or TMDB's api_key, so only origin and path may appear in it.
+  const failing = createServer((_req, res) => {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('no such item');
+  });
+  await new Promise<void>((resolve) => failing.listen(0, '127.0.0.1', resolve));
+  const failPort = (failing.address() as { port: number }).port;
+  const error = await apiFetch(`http://127.0.0.1:${failPort}/library/metadata/1?X-Plex-Token=secret-token&api_key=tmdb-key`).then(
+    () => null,
+    (e: Error) => e,
+  );
+  assert.ok(error, 'a 404 throws');
+  assert.equal(error.message, `GET http://127.0.0.1:${failPort}/library/metadata/1 failed: 404 no such item`);
+  assert.ok(!/secret-token|tmdb-key|\?/.test(error.message), 'no query in the message');
+  assert.equal((error as Error & { status?: number }).status, 404, 'the status is still carried');
+  failing.close();
+  console.log('ok - error messages leave the query (and its tokens) out');
+
   assert.equal(joinUrl('http://h:8096/', '/Items'), 'http://h:8096/Items', 'no double slash');
   console.log('ok - joinUrl');
 

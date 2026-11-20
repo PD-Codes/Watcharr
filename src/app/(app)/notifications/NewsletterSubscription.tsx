@@ -71,7 +71,7 @@ export default function NewsletterSubscription({
       </label>
 
       <div className="row" style={{ gap: 10, marginTop: 12 }}>
-        <button disabled={busy}>
+        <button type="submit" disabled={busy}>
           {subscribedEmail ? t('profile.nlUpdate') : t('profile.nlSubscribe')}
         </button>
         {subscribedEmail && (

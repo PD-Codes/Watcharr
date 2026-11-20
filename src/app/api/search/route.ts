@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { searchLibrary } from '@/server/library';
+import { searchVisibleLibrary } from '@/server/library';
 import { getSession } from '@/server/session';
 import { getT } from '@/i18n/server';
+import { unauthorized } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,7 @@ const PER_KIND = 8;
 
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session) return unauthorized();
 
   const q = (new URL(request.url).searchParams.get('q') ?? '').trim();
   if (q.length < 2) return NextResponse.json({ results: [] });
@@ -69,7 +70,8 @@ export async function GET(request: Request) {
   }
 
   // The media server may be down; the palette stays useful without library hits.
-  const library = await searchLibrary(session.user.serverId, q, PER_KIND).catch(() => []);
+  // Only libraries the media server shares with this person (see library.ts).
+  const library = await searchVisibleLibrary(session, q, PER_KIND).catch(() => []);
   for (const item of library) {
     results.push({
       kind: 'library',

@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { DB_PATH, db } from '@/db';
+import { getT } from '@/i18n/server';
 import { createManualBackup } from './backups';
 import { getServer } from './config';
 import { completedPath, deleteUpload } from './importupload';
@@ -19,7 +20,7 @@ import { globalState } from './state';
 // file survives, the page shows "interrupted at 43 %" and one click continues from the
 // cursor — safe because both writers skip what they already wrote.
 //
-// ponytail: single process, single job. Two app instances would each believe they are the
+// Trade-off: single process, single job. Two app instances would each believe they are the
 // only runner; the documented deployment is one container.
 
 export const IMPORT_DIR = join(dirname(DB_PATH), 'imports');
@@ -128,6 +129,9 @@ export async function startJob(params: JobParams, resumeFrom?: Job): Promise<Job
   state.starting = false;
   state.stop = false;
   await persist(job, true);
+  // Resolved now, while the request of the admin who started the job is still the context: the
+  // fallback text below is read by that person, on a page in their language.
+  const t = await getT();
 
   void (async () => {
     try {
@@ -162,7 +166,13 @@ export async function startJob(params: JobParams, resumeFrom?: Job): Promise<Job
       job.summary = summary;
       job.status = summary.stopped ? 'stopped' : 'done';
       // An import can double a table; refresh the planner's statistics while it is fresh news.
-      if (!params.dryRun) db.run(sql`ANALYZE`);
+      // optimize rather than a full ANALYZE: it only analyzes tables whose size has changed a lot,
+      // and with analysis_limit it samples each index instead of reading every row of it — a
+      // full ANALYZE over a few million imported rows held the main thread for many seconds.
+      if (!params.dryRun) {
+        db.run(sql`PRAGMA analysis_limit = 1000`);
+        db.run(sql`PRAGMA optimize(0x10002)`);
+      }
       // The uploaded Tautulli file is only the source. Kept, a 700 MB upload sat next to a
       // 70 MB database and looked as if the app ran on two databases. A dry run, a stop or a
       // failure keep it, because those are exactly the cases that go on with the same file.
@@ -171,7 +181,7 @@ export async function startJob(params: JobParams, resumeFrom?: Job): Promise<Job
       }
     } catch (error) {
       job.status = 'failed';
-      job.error = error instanceof Error ? error.message : 'Import failed';
+      job.error = error instanceof Error ? error.message : t('err.importFailed');
     } finally {
       job.finishedAt = Date.now();
       state.stop = false;

@@ -15,6 +15,7 @@ import {
   localizeMonths,
   localizeWeekdays,
   mediaSplit,
+  titleHref,
 } from '@/components/format';
 import {
   getDailyActivity,
@@ -45,17 +46,18 @@ import {
   getTranscodeReasons,
   getVideoCodecs,
 } from '@/server/playback';
-import { getLibrary } from '@/server/library';
+import { visibleLibrary } from '@/server/library';
 import { getTopCast } from '@/server/tmdb';
 import { CastStrip } from '@/components/TitleMeta';
 import { getSettings } from '@/server/config';
 import { syncHistory, runInBackground } from '@/server/sync';
 import { requireUser } from '@/server/session';
 import { getLocale, getT } from '@/i18n/server';
+import type { TranslationKey } from '@/i18n';
+import { reasonLabel } from '@/server/transcodereasons';
 
 export const dynamic = 'force-dynamic';
 
-const titleHref = (label: string) => `/title/${encodeURIComponent(label)}`;
 const genreHref = (label: string) => `/history?genre=${encodeURIComponent(label)}`;
 const dayHref = (day: string) => `/history?date=${day}`;
 const PERIOD_DAYS = [7, 30, 90, 365];
@@ -116,7 +118,8 @@ export default async function StatsPage({
     getHighlights(scope),
     getRecords(scope, days),
     getRewatchSplit(scope, days),
-    getLibrary(session.user.serverId).catch(() => []),
+    // Coverage counts against what this person can open, not the whole server.
+    visibleLibrary(session).catch(() => []),
     getDailyActivity(scope, 365),
   ]);
 
@@ -137,7 +140,6 @@ export default async function StatsPage({
   // Cache-only, so this costs one query and never a TMDB request in the render path.
   const topCast = await getTopCast(scope).catch(() => []);
 
-  const busiestHour = hours.reduce((best, hour) => (hour.value > best.value ? hour : best), hours[0]);
   // The library lists movies and series, so coverage has to compare titles with titles —
   // counting individual episodes against it produced percentages far above 100.
   const coverage = library.length
@@ -260,7 +262,7 @@ export default async function StatsPage({
         <section>
           <h2>{t('stats.titles')}</h2>
           <div className="card">
-            <BarChart data={titles} format={rank} hrefFor={titleHref} />
+            <BarChart data={titles} format={rank} hrefFor={(label) => titleHref(label)} />
           </div>
         </section>
         <section>
@@ -374,7 +376,13 @@ export default async function StatsPage({
         <section>
           <h2>{t('stats.transcodeReasons')}</h2>
           <div className="card">
-            <BarChart data={reasons} format={sessionCount} />
+            <BarChart
+              data={reasons.map((reason) => ({
+                label: reasonLabel(reason.label, (key) => t(key as TranslationKey)),
+                value: reason.value,
+              }))}
+              format={sessionCount}
+            />
           </div>
         </section>
       </div>

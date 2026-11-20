@@ -1,11 +1,12 @@
 import 'server-only';
-import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { notificationChannels, notificationLog, users } from '@/db/schema';
 import { publicArtUrl } from './artlink';
 import { getSettings } from './config';
 import { decryptSecret, encryptSecret } from './crypto';
 import { matchesConditions, renderTemplate, type ChannelType, type NotificationEvent } from './features';
+import { canSeeSection, resolveSectionKeySettled, userSectionAccess, type Viewer } from './library';
 import type { Translate } from '@/i18n';
 import { getDefaultT } from '@/i18n/server';
 
@@ -40,6 +41,7 @@ export function describe(
   event: NotificationEvent,
   payload: Record<string, unknown>,
 ): string {
+  // biome-ignore lint/suspicious/noExplicitAny: event payloads are loose records; every field is read defensively below
   const p = payload as Record<string, any>;
   const server = p.server?.label ? ` (${p.server.label})` : '';
   const user = p.user ?? t('notify.someone');
@@ -121,6 +123,12 @@ async function transportSend(
     port: Number(config.smtpPort) || 587,
     secure: Number(config.smtpPort) === 465,
     auth: config.smtpUser ? { user: config.smtpUser, pass: config.smtpPass } : undefined,
+    // nodemailer waits up to 2 min to connect and 10 min on a silent socket by default. A mail
+    // server that accepts and then stalls would hold a delivery (and the newsletter job's lock)
+    // that long; these bound one attempt to well under a minute.
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 30_000,
   });
   try {
     await transport.sendMail({ from: config.from, ...message });
@@ -158,10 +166,14 @@ export async function sendMail(
  *
  *   - the command is a bare filename, resolved inside SCRIPTS_DIR and nowhere else, so a
  *     path or a dot segment cannot reach out of it;
- *   - execFile, never a shell, so nothing in the name or the payload is ever parsed as one;
+ *   - spawned directly, never through a shell, so nothing in the name or the payload is ever
+ *     parsed as one;
  *   - the payload arrives in the environment rather than as arguments, which keeps a title
  *     with a leading dash from being read as a flag;
- *   - a timeout, because the sync that fires this sits in a page render.
+ *   - a timeout, because the sync that fires this sits in a page render. The script runs as
+ *     the leader of its own process group, and the timeout ends the whole group: killing
+ *     only the direct child would leave anything it started (a `sleep`, a curl in the
+ *     background) running, and holding the output pipe open keeps the callback from firing.
  * ------------------------------------------------------------------ */
 
 const SCRIPTS_DIR = process.env.WATCHARR_SCRIPTS_DIR ?? './data/scripts';
@@ -169,16 +181,17 @@ const SCRIPT_TIMEOUT_MS = 10_000;
 /** Filenames only. No separators, no leading dot, so "..", "/etc/x" and ".env" all fail. */
 const SCRIPT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-async function runScript(
+export async function runScript(
   command: string | undefined,
   event: NotificationEvent,
   text: string,
   payload: Record<string, unknown>,
+  timeoutMs = SCRIPT_TIMEOUT_MS,
 ): Promise<Result> {
   if (!command || !SCRIPT_NAME.test(command)) {
     return { ok: false, error: 'Script name must be a plain file name inside the scripts folder' };
   }
-  const { execFile } = await import('node:child_process');
+  const { spawn } = await import('node:child_process');
   const { resolve, join } = await import('node:path');
 
   // The turbopackIgnore markers keep the bundler from tracing the whole project into the
@@ -189,30 +202,67 @@ async function runScript(
   // is what actually gets executed, so that is what gets checked.
   if (!file.startsWith(dir)) return { ok: false, error: 'Script is outside the scripts folder' };
 
+  // spawn, not execFile: execFile does not pass `detached` through, and without it there is
+  // no group to end. Windows has no process groups to signal; there the child alone is killed.
+  const ownGroup = process.platform !== 'win32';
   return new Promise<Result>((done) => {
-    execFile(
-      /* turbopackIgnore: true */ file,
-      [],
-      {
-        timeout: SCRIPT_TIMEOUT_MS,
-        // A clean environment plus the event: the app's own secrets (SESSION_SECRET, the
-        // database path) have no business in a script an admin dropped into a folder.
-        env: {
-          PATH: process.env.PATH ?? '',
-          NODE_ENV: process.env.NODE_ENV,
-          WATCHARR_EVENT: event,
-          WATCHARR_TEXT: text,
-          WATCHARR_PAYLOAD: JSON.stringify(payload),
-        },
-        maxBuffer: 256 * 1024,
+    let timedOut = false;
+    let stderr = '';
+    const child = spawn(/* turbopackIgnore: true */ file, [], {
+      detached: ownGroup,
+      shell: false,
+      // stdout is not read; stderr is kept (bounded) because it is what explains a failure.
+      stdio: ['ignore', 'ignore', 'pipe'],
+      // A clean environment plus the event: the app's own secrets (SESSION_SECRET, the
+      // database path) have no business in a script an admin dropped into a folder.
+      env: {
+        PATH: process.env.PATH ?? '',
+        NODE_ENV: process.env.NODE_ENV,
+        WATCHARR_EVENT: event,
+        WATCHARR_TEXT: text,
+        WATCHARR_PAYLOAD: JSON.stringify(payload),
       },
-      (error: Error | null) => done(error ? { ok: false, error: error.message } : { ok: true }),
-    );
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (stderr.length < 4096) stderr += chunk.toString('utf8');
+    });
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        // Negative pid: the whole group the detached child leads.
+        if (ownGroup && child.pid) process.kill(-child.pid, 'SIGKILL');
+        else child.kill('SIGKILL');
+      } catch {
+        child.kill('SIGKILL'); // group already gone; make sure the child itself is
+      }
+    }, timeoutMs);
+
+    let settled = false;
+    const finish = (result: Result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      done(result);
+    };
+    child.on('error', (error) => finish({ ok: false, error: error.message }));
+    // 'close', not 'exit': it waits for stderr, which anything the script left running in
+    // the background still holds open — until the timeout ends the group.
+    child.on('close', (code, signal) => {
+      if (timedOut) return finish({ ok: false, error: `Script timed out after ${Math.round(timeoutMs / 1000)} s` });
+      if (code === 0) return finish({ ok: true });
+      const detail = stderr.trim().slice(0, 500);
+      finish({
+        ok: false,
+        error: `Script failed (${signal ?? `exit code ${code}`})${detail ? `: ${detail}` : ''}`,
+      });
+    });
   });
 }
 
 /** Poster URL for a payload, if the event carries enough to build one and APP_URL is set. */
 function posterFor(payload: Record<string, unknown>): string | null {
+  // biome-ignore lint/suspicious/noExplicitAny: event payloads are loose records; every field is read defensively below
   const p = payload as Record<string, any>;
   const slug = p.server?.slug;
   const itemId = p.itemId;
@@ -365,7 +415,7 @@ async function logDelivery(
  * or failure — is recorded in notification_log, so a bad Discord URL is visible in the admin
  * UI instead of vanishing after its one retry.
  *
- * ponytail: one retry per channel, then the event is dropped — no queue, no dead letter
+ * Trade-off: one retry per channel, then the event is dropped — no queue, no dead letter
  * table. A notification is not a ledger; the log above is only a record of what happened,
  * not a replay mechanism.
  */
@@ -453,6 +503,28 @@ export function selectableEvents(isAdmin: boolean, globalAdmin = false): Notific
     : ['playback.start', 'playback.stop', 'media.added'];
 }
 
+/**
+ * A new title is news only to people who can open its library. mayReceive() lets media.added
+ * through for everyone; this narrows it for non-admins to the libraries the media server shares
+ * with them (library.ts). An arrival whose library is unknown — the listing has not caught up
+ * with it yet — is not mailed to them: a title from a library someone may not see must not
+ * reach their inbox, and a missed "new" mail is the cheaper mistake.
+ */
+async function sharedWith(event: NotificationEvent, row: Viewer, payload: Record<string, unknown>): Promise<boolean> {
+  if (event !== 'media.added' || row.isAdmin || row.globalAdmin) return true;
+  // The event resolved its library from the cache when it fired; a listing refresh that was
+  // running at that moment usually knows the new title, so it gets one more, cache-only, look.
+  const itemId = typeof payload.itemId === 'string' ? payload.itemId : undefined;
+  const title = typeof payload.title === 'string' ? payload.title : undefined;
+  const key =
+    typeof payload.sectionKey === 'string'
+      ? payload.sectionKey
+      : await resolveSectionKeySettled(row.serverId, { itemId, title });
+  const prefix = `${row.serverId}:`;
+  if (!key?.startsWith(prefix)) return false;
+  return canSeeSection(await userSectionAccess(row), key.slice(prefix.length));
+}
+
 const escapeHtml = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -470,27 +542,29 @@ async function mailSubscribers(
       globalAdmin: users.globalAdmin,
       username: users.username,
       serverId: users.serverId,
+      id: users.id,
+      serverUserId: users.serverUserId,
     })
     .from(users)
     .where(isNotNull(users.notifyEmail))
     .catch(() => []);
 
-  const recipients = rows
-    .filter(
-      (row) =>
-        row.events.includes(event) &&
-        mayReceive(
-          event,
-          {
-            isAdmin: row.isAdmin || row.globalAdmin,
-            globalAdmin: row.globalAdmin,
-            username: row.username,
-            serverId: row.serverId,
-          },
-          payload,
-        ),
-    )
-    .map((row) => row.email as string);
+  const allowed = rows.filter(
+    (row) =>
+      row.events.includes(event) &&
+      mayReceive(
+        event,
+        {
+          isAdmin: row.isAdmin || row.globalAdmin,
+          globalAdmin: row.globalAdmin,
+          username: row.username,
+          serverId: row.serverId,
+        },
+        payload,
+      ),
+  );
+  const visible = await Promise.all(allowed.map((row) => sharedWith(event, row, payload).catch(() => false)));
+  const recipients = allowed.filter((_, index) => visible[index]).map((row) => row.email as string);
   if (!recipients.length) return;
 
   const text = describe(t, event, payload);
@@ -540,8 +614,20 @@ export interface LogEntry {
   createdAt: Date;
 }
 
-export async function listNotificationLog(limit = 100): Promise<LogEntry[]> {
-  return db.select().from(notificationLog).orderBy(desc(notificationLog.createdAt)).limit(limit);
+/** Newest delivery attempts first; `offset` pages further back. */
+export async function listNotificationLog(limit = 100, offset = 0): Promise<LogEntry[]> {
+  return db
+    .select()
+    .from(notificationLog)
+    .orderBy(desc(notificationLog.createdAt), desc(notificationLog.id))
+    .limit(limit)
+    .offset(offset);
+}
+
+/** How many entries listNotificationLog() can page through. */
+export async function countNotificationLog(): Promise<number> {
+  const [row] = await db.select({ n: count() }).from(notificationLog);
+  return row?.n ?? 0;
 }
 
 /**
@@ -612,8 +698,57 @@ export async function createChannel(input: {
 }
 
 /**
+ * Whether two URLs reach the same endpoint: scheme, host and port (default ports spelled
+ * out). A path change stays on the same server; anything else is a different recipient. An
+ * unparsable URL is never "the same". Shared with the media server form, which follows the
+ * same rule for its token.
+ */
+export function sameEndpoint(a: string, b: string): boolean {
+  try {
+    const x = new URL(a);
+    const y = new URL(b);
+    const port = (u: URL) => u.port || (u.protocol === 'https:' ? '443' : u.protocol === 'http:' ? '80' : '');
+    return x.protocol === y.protocol && x.hostname === y.hostname && port(x) === port(y);
+  } catch {
+    return false;
+  }
+}
+
+// Where a channel type sends a stored secret, and which fields hold it. The edit form never
+// shows a secret and a blank field means "unchanged" — so without this, an admin session
+// (or whoever got hold of one) could point the SMTP host at their own machine, press "Send
+// test" and receive the password the form never revealed. Types whose secret is the address
+// itself (Discord/Slack webhook URLs) or whose host is fixed (Telegram, Pushover,
+// Pushbullet) cannot be redirected without replacing the secret, so they need no entry.
+const SECRET_TARGETS: Record<string, { endpoint: (config: Record<string, string>) => string; secrets: string[] }> = {
+  email: {
+    endpoint: (c) => `${(c.smtpHost ?? '').trim().toLowerCase()}:${Number(c.smtpPort) || 587}`,
+    secrets: ['smtpPass'],
+  },
+};
+
+/**
+ * True when `patch` would send a stored secret to a different endpoint without supplying it
+ * again. Pure, so the rule is testable without a database.
+ */
+export function retargetsSecret(
+  type: string,
+  current: Record<string, string>,
+  patch: Record<string, string>,
+): boolean {
+  const rule = SECRET_TARGETS[type];
+  if (!rule) return false;
+  if (rule.endpoint(current) === rule.endpoint({ ...current, ...patch })) return false;
+  // Nothing stored means nothing to carry over; a re-entered secret is the admin's own.
+  return rule.secrets.some((field) => !!current[field] && !patch[field]);
+}
+
+export type ChannelUpdate = { ok: true } | { ok: false; error: string };
+
+/**
  * Config is merged rather than replaced: the edit form only submits fields the admin
  * actually typed into (blank means "leave unchanged"), same convention as server tokens.
+ * Refused when the merge would move a stored secret to a new endpoint (retargetsSecret).
  */
 export async function updateChannel(
   id: number,
@@ -625,7 +760,7 @@ export async function updateChannel(
     template: string;
     enabled: boolean;
   }>,
-): Promise<void> {
+): Promise<ChannelUpdate> {
   const patch: Partial<typeof notificationChannels.$inferInsert> = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.events !== undefined) patch.events = input.events;
@@ -636,15 +771,22 @@ export async function updateChannel(
   if (input.enabled !== undefined) patch.enabled = input.enabled;
   if (input.config) {
     const [current] = await db
-      .select({ config: notificationChannels.config })
+      .select({ type: notificationChannels.type, config: notificationChannels.config })
       .from(notificationChannels)
       .where(eq(notificationChannels.id, id));
-    const merged = { ...(current ? decryptConfig(current.config) : {}), ...input.config };
-    patch.config = encryptSecret(JSON.stringify(merged));
+    const stored = current ? decryptConfig(current.config) : {};
+    if (current && retargetsSecret(current.type, stored, input.config)) {
+      return {
+        ok: false,
+        error: 'The destination changed, so the stored password has to be entered again',
+      };
+    }
+    patch.config = encryptSecret(JSON.stringify({ ...stored, ...input.config }));
   }
   if (Object.keys(patch).length) {
     await db.update(notificationChannels).set(patch).where(eq(notificationChannels.id, id));
   }
+  return { ok: true };
 }
 
 export async function deleteChannel(id: number): Promise<void> {

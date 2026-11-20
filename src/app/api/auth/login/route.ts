@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { clearRateLimit, clientIp, isRateLimited, rateLimit } from '@/server/ratelimit';
 import type { HttpError } from '@/server/adapters/http';
 import { getAdapter, getServer, listServers } from '@/server/config';
 import { createSession, recordLogin } from '@/server/session';
 import { checkSetupToken } from '@/server/setuptoken';
+import { apiError, badBody } from '@/server/apierror';
 
 /** Username/password login for Jellyfin and Emby. Plex uses the PIN routes instead. */
 export async function POST(request: Request) {
@@ -12,11 +13,11 @@ export async function POST(request: Request) {
   if (!body) return badBody();
   const { username, password, serverId } = body;
   if (!username || !password) {
-    return NextResponse.json({ error: 'Username and password are required' }, { status: 400 });
+    return apiError(400, 'missing-credentials', 'err.credentialsRequired');
   }
 
   const server = serverId ? await getServer(serverId) : (await listServers())[0];
-  if (!server) return NextResponse.json({ error: 'Unknown server' }, { status: 400 });
+  if (!server) return apiError(400, 'unknown-server', 'err.unknownServer');
 
   // Keyed per server: an attack on one server must not lock people out of the others.
   // The address is whatever X-Forwarded-For says, so a client can change it at will — the
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
   const ip = clientIp(request);
   const account = `login-user:${server.id}:${username.trim().toLowerCase().slice(0, 128)}`;
   if (!rateLimit(`login:${server.id}:${ip}`, 10, 60_000) || isRateLimited(account, 10)) {
-    return NextResponse.json({ error: 'Too many attempts, try again later' }, { status: 429 });
+    return apiError(429, 'limited', 'err.limited');
   }
 
   const meta = { ip, userAgent: request.headers.get('user-agent') ?? undefined };
@@ -37,9 +38,10 @@ export async function POST(request: Request) {
     // Checked after the password: the token only ever upgrades an account that exists.
     const setup = await checkSetupToken(body.setupToken, ip);
     if (setup === 'invalid' || setup === 'limited') {
-      return NextResponse.json(
-        { error: setup === 'limited' ? 'Too many attempts, try again later' : 'Invalid setup token', code: 'setup-token' },
-        { status: setup === 'limited' ? 429 : 401 },
+      return apiError(
+        setup === 'limited' ? 429 : 401,
+        'setup-token',
+        setup === 'limited' ? 'err.limited' : 'err.setupTokenInvalid',
       );
     }
     await createSession(server.id, user, token, meta, { claimAdmin: setup === 'valid' });
@@ -52,6 +54,6 @@ export async function POST(request: Request) {
     const status = (error as HttpError | null)?.status;
     if (status !== undefined && status < 500) rateLimit(account, 10, 10 * 60_000);
     void recordLogin(server.id, username, false, meta);
-    return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+    return apiError(401, 'invalid-credentials', 'err.invalidCredentials');
   }
 }

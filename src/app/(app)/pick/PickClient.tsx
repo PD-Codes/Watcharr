@@ -110,6 +110,7 @@ export default function PickClient({
 
   // Start moving, and call it stopped on a timer rather than on transitionend, which a
   // background tab may never report.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one run per spin (spinId); reel and spinning are read as they are at that moment
   useEffect(() => {
     if (!spinning || !reel) return;
     const begin = window.setTimeout(() => {
@@ -120,7 +121,6 @@ export default function PickClient({
       window.clearTimeout(begin);
       window.clearTimeout(stopped);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spinId]);
 
   useEffect(() => {
@@ -349,6 +349,7 @@ function Segment({
   onChange: (value: string) => void;
 }) {
   return (
+    // biome-ignore lint/a11y/useSemanticElements: a labelled group of segmented buttons; a fieldset would need a legend and brings its own layout quirks
     <div className="pick-field" role="group" aria-label={label}>
       <span className="eyebrow" aria-hidden>
         {label}

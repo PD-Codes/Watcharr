@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { AreaChart, BarChart, ColumnChart, DonutChart, StatCard, WeekHourGrid } from '@/components/Charts';
-import { formatDuration, formatMinutes, localizeWeekdays, mediaSplit } from '@/components/format';
+import { formatDuration, formatMinutes, localizeWeekdays, mediaSplit, titleHref } from '@/components/format';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { users } from '@/db/schema';
@@ -34,6 +35,8 @@ import { getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
+const PERIODS = [7, 30, 90, 365];
+
 export default async function AdminStatsPage({
   searchParams,
 }: {
@@ -45,8 +48,8 @@ export default async function AdminStatsPage({
   if (!isEnabled(settings.features, 'serverWideStats')) notFound();
   const params = await searchParams;
   const requested = Number(params.days ?? 30);
-  // The period select is the only producer; any other number would size the calendar CTE.
-  const days = [7, 30, 90, 365].includes(requested) ? requested : 30;
+  // Whitelisted: the period bar is the only producer, and any other number would size the calendar CTE.
+  const days = PERIODS.includes(requested) ? requested : 30;
   const by: RankBy = params.by === 'time' ? 'time' : 'count';
   const rank =
     by === 'time' ? formatMinutes : (value: number) => t('common.plays', { count: value });
@@ -95,7 +98,6 @@ export default async function AdminStatsPage({
   const libraryMovies = library.filter((item) => item.mediaType === 'movie').length;
 
   const userIdByName = new Map(userRows.map((user) => [user.username, user.id]));
-  const titleHref = (label: string) => `/title/${encodeURIComponent(label)}?scope=server`;
 
   const busiestHour = hours.reduce((best, h) => (h.value > best.value ? h : best), hours[0]);
 
@@ -105,20 +107,19 @@ export default async function AdminStatsPage({
       <h1>{t('serverstats.title')}</h1>
       <p className="subtitle">{t('serverstats.subtitle')}</p>
 
-      <form className="filters">
-        {/* Keeps the ranking metric when only the period is submitted. */}
-        <input type="hidden" name="by" value={by} />
-        <label>
-          {t('serverstats.period')}
-          <select name="days" defaultValue={String(days)}>
-            <option value="7">{t('serverstats.last7')}</option>
-            <option value="30">{t('serverstats.last30')}</option>
-            <option value="90">{t('serverstats.last90')}</option>
-            <option value="365">{t('common.lastYear')}</option>
-          </select>
-        </label>
-        <button>{t('action.apply')}</button>
-      </form>
+      {/* One tap per period instead of select-then-apply; the ranking metric comes along. */}
+      <div className="seg" style={{ marginBottom: 22 }}>
+        {PERIODS.map((period) => (
+          <Link
+            key={period}
+            href={`/admin/stats?days=${period}&by=${by}`}
+            className={days === period ? 'on' : undefined}
+            aria-current={days === period ? 'true' : undefined}
+          >
+            {period === 365 ? t('common.lastYear') : t('common.days', { count: period })}
+          </Link>
+        ))}
+      </div>
 
       <div className="grid cols-4">
         <StatCard
@@ -238,7 +239,7 @@ export default async function AdminStatsPage({
         <section>
           <h2>{t('stats.titles')}</h2>
           <div className="card">
-            <BarChart data={titles} format={rank} hrefFor={titleHref} />
+            <BarChart data={titles} format={rank} hrefFor={(label) => titleHref(label, true)} />
           </div>
         </section>
         <section>

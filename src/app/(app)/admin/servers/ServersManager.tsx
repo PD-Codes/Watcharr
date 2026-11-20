@@ -113,7 +113,7 @@ export default function ServersManager({
             <input name="serverToken" type="password" placeholder={t('servers.tokenUnchanged')} />
           </label>
           <div className="row" style={{ gap: 10, marginTop: 12 }}>
-            <button disabled={busy}>{t('action.save')}</button>
+            <button type="submit" disabled={busy}>{t('action.save')}</button>
             {server.id !== currentServerId && (
               <button type="button" className="outlined" disabled={busy} onClick={() => onDelete(server)}>
                 {t('servers.remove')}
@@ -147,7 +147,7 @@ export default function ServersManager({
           {t('servers.token')}
           <input name="serverToken" type="password" required />
         </label>
-        <button disabled={busy} style={{ marginTop: 12 }}>
+        <button type="submit" disabled={busy} style={{ marginTop: 12 }}>
           {t('servers.addButton')}
         </button>
       </form>

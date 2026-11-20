@@ -1,7 +1,7 @@
 import 'server-only';
 import { mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { backupTo, DB_PATH } from '@/db';
+import { backupTo, DB_PATH, PARTIAL_SUFFIX } from '@/db';
 import { getSettings, updateSettings } from './config';
 import { globalState } from './state';
 
@@ -45,12 +45,37 @@ async function runAutoBackup() {
 
   await mkdir(BACKUP_DIR, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  // backupTo checks the free space and writes <name>.partial first, so a full disk fails here
+  // without a truncated file that the rotation below would count as one of the kept backups.
   await backupTo(join(BACKUP_DIR, `${PREFIX}${stamp}.db`));
   await updateSettings({ backupLastAt: new Date() });
   await pruneOldBackups(settings.backupRetention);
 }
 
-async function pruneOldBackups(keep: number) {
+/**
+ * A .partial that has not been written to for this long belongs to a backup that died (the
+ * process was killed mid-copy). A running one touches its file continuously, and the startup
+ * script removes every leftover anyway; this is for an instance that runs for months.
+ */
+const PARTIAL_STALE_MS = 15 * 60_000;
+
+export async function removeStalePartials(now = Date.now()): Promise<number> {
+  let removed = 0;
+  for (const name of await readdir(BACKUP_DIR).catch(() => [] as string[])) {
+    if (!name.endsWith(PARTIAL_SUFFIX)) continue;
+    const path = join(BACKUP_DIR, name);
+    const info = await stat(path).catch(() => null);
+    if (!info || now - info.mtimeMs < PARTIAL_STALE_MS) continue;
+    await rm(path, { force: true }).catch(() => {});
+    removed += 1;
+  }
+  return removed;
+}
+
+export async function pruneOldBackups(keep: number) {
+  await removeStalePartials();
+  // Only finished files: a .partial never ends in .db, so it can neither be kept in place of a
+  // real backup nor push one out.
   const files = (await readdir(BACKUP_DIR).catch(() => []))
     .filter((name) => name.startsWith(PREFIX) && name.endsWith('.db'))
     .sort(); // ISO timestamp in the filename sorts chronologically as text

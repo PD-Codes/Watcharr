@@ -6,11 +6,13 @@ import { db, DB_PATH, dbInfo } from '@/db';
 import { readerStatus } from '@/db/readers';
 import { strainedHosts } from './strain';
 import { createAdapter, type ServerType } from './adapters';
+import { plainLanRoute } from './adapters/plexroute';
 import { listAutoBackups } from './autobackup';
 import { listBackups, pendingRestore } from './backups';
 import { getSettings, listServers } from './config';
 import { evaluateDoctor, sortChecks, type Check } from './doctor-core';
 import { getJob } from './importjob';
+import { secretProblem } from './secret';
 import { listChannels } from './notifications';
 import { getUpdateStatus } from './update';
 
@@ -45,6 +47,15 @@ export async function runDoctor(): Promise<{ checks: Check[]; usage: { label: st
     )
   ).filter((label): label is string => label !== null);
 
+  // Read after the pings above: a ping is what finds (or drops) a Plex detour.
+  const plexServers = servers.filter((server) => server.serverType === 'plex');
+  const plexPlainRoutes = plexServers.length
+    ? plexServers.flatMap((server) => {
+        const route = plainLanRoute(server.serverUrl);
+        return route ? [`${server.label} → ${route}`] : [];
+      })
+    : undefined;
+
   // Applied migrations against the files shipped with this build.
   let pending = 0;
   try {
@@ -57,8 +68,8 @@ export async function runDoctor(): Promise<{ checks: Check[]; usage: { label: st
   }
 
   const checks = evaluateDoctor({
-    secretIsPlaceholder:
-      !process.env.SESSION_SECRET || process.env.SESSION_SECRET === 'change-me' || process.env.SESSION_SECRET.length < 16,
+    // Same rule as the startup gate and the startup warning (server/secret.ts).
+    secretIsPlaceholder: secretProblem() !== null,
     appUrlSet: Boolean(process.env.APP_URL),
     tmdbConfigured: Boolean(settings.tmdbApiKey),
     emailChannel: channels.some((c) => c.type === 'email' && c.enabled),
@@ -77,6 +88,7 @@ export async function runDoctor(): Promise<{ checks: Check[]; usage: { label: st
     importInterrupted: job?.status === 'interrupted',
     restorePending: restore !== null,
     strained: strainedHosts().map((s) => `${s.host} (${s.reason})`),
+    plexPlainRoutes,
     database: {
       journalMode: dbInfo().journalMode,
       remoteFs: dbInfo().remoteFs,

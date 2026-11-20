@@ -150,7 +150,7 @@ export default async function HistoryPage({
             <option value="episode">{t('common.episodes')}</option>
           </select>
         </label>
-        <button>{t('action.apply')}</button>
+        <button type="submit">{t('action.apply')}</button>
       </form>
 
       {rows.length === 0 ? (

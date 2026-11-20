@@ -5,12 +5,12 @@ import { watchlist } from '@/db/schema';
 import { artUrl } from '@/components/format';
 import { getSettings } from './config';
 import { isEnabled } from './features';
-import { getLibrary } from './library';
+import { visibleLibrary } from './library';
 import { buildPool, hasRuntimeData, type PickCandidate, type PoolEntry } from './pick-core';
 import type { requireUser } from './session';
 import { scopeFilter } from './stats';
 import { getSuggestions } from './suggestions';
-import { reconcileWatchlistStatus, reportSyncError, syncHistory, syncWatchlist } from './sync';
+import { reconcileWatchlistStatus, runInBackground, syncHistory, syncWatchlist } from './sync';
 import { cachedPosters } from './tmdb';
 import { getLocale } from '@/i18n/server';
 
@@ -33,11 +33,13 @@ export async function getPickData(session: UserSession): Promise<PickData> {
   const settings = await getSettings();
   const suggestionsOn = isEnabled(settings.features, 'suggestions');
 
-  // Same preamble as the watchlist page: a stale "planned" row for something already
-  // watched would otherwise be offered as tonight's pick.
-  await syncWatchlist(session).catch(reportSyncError('watchlist sync'));
+  // The media server pulls run behind the page like everywhere else (sync.ts::runInBackground):
+  // waiting for them put a whole Plex history request in front of the roulette. What was synced
+  // last time is enough to pick from; the reconcile is local and quick, so it stays in line —
+  // a stale "planned" row for something already watched would otherwise be tonight's pick.
+  runInBackground(syncWatchlist(session), 'watchlist sync');
   await reconcileWatchlistStatus(user.id);
-  await syncHistory(session).catch(reportSyncError('history sync'));
+  runInBackground(syncHistory(session), 'history sync');
 
   const rows = await db
     .select()
@@ -45,10 +47,11 @@ export async function getPickData(session: UserSession): Promise<PickData> {
     .where(and(eq(watchlist.userId, user.id), inArray(watchlist.status, ['planned', 'watching'])));
 
   // The library supplies genres and runtime, which the watchlist row does not carry. A
-  // media server that is down must not take the page with it.
-  const library = new Map((await getLibrary(user.serverId).catch(() => [])).map((i) => [i.itemId, i]));
+  // media server that is down must not take the page with it. Only libraries shared with this
+  // person count, like everywhere else (library.ts).
+  const library = new Map((await visibleLibrary(session).catch(() => [])).map((i) => [i.itemId, i]));
   const suggested = suggestionsOn
-    ? ((await getSuggestions(user.id, user.serverId).catch(() => null))?.fromLibrary ?? [])
+    ? ((await getSuggestions(session).catch(() => null))?.fromLibrary ?? [])
     : [];
 
   const detail = (itemId: string) => {

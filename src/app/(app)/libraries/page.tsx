@@ -5,7 +5,7 @@ import { watchHistory } from '@/db/schema';
 import { Icon } from '@/components/Icons';
 import Poster from '@/components/Poster';
 import { artUrl, firstParam, formatDate, formatDuration, formatTimeAgo } from '@/components/format';
-import { getLibrary, getSections } from '@/server/library';
+import { visibleLibrary, visibleSections } from '@/server/library';
 import { getLibraryTotals } from '@/server/librarystats';
 import { adminScope, isAdmin, requireUser } from '@/server/session';
 import { cachedPosters } from '@/server/tmdb';
@@ -98,8 +98,9 @@ export default async function LibrariesPage({
   const query = (params.q ?? '').trim().toLowerCase();
 
   const [sections, items, watchedRows] = await Promise.all([
-    getSections(serverId).catch(() => []),
-    getLibrary(serverId).catch(() => []),
+    // Only the libraries the media server shares with this person (see library.ts).
+    visibleSections(session).catch(() => []),
+    visibleLibrary(session).catch(() => []),
     db
       .select({ itemId: watchHistory.itemId, title: watchHistory.title })
       .from(watchHistory)
@@ -161,7 +162,7 @@ export default async function LibrariesPage({
         {/* Carried through so searching does not silently reset the sort. */}
         <input type="hidden" name="sort" value={sort} />
         <input type="hidden" name="dir" value={descending ? 'desc' : 'asc'} />
-        <button>{t('action.apply')}</button>
+        <button type="submit">{t('action.apply')}</button>
       </form>
 
       {visible.length === 0 ? (
@@ -200,7 +201,9 @@ export default async function LibrariesPage({
                       ? t('libraries.typeMovie')
                       : row.mediaType === 'audio'
                         ? t('libraries.typeAudio')
-                        : t('libraries.typeShow')}
+                        : row.mediaType === 'mixed'
+                          ? t('fix2.libraries.typeMixed')
+                          : t('libraries.typeShow')}
                   </td>
                   <td className="num">{row.items}</td>
                   <td className="num muted">{row.seasons ?? '—'}</td>

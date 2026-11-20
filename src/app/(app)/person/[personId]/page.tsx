@@ -106,7 +106,6 @@ export default async function PersonPage({
 
       <div className="title-head">
         {person.profileUrl ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
           <img className="poster" src={person.profileUrl} alt="" />
         ) : (
           <span className="poster poster-blank" aria-hidden />
@@ -158,7 +157,6 @@ export default async function PersonPage({
             const card = (
               <>
                 {credit.posterUrl ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
                   <img className="poster" src={credit.posterUrl} alt="" loading="lazy" />
                 ) : (
                   <span className="poster poster-blank" aria-hidden />

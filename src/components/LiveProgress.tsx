@@ -11,6 +11,7 @@ import { formatTimecode, percent } from './format';
  */
 function useLivePosition(progressMs: number, durationMs: number, playing: boolean, ageMs: number) {
   const [elapsed, setElapsed] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new reported position is the trigger to restart the local clock
   useEffect(() => {
     setElapsed(0);
     if (!playing) return;

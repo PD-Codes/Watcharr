@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { rotateApiKey, updateSettings } from '@/server/config';
 import { getSession } from '@/server/session';
+import { globalAdminRequired } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,18 +12,14 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST() {
   const session = await getSession();
-  if (!session?.user.globalAdmin) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!session?.user.globalAdmin) return globalAdminRequired();
   return NextResponse.json({ key: await rotateApiKey() });
 }
 
 /** Turns the API off again. Every dashboard configured with the old key stops working. */
 export async function DELETE() {
   const session = await getSession();
-  if (!session?.user.globalAdmin) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!session?.user.globalAdmin) return globalAdminRequired();
   await updateSettings({ apiKey: null });
   return NextResponse.json({ ok: true });
 }

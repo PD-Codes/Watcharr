@@ -109,12 +109,23 @@ export function readOnWorker<T>(sql: string, params: unknown[]): Promise<ReadRes
   });
 }
 
-/** Stops every reader (tests remove the database file afterwards). */
-export async function stopReaders(): Promise<void> {
+/**
+ * Stops every reader: shutdown (so the main connection is the last one when it checkpoints) and
+ * the tests (which remove the database file afterwards). Each worker is asked to close its own
+ * connection first; one that does not answer within the grace time is terminated.
+ */
+export async function stopReaders(graceMs = 1000): Promise<void> {
   const pool = root.__watcharrReaders;
   if (!pool) return;
   root.__watcharrReaders = undefined;
-  await Promise.all(pool.readers.map((r) => r.worker.terminate()));
+  await Promise.all(
+    pool.readers.map(async ({ worker }) => {
+      const exited = new Promise<void>((resolve) => worker.once('exit', () => resolve()));
+      worker.postMessage({ close: true });
+      const timer = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), graceMs).unref());
+      if ((await Promise.race([exited, timer])) === 'timeout') await worker.terminate();
+    }),
+  );
 }
 
 /** For the system check. */

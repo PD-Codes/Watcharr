@@ -16,18 +16,28 @@ import { globalState } from './state';
 // The way in is the server console, like the setup token: /adminlogin asks for a one-time
 // code, the code is printed to the log, and whoever reads the log is the person running the
 // container anyway. Nothing is printed until someone asks, so the log does not carry a live
-// admin credential the whole time. One code at a time, 15 minutes, used once.
+// admin credential the whole time. One code at a time, 15 minutes, used once. Asking again
+// while a code is still valid prints that same code: otherwise anybody who can reach
+// /adminlogin could keep replacing the code the admin is about to type.
 //
-// ponytail: memory only. A restart drops a pending code; requesting a new one is one click.
+// Trade-off: memory only. A restart drops a pending code; requesting a new one is one click.
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
 const LENGTH = 20; // 100 bits: guessing is not the threat model, the rate limit is a courtesy
 const TTL_MS = 15 * 60_000;
 const FAILURES = 8;
 const REQUESTS = 5;
+// Across all addresses: the per-address limits trust X-Forwarded-For, which a client can write
+// freely when no reverse proxy is in front. Generous enough that an admin is rarely caught by
+// somebody else's noise, tight enough that the console cannot be flooded.
+const GLOBAL_FAILURES = 50;
+const GLOBAL_REQUESTS = 10;
 const WINDOW_MS = 10 * 60_000;
 
-const state = globalState('adminRecovery', () => ({ token: null as string | null, expires: 0 }));
+/** While everybody together is over the request limit, the pending code is printed at most this often. */
+const REPRINT_MS = 60_000;
+
+const state = globalState('adminRecovery', () => ({ token: null as string | null, expires: 0, printedAt: 0 }));
 
 const normalize = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 const pretty = (raw: string) => raw.match(/.{1,5}/g)!.join('-');
@@ -48,21 +58,47 @@ export async function hasGlobalAdmin(): Promise<boolean> {
   return !!(await firstGlobalAdmin());
 }
 
-/** Prints a fresh code and link to the console. False when this address asked too often. */
+/**
+ * Prints the code to the console: the pending one while it is still valid (same expiry), a
+ * fresh one otherwise. `origin` is APP_URL or empty — never a host taken from the request,
+ * which the requester controls; without it only the path and the code are printed.
+ * False when this address asked too often.
+ */
 export async function requestRecoveryCode(origin: string, ip: string): Promise<boolean> {
   if (!rateLimit(`admin-recovery-request:${ip}`, REQUESTS, WINDOW_MS)) return false;
-  const raw = Array.from({ length: LENGTH }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
-  state.token = raw;
-  state.expires = Date.now() + TTL_MS;
+  // Past the global limit the way in stays open: refusing would let anybody who floods
+  // /adminlogin from made-up addresses keep the admin out exactly when they need it. Nothing is
+  // replaced (the pending code stands, a new one only once none is valid, so still at most one
+  // per TTL), and the console gets the code at most once a minute instead of on every request.
+  const flooded = !rateLimit('admin-recovery-request:*', GLOBAL_REQUESTS, WINDOW_MS);
+  const valid = !!state.token && Date.now() < state.expires;
+  if (flooded && valid && Date.now() - state.printedAt < REPRINT_MS) return true;
+  if (!valid || !state.token) {
+    state.token = Array.from({ length: LENGTH }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
+    state.expires = Date.now() + TTL_MS;
+  }
+  state.printedAt = Date.now();
+  const raw: string = state.token;
+  const minutes = Math.max(1, Math.ceil((state.expires - Date.now()) / 60_000));
   const admin = await firstGlobalAdmin();
   console.log(
     [
       '',
       '[watcharr] ──────────────────────────────────────────────',
       `[watcharr] Admin sign-in without the media server was requested (from ${ip}).`,
-      '[watcharr] Open this link within 15 minutes; it works once:',
-      `[watcharr]   ${origin}/adminlogin?token=${raw}`,
-      `[watcharr] or enter the code on /adminlogin:  ${pretty(raw)}`,
+      ...(origin
+        ? [
+            `[watcharr] Open this link within ${minutes} minute(s); it works once:`,
+            `[watcharr]   ${origin}/adminlogin?token=${raw}`,
+            `[watcharr] or enter the code on /adminlogin:  ${pretty(raw)}`,
+          ]
+        : [
+            // No host: without APP_URL there is none this app can vouch for.
+            `[watcharr] Within ${minutes} minute(s), open this path on the address you use for`,
+            '[watcharr] Watcharr (it works once; set APP_URL for a complete link):',
+            `[watcharr]   /adminlogin?token=${raw}`,
+            `[watcharr] or enter the code on /adminlogin:  ${pretty(raw)}`,
+          ]),
       admin
         ? `[watcharr] It signs in as ${admin.username}, the global admin.`
         : '[watcharr] No admin exists yet: it creates a local emergency admin account. The role ' +
@@ -77,10 +113,14 @@ export async function requestRecoveryCode(origin: string, ip: string): Promise<b
 
 export type RecoveryResult = 'ok' | 'invalid' | 'limited' | 'no-server';
 
-/** Checks the code and, if it is the current one, signs the browser in as the admin. */
-export async function redeemRecoveryCode(input: string, meta: LoginMeta & { ip: string }): Promise<RecoveryResult> {
-  const key = `admin-recovery:${meta.ip}`;
-  if (isRateLimited(key, FAILURES)) return 'limited';
+/**
+ * Compares a code with the current one before any limit is consulted, like the setup token:
+ * the current code always works, and only wrong guesses are counted and turned away. With the
+ * global limit checked first, anybody could keep the admin out by sending wrong codes.
+ */
+export function checkRecoveryCode(input: string, ip: string): 'valid' | 'invalid' | 'limited' {
+  const key = `admin-recovery:${ip}`;
+  const globalKey = 'admin-recovery:*';
   const given = Buffer.from(normalize(input));
   const current = Buffer.from(state.token ?? '');
   const valid =
@@ -88,10 +128,17 @@ export async function redeemRecoveryCode(input: string, meta: LoginMeta & { ip: 
     Date.now() < state.expires &&
     given.length === current.length &&
     timingSafeEqual(given, current);
-  if (!valid) {
-    rateLimit(key, FAILURES, WINDOW_MS);
-    return 'invalid';
-  }
+  if (valid) return 'valid';
+  if (isRateLimited(key, FAILURES) || isRateLimited(globalKey, GLOBAL_FAILURES)) return 'limited';
+  rateLimit(key, FAILURES, WINDOW_MS);
+  rateLimit(globalKey, GLOBAL_FAILURES, WINDOW_MS);
+  return 'invalid';
+}
+
+/** Checks the code and, if it is the current one, signs the browser in as the admin. */
+export async function redeemRecoveryCode(input: string, meta: LoginMeta & { ip: string }): Promise<RecoveryResult> {
+  const check = checkRecoveryCode(input, meta.ip);
+  if (check !== 'valid') return check;
 
   const admin = await firstGlobalAdmin();
   if (admin) {

@@ -7,7 +7,7 @@ import Poster from '@/components/Poster';
 import { Backdrop, CastStrip, Overview, TmdbFacts } from '@/components/TitleMeta';
 import { artUrl, formatDate, formatDuration, formatMinutes } from '@/components/format';
 import { getSettings } from '@/server/config';
-import { getLibrary } from '@/server/library';
+import { visibleLibrary } from '@/server/library';
 import { getTitleDetail } from '@/server/titles';
 import type { LibraryItem } from '@/server/adapters/types';
 import { getTitleMeta } from '@/server/tmdb';
@@ -35,7 +35,8 @@ export default async function TitlePage({
     // Not watched yet, but in the library (the ⌘K palette lists library hits): a page about
     // the title instead of a 404. Only from the cached library — an unknown label stays a 404.
     const wanted = label.trim().toLowerCase();
-    const item = (await getLibrary(session.user.serverId).catch(() => [])).find(
+    // Only a library this person may open: a hidden one's titles stay a 404 like unknown ones.
+    const item = (await visibleLibrary(session).catch(() => [])).find(
       (entry) => entry.title.trim().toLowerCase() === wanted,
     );
     if (!item) notFound();

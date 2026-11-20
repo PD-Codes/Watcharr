@@ -1,0 +1,213 @@
+/* ============================================================
+   Command palette
+   ============================================================ */
+
+.palette-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  justify-content: center;
+  padding: 12vh 16px 16px;
+  background: rgba(0, 0, 0, 0.6);
+  transition: opacity var(--dur-medium) var(--ease-standard);
+}
+
+.palette {
+  width: min(560px, 100%);
+  max-height: 62vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: the vh line before it is the fallback for browsers without dynamic viewport units */
+  max-height: 62dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-container-low);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-xl);
+  box-shadow: var(--elev-4);
+  overflow: hidden;
+  transition: opacity var(--dur-medium) var(--ease-standard),
+    transform var(--dur-long) var(--ease-emphasized);
+}
+
+.palette-input {
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  padding: 16px 18px;
+  font-size: 16px;
+}
+
+.palette-input:focus-visible {
+  border-color: var(--line);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -4px;
+  border-radius: var(--shape-lg);
+}
+
+/* The dialog is a fixed-height box (it stretches to max-height), so the results take the
+   slack and the key hints stay on the bottom edge instead of floating mid-box. */
+.palette-list {
+  flex: 1;
+  min-height: 0;
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 8px 12px;
+  border-radius: var(--shape-sm);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.palette-item .label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-item .sub {
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.palette-item.on,
+.palette-item:hover {
+  background: var(--surface-container-high);
+}
+
+.palette-kind {
+  flex: 0 0 auto;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  width: 52px;
+}
+
+.palette-empty {
+  flex: 1;
+  padding: 22px 18px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.palette-hint {
+  display: flex;
+  gap: 12px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+kbd {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  padding: 2px 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-xs);
+  color: var(--text-dim);
+}
+
+/* The desktop search trigger, sitting in the drawer. */
+.search-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  background: var(--surface-container);
+  border: 1px solid var(--line);
+  border-radius: var(--shape-full);
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+  box-shadow: none;
+}
+
+.search-trigger:hover {
+  background: var(--surface-container-high);
+  color: var(--text-dim);
+  box-shadow: none;
+  filter: none;
+}
+
+.search-trigger kbd {
+  margin-left: auto;
+}
+
+.search-trigger svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+/* ============================================================
+   Tooltips and info markers
+   ============================================================ */
+
+/* Rendered by components/Tooltip.tsx at the document level, so it is never clipped. */
+.tip {
+  position: fixed;
+  z-index: 80;
+  max-width: 280px;
+  padding: 7px 10px;
+  background: var(--surface-container-highest);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-xs);
+  font-size: 12px;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  pointer-events: none;
+  box-shadow: var(--elev-3);
+  animation: tip-in var(--dur-short) ease both;
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+  }
+}
+
+[data-tip] {
+  cursor: default;
+}
+
+.info {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  font-size: 8px;
+  font-style: italic;
+  letter-spacing: 0;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.info:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}

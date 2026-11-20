@@ -122,7 +122,7 @@ Built for the phone as well: a navigation bar, a modal drawer and thumb-sized ta
 ## Requirements
 
 - A running **Plex**, **Jellyfin** or **Emby** server that this app can reach over HTTP(S)
-- **Docker** with Compose v2 — *or* **Node.js 22+** if you would rather run it directly
+- **Docker** with Compose v2 — *or* **Node.js 26+** if you would rather run it directly
 - ~100 MB disk for the image, plus a few MB per year of watch history
 
 Watcharr only talks to the services you set up: your media servers, `plex.tv` for Plex
@@ -202,10 +202,20 @@ configuration page.
 | `DATABASE_PATH` | `./data/watcharr.db` | SQLite file. The container defaults to `/app/data/watcharr.db`; keep that path on a volume. |
 | `APP_URL` | `http://localhost:3000` | Public base URL of this deployment: **the address you actually type into the browser**. Used for the artwork links in Discord and Slack notifications and as an accepted origin for state-changing requests. |
 | `PORT` | `3000` | Port the server listens on. |
+| `WATCHARR_BIND` | *(unset)* | Docker Compose only: host address port 3000 is published on. Unset publishes on all interfaces, IPv4 and IPv6 (like a plain `3000:3000`). Set `127.0.0.1` when a reverse proxy on the same host is the only way in; an IPv6 address goes in brackets (`[::1]`). |
+| `WATCHARR_TRUSTED_PROXIES` | `1` | Number of reverse proxies in front of the app. The client address is the last `X-Forwarded-For` entry your own proxy appended; use `2` for e.g. Cloudflare + nginx. Without a proxy the header can be forged, so do not expose the port directly. |
 | `WATCHARR_SCRIPTS_DIR` | `./data/scripts` | The only folder a `script` notification channel may run a file from. A channel names a plain file name, never a path. |
 | `WATCHARR_NO_BACKGROUND` | *(unset)* | Set to `1` to run this instance as a web front end only: no live event sockets, no background sync. Only useful next to another instance that does the work. |
 | `TZ` | *(container default)* | Fallback time zone. Once one is picked on the configuration page, that setting wins — this only covers an installation that has not chosen. |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | *(unset)* | Set to `0` **only** if your media server uses a self-signed certificate. It disables certificate checking process-wide. |
+
+### Data retention
+
+Retention for sessions, logs and history is set on the configuration page and is off by
+default: nothing is deleted unless you choose a period. Two tables are capped regardless:
+the notification log keeps at most **90 days** (a shorter log retention wins), and cached
+GeoIP answers are dropped after **180 days**, since who owns an address and where it is
+drifts over months. Both are looked up again or written anew as needed.
 
 ### The read-only API
 
@@ -302,6 +312,11 @@ kept server-side; the browser only ever gets a signed session id.
 Set `APP_URL` to the public URL and forward to port 3000. The app sets no cookies that need
 a subpath, but it does expect to live at the root of whatever host it is served from.
 
+If the proxy runs on the same host, set `WATCHARR_BIND=127.0.0.1` in `.env` so the app is
+reachable only through it. With two proxies in a row (e.g. Cloudflare in front of nginx), set
+`WATCHARR_TRUSTED_PROXIES=2`; the client address comes from `X-Forwarded-For`, which anyone can
+forge when no proxy sits in front.
+
 The proxy has to send `X-Forwarded-Proto: https` (Caddy does by default, the nginx block
 below does): it decides whether the session cookie is marked `Secure`. Without it the cookie
 is still issued and works, just without that flag. The reverse is also true: a proxy that
@@ -354,6 +369,22 @@ crossing a major version — see below.
 Watch [Releases](https://github.com/PD-Codes/watcharr/releases) for what changed. Versioning
 is semantic: a major bump means something needs your attention.
 
+### Upgrade/Downgrade
+
+Before the first new migration touches an existing database, the start-up takes a snapshot
+of it: `backups/pre-upgrade-<last migration>-<time>.db` in the data volume. It is never
+removed by the backup rotation; delete it from the Backups page once the new version runs
+fine. If there is not enough free space for it, the log says so and the update continues
+without it.
+
+From this version on, secrets (media server tokens, the TMDB and API keys, notification
+channel settings) are encrypted under new, per-purpose keys whenever they are written, and session ids are
+stored hashed (older sessions are converted the first time they are used). An older version
+can read neither, so **a downgrade only works through that pre-upgrade backup**: stop the
+container, put the backup in place of `watcharr.db` in the data volume and remove the
+`watcharr.db-wal` and `watcharr.db-shm` files next to it, switch back to the old image, then
+start. Everything recorded after the update is lost with it.
+
 ## Backup
 
 Everything lives in one SQLite file. Stop the container, copy it, start it again:
@@ -388,8 +419,9 @@ somewhere safe and separate.
   allowlist on the item id, an origin match against the
   configured server, an `image/*` response type and an upstream timeout.
 - Login and Plex PIN polling are rate limited.
-- `/api/health` reports database and media server health; the container healthcheck uses
-  `/api/health?live=1`, which only checks the app and its database.
+- `/api/health` reports database and media server health; the container healthcheck (built into the image
+  and repeated in `docker-compose.yml`) uses `/api/health?live=1`, which only checks the app and its
+  database.
 
 Found something? Please open a
 [security advisory](https://github.com/PD-Codes/watcharr/security/advisories/new) rather

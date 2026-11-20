@@ -92,7 +92,9 @@ export default function IpLink({ ip }: { ip: string | null }) {
       </button>
 
       {open && (
+        // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes; the keyboard closes with Escape
         <div className="modal-backdrop" onClick={() => setOpen(false)} role="presentation">
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: only stops a click inside the dialog from reaching the backdrop */}
           <div
             className="modal"
             role="dialog"

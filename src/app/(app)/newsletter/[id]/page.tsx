@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation';
 import { formatDate } from '@/components/format';
-import { getSettings } from '@/server/config';
-import { requireUser } from '@/server/session';
+import { getNewsletterArchive, getSettings } from '@/server/config';
+import { sectionKey, sessionAccess } from '@/server/library';
+import { canReadIssue } from '@/server/newsletter';
+import { isAdmin, requireUser } from '@/server/session';
 import { getLocale, getT } from '@/i18n/server';
 
 // No loading.tsx in this segment: it calls notFound(). See the streaming note in CLAUDE.md.
@@ -13,16 +15,34 @@ export const dynamic = 'force-dynamic';
  * and a self-hosted install is exactly where that matters.
  */
 export default async function NewsletterPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser();
+  const session = await requireUser();
   const t = await getT();
   const locale = await getLocale();
   const { id } = await params;
   const settings = await getSettings();
-
-  if (id !== settings.newsletterUniqueId || !settings.newsletterLastHtml) notFound();
+  if (id !== settings.newsletterUniqueId) notFound();
+  const archive = await getNewsletterArchive();
+  if (!archive.html) notFound();
+  // The stored issue is the full one. Somebody who may not open every library in it got their
+  // own cut by mail, and reading the full one here would show them the rest.
+  let readable = isAdmin(session.user);
+  if (!readable) {
+    const access = await sessionAccess(session).catch(() => null);
+    const visible = new Set(access && !access.all ? [...access.ids].map((id) => sectionKey(session.user.serverId, id)) : []);
+    readable = canReadIssue(archive.libraries, visible);
+  }
+  if (!readable) {
+    return (
+      <>
+        <p className="eyebrow">{t('nav.adminNewsletter')}</p>
+        <h1>{settings.newsletterSubject}</h1>
+        <p className="subtitle">{t('fix2.newsletter.notForYou')}</p>
+      </>
+    );
+  }
   // The issue in the reader's language when it was rendered in it (issues sent before the
   // per-language copy existed only have the default one).
-  const html = settings.newsletterLastHtmlByLocale?.[await getLocale()] ?? settings.newsletterLastHtml;
+  const html = archive.byLocale?.[locale] ?? archive.html;
 
   return (
     <>

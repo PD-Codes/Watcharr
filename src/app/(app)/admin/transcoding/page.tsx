@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { BarChart, DonutChart, StatCard } from '@/components/Charts';
 import { firstParam, formatDuration, percent } from '@/components/format';
 import {
@@ -12,6 +13,10 @@ import {
 } from '@/server/playback';
 import { adminScope, requireAdmin } from '@/server/session';
 import { getT } from '@/i18n/server';
+import type { TranslationKey } from '@/i18n';
+import { reasonLabel } from '@/server/transcodereasons';
+
+const PERIODS = ['7', '30', '90', 'all'] as const;
 
 export const dynamic = 'force-dynamic';
 
@@ -23,8 +28,8 @@ export default async function AdminTranscodingPage({
   const session = await requireAdmin();
   const t = await getT();
   const requested = firstParam((await searchParams).days);
-  // Whitelisted against the period select; `abc` would be NaN, which `since()` reads as all time.
-  const raw = requested === 'all' || ['7', '30', '90'].includes(requested ?? '') ? requested : '30';
+  // Whitelisted against the period bar; `abc` would be NaN, which `since()` reads as all time.
+  const raw = PERIODS.find((period) => period === requested) ?? '30';
   const days = raw === 'all' ? undefined : Number(raw);
   // A server admin only sees their own server's streams, like every other admin page.
   const scope = adminScope(session.user);
@@ -49,18 +54,19 @@ export default async function AdminTranscodingPage({
       <h1>{t('transcoding.title')}</h1>
       <p className="subtitle">{t('transcoding.subtitle')}</p>
 
-      <form className="filters">
-        <label>
-          {t('serverstats.period')}
-          <select name="days" defaultValue={raw}>
-            <option value="7">{t('serverstats.last7')}</option>
-            <option value="30">{t('serverstats.last30')}</option>
-            <option value="90">{t('serverstats.last90')}</option>
-            <option value="all">{t('common.allTime')}</option>
-          </select>
-        </label>
-        <button>{t('action.apply')}</button>
-      </form>
+      {/* One tap per period, like the dashboard and the statistics page. */}
+      <div className="seg" style={{ marginBottom: 22 }}>
+        {PERIODS.map((period) => (
+          <Link
+            key={period}
+            href={`/admin/transcoding?days=${period}`}
+            className={raw === period ? 'on' : undefined}
+            aria-current={raw === period ? 'true' : undefined}
+          >
+            {period === 'all' ? t('common.allTime') : t('common.days', { count: Number(period) })}
+          </Link>
+        ))}
+      </div>
 
       <div className="grid cols-4">
         <StatCard
@@ -92,12 +98,28 @@ export default async function AdminTranscodingPage({
             <DonutChart data={methods} format={(v) => t('common.sessions', { count: v })} />
           </div>
         </section>
-        <section>
-          <h2>{t('stats.transcodeReasons')}</h2>
-          <div className="card">
-            <BarChart data={reasons} format={(v) => t('common.sessions', { count: v })} />
-          </div>
-        </section>
+        {/* The reasons are usually two or three bars next to a tall donut; stacked with the
+            resolutions, the column ends where the donut does instead of in empty card. */}
+        <div className="grid-stack">
+          <section>
+            <h2>{t('stats.transcodeReasons')}</h2>
+            <div className="card">
+              <BarChart
+                data={reasons.map((reason) => ({
+                  label: reasonLabel(reason.label, (key) => t(key as TranslationKey)),
+                  value: reason.value,
+                }))}
+                format={(v) => t('common.sessions', { count: v })}
+              />
+            </div>
+          </section>
+          <section>
+            <h2>{t('stats.resolutions')}</h2>
+            <div className="card">
+              <BarChart data={resolutions} format={(v) => t('common.sessions', { count: v })} />
+            </div>
+          </section>
+        </div>
       </div>
 
       <div className="grid cols-2 section">
@@ -123,19 +145,12 @@ export default async function AdminTranscodingPage({
           </div>
         </section>
         <section>
-          <h2>{t('stats.resolutions')}</h2>
+          <h2>{t('stats.bitrate')}</h2>
           <div className="card">
-            <BarChart data={resolutions} format={(v) => t('common.sessions', { count: v })} />
+            <BarChart data={bitrates} format={(v) => t('common.sessions', { count: v })} />
           </div>
         </section>
       </div>
-
-      <section className="section">
-        <h2>{t('stats.bitrate')}</h2>
-        <div className="card">
-          <BarChart data={bitrates} format={(v) => t('common.sessions', { count: v })} />
-        </div>
-      </section>
     </>
   );
 }

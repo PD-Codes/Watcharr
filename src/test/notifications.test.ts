@@ -101,6 +101,7 @@ async function main() {
   // Titles come from the media server and land in an HTML mail, so they must be escaped.
   const html = await renderNewsletter([
     {
+      serverId: 1,
       serverLabel: 'Server',
       serverSlug: 'server',
       items: [{ itemId: '1', title: '<img src=x onerror=alert(1)>', mediaType: 'movie', genres: [] }],
@@ -109,6 +110,57 @@ async function main() {
   assert.ok(!html.includes('<img src=x'), 'a title cannot inject markup into the issue');
   assert.ok(html.includes('&lt;img src=x'), 'the title is still shown, escaped');
   console.log('ok - newsletter titles are escaped, not executed');
+
+  // Nobody gets titles from a library they cannot open: admins the whole issue, everybody else
+  // their part of it, grouped so each distinct part is rendered once, and an empty part nothing.
+  {
+    const { canReadIssue, groupRecipients, issueLibraries, narrowEntries } = await import('../server/newsletter');
+    const item = (itemId: string, title: string, sectionId?: string) => ({ itemId, title, mediaType: 'movie', genres: [], sectionId });
+    const entries = [
+      { serverId: 1, serverLabel: 'One', serverSlug: 'one', items: [item('a', 'Family Film', 'kids'), item('b', 'Grown-up Film', 'adult'), item('c', 'Loose')] },
+      { serverId: 2, serverLabel: 'Two', serverSlug: 'two', items: [item('d', 'Other Server', 'kids')] },
+    ];
+    assert.deepEqual(issueLibraries(entries), ['1:?', '1:adult', '1:kids', '2:kids']);
+    const kidsOnly = narrowEntries(entries, new Set(['1:kids']));
+    assert.deepEqual(kidsOnly.map((e) => [e.serverId, e.items.map((i) => i.itemId)]), [[1, ['a']]],
+      'only the allowed library; the other server and the unplaced title drop out');
+
+    const recipients = [
+      { name: 'admin', full: true, visible: new Set<string>() },
+      { name: 'kid', full: false, visible: new Set(['1:kids']) },
+      { name: 'kid2', full: false, visible: new Set(['1:kids', '1:music']) },
+      { name: 'grown', full: false, visible: new Set(['1:kids', '1:adult']) },
+      { name: 'nothing', full: false, visible: new Set<string>() },
+      { name: 'outside', full: false, visible: new Set(['1:music']) },
+    ];
+    const bySelection = (selection: string[]) =>
+      [...groupRecipients(recipients, selection).values()].map((g) => [
+        g.allowed ? [...g.allowed].join(',') : '*',
+        g.members.map((m) => m.name).join(','),
+      ]);
+    assert.deepEqual(
+      bySelection(['1:kids', '1:adult']),
+      [['*', 'admin'], ['1:kids', 'kid,kid2'], ['1:adult,1:kids', 'grown']],
+      'grouped by what they may see of the admin\'s selection; nothing in it, no mail',
+    );
+    assert.deepEqual(
+      bySelection([]),
+      [['*', 'admin'], ['1:kids', 'kid'], ['1:kids,1:music', 'kid2'], ['1:adult,1:kids', 'grown'], ['1:music', 'outside']],
+      'no selection means every library, so the visible set itself is the group',
+    );
+
+    // The archive page shows the stored (full) issue only to somebody who may open all of it.
+    assert.equal(canReadIssue(['1:kids'], new Set(['1:kids', '1:adult'])), true);
+    assert.equal(canReadIssue(['1:kids', '1:adult'], new Set(['1:kids'])), false);
+    assert.equal(canReadIssue(['1:?'], new Set(['1:kids'])), false, 'a title of unknown library could be from any');
+    assert.equal(canReadIssue(null, new Set(['1:kids'])), false, 'an issue from before libraries were recorded');
+    assert.equal(canReadIssue([], new Set()), true, 'an empty issue holds nothing to hide');
+
+    // A cut rendered for one group does not mention what the others get.
+    const cut = await renderNewsletter(kidsOnly, 'en-US', {}, new Set(['1:kids']));
+    assert.ok(cut.includes('Family Film') && !cut.includes('Grown-up Film') && !cut.includes('Other Server'));
+    console.log('ok - the newsletter is cut per reader to the libraries they may open');
+  }
 
   // Conditions decide whether somebody's phone lights up at two in the morning, so the
   // three cases that matter are: unset never filters, a set one that the event can answer
@@ -219,7 +271,7 @@ async function main() {
   await dispatch('media.added', { title: '<!channel> A & B', server: { label: 'S', id: 1 } });
   sink.close();
   assert.equal(received.length, 1, 'the slack channel was delivered to once');
-  assert.ok(received[0].text?.includes('&lt;!channel&gt; A &amp; B'), received[0].text);
+  assert.ok(received[0].text?.includes('&lt;!channel&gt; A &amp; B'), received[0].text ?? '(no text)');
   assert.ok(!received[0].text?.includes('<!channel>'), 'no live Slack markup survives from a title');
   console.log('ok - slack message values are escaped, not interpreted');
 
@@ -241,9 +293,10 @@ async function main() {
   // GCM must reject a shortened tag; Node would otherwise accept a 4-byte one.
   const { encryptSecret, decryptSecret } = await import('../server/crypto');
   const sealed = encryptSecret('token');
+  const prefix = sealed.slice(0, 3); // v2: since keys are split per purpose
   const [iv, tag, data] = sealed.slice(3).split(':');
   const shortTag = Buffer.from(tag, 'base64').subarray(0, 4).toString('base64');
-  assert.throws(() => decryptSecret(`v1:${iv}:${shortTag}:${data}`), 'a truncated auth tag must fail');
+  assert.throws(() => decryptSecret(`${prefix}${iv}:${shortTag}:${data}`), 'a truncated auth tag must fail');
   assert.equal(decryptSecret(sealed), 'token');
   console.log('ok - a truncated encryption tag is rejected');
 }

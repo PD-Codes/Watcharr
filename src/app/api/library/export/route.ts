@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
 import { csvResponse, toCsv } from '@/server/csv';
-import { getLibrary } from '@/server/library';
+import { visibleLibrary } from '@/server/library';
 import { getSession } from '@/server/session';
+import { unauthorized } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,10 +11,11 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session) return unauthorized();
 
   const sectionId = new URL(request.url).searchParams.get('sectionId');
-  const all = await getLibrary(session.user.serverId).catch(() => []);
+  // Only what this person may open; a section id they cannot see yields an empty file.
+  const all = await visibleLibrary(session).catch(() => []);
   const items = sectionId ? all.filter((item) => item.sectionId === sectionId) : all;
 
   const body = toCsv(

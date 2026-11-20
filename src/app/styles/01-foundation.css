@@ -1,0 +1,350 @@
+/*
+ * Watcharr — "projection booth", on a Material 3 skeleton.
+ *
+ * Two rules govern everything below.
+ *
+ * 1. Amber is data. It marks something that is playing, or a value read off the
+ *    server. Nothing decorative is ever amber — not a button, not a nav pill, not
+ *    a heading. Material 3 would normally paint FABs and active navigation in the
+ *    primary color; here those stay neutral, because a lit pixel has to mean
+ *    something.
+ *
+ * 2. The Material 3 parts are hand-written, not imported. Materialize/MDC ship
+ *    jQuery or custom elements that every interactive piece would have to become a
+ *    client component for, plus a CDN dependency this app is not allowed to have
+ *    (self-hosted, no mandatory outbound calls). What is actually wanted from
+ *    Material — the token system, elevation, shape scale, state layers, and the
+ *    rail / drawer / navigation-bar behaviour — is a stylesheet, so it is one.
+ *
+ * The scheme is dark-first; :root carries dark and light is the override, because
+ * the product is looked at in a dim room.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Material 3 surface roles, graphite tinted --- */
+  --ink: #08090b;
+  --surface: #101216;
+  --surface-container-low: #14171c;
+  --surface-container: #161a20;
+  --surface-container-high: #1c212a;
+  --surface-container-highest: #232935;
+  /* Kept as an alias: existing components were written against it. */
+  --surface-raised: var(--surface-container);
+
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.14);
+
+  --text: #e9ebef;
+  --text-dim: #a2a9b6;
+  /* Both grays clear WCAG AA (4.5:1) on every surface they sit on, including under the
+     8% hover layer and the 10% pressed layer — checked by a script, not by eye. --text-faint
+     carries 10px stat labels and table headers, so it cannot be a large-text-only gray. */
+  --text-faint: #939aa8;
+  --on-accent: #1a1206;
+
+  /* Neutral interaction colors. Amber never marks focus, selection or hover: it means
+     "playing" or "data", and a focus ring that is amber would say neither. */
+  --focus-ring: var(--text);
+  /* The outline of a form field. --line-strong is a decorative hairline; a text field has
+     no other cue that it is one, which WCAG 1.4.11 holds to 3:1. */
+  --outline: #6b7384;
+
+  /* The projector bulb. Live state and data, never chrome. */
+  --beam: #ffb020;
+  --beam-dim: rgba(255, 176, 32, 0.55);
+  --beam-wash: rgba(255, 176, 32, 0.16);
+  --beam-glow: rgba(255, 176, 32, 0.35);
+  --beam-soft: rgba(255, 176, 32, 0.28);
+
+  --danger: #ff6b6b;
+  --ok: #63d29a;
+
+  /* --- State layers (M3: 8% hover, 10% focus, 10% pressed) ---
+     Derived from --text, so a scheme never has to restate them. The rgba fallback for
+     browsers without color-mix() sits in the @supports block after the light scheme. */
+  --state-hover: color-mix(in srgb, var(--text) 8%, transparent);
+  --state-focus: color-mix(in srgb, var(--text) 10%, transparent);
+  --state-press: color-mix(in srgb, var(--text) 10%, transparent);
+  --selection: color-mix(in srgb, var(--text) 28%, transparent);
+
+  /* --- Shape scale --- */
+  --shape-xs: 4px;
+  --shape-sm: 8px;
+  --shape-md: 12px;
+  --shape-lg: 16px;
+  --shape-xl: 28px;
+  --shape-full: 999px;
+  /* Legacy aliases used by components written before the scale existed. */
+  --radius: var(--shape-sm);
+  --radius-lg: var(--shape-md);
+
+  /* --- Elevation --- */
+  /* A resting card in the dark scheme is held up by its hairline alone; a shadow on near
+     black is invisible. The light scheme gets a whisper so white cards lift off paper. */
+  --elev-rest: none;
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px 1px rgba(0, 0, 0, 0.22);
+  --elev-2: 0 1px 2px rgba(0, 0, 0, 0.45), 0 2px 6px 2px rgba(0, 0, 0, 0.25);
+  --elev-3: 0 4px 8px 3px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.45);
+  --elev-4: 0 8px 24px 6px rgba(0, 0, 0, 0.35), 0 2px 4px rgba(0, 0, 0, 0.5);
+
+  /* --- Motion (M3 easing sets) --- */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-short: 120ms;
+  --dur-medium: 240ms;
+  --dur-long: 400ms;
+
+  --font-display-stack: var(--font-display), 'Archivo', system-ui, sans-serif;
+  --font-body-stack: var(--font-body), 'Inter Tight', system-ui, sans-serif;
+  --font-mono-stack: var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Height of the mobile chrome; used to keep content clear of it. */
+  --appbar-h: 56px;
+  --bottomnav-h: 68px;
+}
+
+/* Light scheme. Amber has to darken here or it fails contrast on paper-white. */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --ink: #f6f6f4;
+  --surface: #ffffff;
+  --surface-container-low: #f7f7f5;
+  --surface-container: #f1f1ee;
+  --surface-container-high: #e9e9e5;
+  --surface-container-highest: #e1e1dc;
+
+  --line: rgba(0, 0, 0, 0.09);
+  --line-strong: rgba(0, 0, 0, 0.18);
+
+  --text: #16181c;
+  --text-dim: #565c67;
+  --text-faint: #596070;
+  --on-accent: #ffffff;
+  --outline: #80858f;
+
+  --beam: #9a5800;
+  --beam-dim: rgba(154, 88, 0, 0.8);
+  --beam-wash: rgba(154, 88, 0, 0.1);
+  --beam-glow: rgba(154, 88, 0, 0.28);
+  --beam-soft: rgba(154, 88, 0, 0.3);
+
+  --danger: #b3261e;
+  --ok: #216e4e;
+
+  --elev-rest: 0 1px 1px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 3px 1px rgba(0, 0, 0, 0.06);
+  --elev-2: 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 6px 2px rgba(0, 0, 0, 0.07);
+  --elev-3: 0 4px 8px 3px rgba(0, 0, 0, 0.09), 0 1px 3px rgba(0, 0, 0, 0.12);
+  --elev-4: 0 8px 24px 6px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.14);
+}
+
+/* Someone who never touched the toggle but runs a light desktop gets light. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']):not([data-theme='light']) {
+    color-scheme: light;
+
+    --ink: #f6f6f4;
+    --surface: #ffffff;
+    --surface-container-low: #f7f7f5;
+    --surface-container: #f1f1ee;
+    --surface-container-high: #e9e9e5;
+    --surface-container-highest: #e1e1dc;
+
+    --line: rgba(0, 0, 0, 0.09);
+    --line-strong: rgba(0, 0, 0, 0.18);
+
+    --text: #16181c;
+    --text-dim: #565c67;
+    --text-faint: #596070;
+    --on-accent: #ffffff;
+    --outline: #80858f;
+
+    --beam: #9a5800;
+    --beam-dim: rgba(154, 88, 0, 0.8);
+    --beam-wash: rgba(154, 88, 0, 0.1);
+    --beam-glow: rgba(154, 88, 0, 0.28);
+    --beam-soft: rgba(154, 88, 0, 0.3);
+
+    --danger: #b3261e;
+    --ok: #216e4e;
+
+    --elev-rest: 0 1px 1px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.04);
+    --elev-1: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 3px 1px rgba(0, 0, 0, 0.06);
+    --elev-2: 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 6px 2px rgba(0, 0, 0, 0.07);
+    --elev-3: 0 4px 8px 3px rgba(0, 0, 0, 0.09), 0 1px 3px rgba(0, 0, 0, 0.12);
+    --elev-4: 0 8px 24px 6px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.14);
+  }
+}
+
+/*
+ * Derived tokens. They are mixed from the scheme tokens above and declared on :root
+ * itself, so the light override re-resolves them without a second copy of each value.
+ * Nothing here is amber: glass and lift are neutral by design.
+ */
+:root {
+  --glass: color-mix(in srgb, var(--surface) 70%, transparent);
+  --glass-strong: color-mix(in srgb, var(--surface-container) 92%, transparent);
+  --glass-line: color-mix(in srgb, var(--text) 11%, transparent);
+  /* Top-light on a card: the faint highlight a surface gets from a lamp above it. */
+  --lift: color-mix(in srgb, var(--text) 4.5%, transparent);
+  --lift-strong: color-mix(in srgb, var(--text) 8%, transparent);
+  --backdrop: blur(18px) saturate(1.5);
+  --shape-2xl: 36px;
+  --rail-w: 72px;
+  --sidebar-w: 236px;
+  --topbar-h: 60px;
+  --page-max: 1320px;
+}
+
+/* Browsers without color-mix() get the same layers as plain rgba, per scheme. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  :root {
+    --state-hover: rgba(255, 255, 255, 0.08);
+    --state-focus: rgba(255, 255, 255, 0.1);
+    --state-press: rgba(255, 255, 255, 0.1);
+    --selection: rgba(255, 255, 255, 0.28);
+  }
+
+  :root[data-theme='light'] {
+    --state-hover: rgba(0, 0, 0, 0.06);
+    --state-focus: rgba(0, 0, 0, 0.08);
+    --state-press: rgba(0, 0, 0, 0.1);
+    --selection: rgba(0, 0, 0, 0.2);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme='dark']):not([data-theme='light']) {
+      --state-hover: rgba(0, 0, 0, 0.06);
+      --state-focus: rgba(0, 0, 0, 0.08);
+      --state-press: rgba(0, 0, 0, 0.1);
+      --selection: rgba(0, 0, 0, 0.2);
+    }
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  /* Anchors and in-page jumps glide; reduced-motion users get the instant jump below. */
+  scroll-behavior: smooth;
+  /* Reserve the scrollbar's width, so a page that is just long enough to scroll does not
+     shove everything sideways by 15px relative to the one before it. */
+  scrollbar-gutter: stable;
+  /* Native checkboxes, radios and ranges follow the neutral scheme, not the browser blue. */
+  accent-color: var(--text);
+}
+
+body {
+  /* Clip, not hidden: hidden would make the body a scroll container and break every
+     sticky header. Anything that sticks out sideways — a chart a few pixels wide, a
+     poster strip — must scroll inside its own box, never drag the whole page with it. */
+  overflow-x: clip;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font-body-stack);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* Stops iOS Safari inflating text in landscape, which broke the stat grid. */
+  -webkit-text-size-adjust: 100%;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* A neutral lift, not amber: selecting text is not "playing" and not "data". */
+::selection {
+  background: var(--selection);
+  color: var(--text);
+}
+
+/* One ring for every control. Neutral and high-contrast in both schemes (>= 3:1 on every
+   surface); it follows the element's own border-radius, so a pill stays a pill. */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   Type roles
+   ============================================================ */
+
+/* Wide, signage-like display face — the broadcast lower-third voice. */
+.display,
+h1 {
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 112;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+
+h1 {
+  /* A title without spaces must wrap instead of pushing the page sideways. */
+  overflow-wrap: anywhere;
+  /* Fluid so a long title does not wrap to four lines on a phone. */
+  font-size: clamp(23px, 5.4vw, 32px);
+  line-height: 1.12;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+
+/* Section heading inside a page: the quiet body-font label, not the display face. */
+h2,
+h3 {
+  font-family: var(--font-body-stack);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  margin: 0 0 12px;
+  text-wrap: balance;
+}
+
+/* Quiet uppercase label that sits under or above a number. */
+.eyebrow,
+.stat-label,
+.drawer .group,
+.sidebar .group,
+th {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* Every number in the interface is monospaced and tabular so columns line up. */
+.num,
+.stat-value,
+.bar-value,
+.bar-rank,
+.timecode,
+td.num {
+  font-family: var(--font-mono-stack);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.muted {
+  color: var(--text-dim);
+}
+
+.subtitle {
+  color: var(--text-dim);
+  margin: 6px 0 26px;
+  max-width: 68ch;
+  text-wrap: pretty;
+}

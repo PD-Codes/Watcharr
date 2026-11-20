@@ -1,10 +1,12 @@
 import Link from 'next/link';
-import { desc, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { appConfig, users, watchHistory } from '@/db/schema';
+import { appConfig, users } from '@/db/schema';
 import { formatDate, formatDuration, intParam } from '@/components/format';
 import Pager, { PAGE_SIZE } from '@/components/Pager';
+import { readDb } from '@/server/readcache';
 import { requireAdmin } from '@/server/session';
+import { scopeFilter } from '@/server/stats';
 import { getLocale, getT } from '@/i18n/server';
 import SyncUsersButton from './SyncUsersButton';
 import RoleToggle from './RoleToggle';
@@ -26,11 +28,9 @@ export default async function AdminUsersPage({
   // A server admin administers their own server, so other servers' accounts are none of
   // their business — not even by name.
   const visibleTo = global ? sql`1 = 1` : eq(users.serverId, session.user.serverId);
-  const [{ total }] = await db.select({ total: sql<number>`count(*)` }).from(users).where(visibleTo);
-  const pages = Math.max(1, Math.ceil(Number(total) / PAGE_SIZE));
-  const page = Math.min(intParam((await searchParams).page, 1), pages);
-
-  const rows = await db
+  // The accounts themselves are live from the main connection (a role change or a deletion must
+  // show on the next render); a deployment has hundreds of them at most.
+  const accounts = await db
     .select({
       id: users.id,
       username: users.username,
@@ -38,18 +38,34 @@ export default async function AdminUsersPage({
       globalAdmin: users.globalAdmin,
       serverLabel: appConfig.label,
       lastSeenAt: users.lastSeenAt,
-      plays: sql<number>`count(${watchHistory.id})`,
-      watchtime: sql<number>`coalesce(sum(${watchHistory.durationMs}), 0)`,
     })
     .from(users)
-    .leftJoin(watchHistory, sql`${watchHistory.userId} = ${users.id}`)
     .leftJoin(appConfig, eq(appConfig.id, users.serverId))
-    .where(visibleTo)
-    .groupBy(users.id)
+    .where(visibleTo);
+  // The play counts are an aggregate over the whole history, and the page sorts by them, so it
+  // cannot be narrowed to the 20 rows shown. It used to run as a join on the main connection on
+  // every page change; through readDb it runs on a reader thread and a slow answer is reused for
+  // 30 s while someone pages through the list. Per user_id only, so the covering
+  // (user_id, watched_at, duration_ms, …) index answers it without touching the table.
+  const scope = global ? { userId: null } : { userId: null, serverId: session.user.serverId };
+  const totals = new Map(
+    (
+      await readDb.all<{ user_id: number; plays: number; watchtime: number }>(sql`
+        SELECT user_id, count(*) AS plays, coalesce(sum(duration_ms), 0) AS watchtime
+        FROM watch_history
+        WHERE ${scopeFilter(scope)}
+        GROUP BY user_id
+      `)
+    ).map((r) => [Number(r.user_id), { plays: Number(r.plays), watchtime: Number(r.watchtime) }]),
+  );
+  const ranked = accounts
+    .map((account) => ({ ...account, ...(totals.get(account.id) ?? { plays: 0, watchtime: 0 }) }))
     // The name and id break ties, otherwise equal play counts could swap places between pages.
-    .orderBy(desc(sql`count(${watchHistory.id})`), users.username, users.id)
-    .limit(PAGE_SIZE)
-    .offset((page - 1) * PAGE_SIZE);
+    .sort((a, b) => b.plays - a.plays || (a.username < b.username ? -1 : a.username > b.username ? 1 : 0) || a.id - b.id);
+
+  const pages = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE));
+  const page = Math.min(intParam((await searchParams).page, 1), pages);
+  const rows = ranked.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <>

@@ -81,7 +81,7 @@ export default function AdminLogin({ initialCode }: { initialCode: string }) {
             required
           />
         </label>
-        <button disabled={busy || !code.trim()}>{t('adminlogin.submit')}</button>
+        <button type="submit" disabled={busy || !code.trim()}>{t('adminlogin.submit')}</button>
       </form>
       {error && <p className="error">{error}</p>}
     </>

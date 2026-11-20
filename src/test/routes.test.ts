@@ -33,6 +33,13 @@ function startStubMediaServer(port = STUB_PORT, serverName = 'Stub Jellyfin', us
     UserData: { LastPlayedDate: new Date().toISOString() },
   });
 
+  // A second, ordinary account whose policy shares only the movie library: what a person
+  // without admin rights may see is checked against it.
+  const viewerId = `${userId}-viewer`;
+  const viewer = { Id: viewerId, Name: 'viewer', Policy: { IsAdministrator: false } };
+  // Quick Connect answers "not yet" once, then "approved": the login page has to poll.
+  let quickConnectPolls = 0;
+
   const routes: Record<string, unknown> = {
     '/System/Info': { ServerName: serverName, Version: '10.9.0' },
     '/Users/Me': { Id: userId, Name: 'admin', Policy: { IsAdministrator: true } },
@@ -41,6 +48,25 @@ function startStubMediaServer(port = STUB_PORT, serverName = 'Stub Jellyfin', us
       AccessToken: 'user-access-token',
     },
     '/Users': [{ Id: userId, Name: 'admin', Policy: { IsAdministrator: true } }],
+    // What getUserSectionIds() reads: the policy, and the views as its fallback.
+    [`/Users/${userId}`]: { Id: userId, Name: 'admin', Policy: { IsAdministrator: true, EnableAllFolders: true, EnabledFolders: [] } },
+    [`/Users/${viewerId}`]: {
+      ...viewer,
+      Policy: { IsAdministrator: false, EnableAllFolders: false, EnabledFolders: ['lib-movies'] },
+    },
+    [`/Users/${userId}/Views`]: {
+      Items: [
+        { Id: 'lib-movies', Name: 'Movies', CollectionType: 'movies' },
+        { Id: 'lib-shows', Name: 'Shows', CollectionType: 'tvshows' },
+      ],
+    },
+    // Quick Connect, already authorized: initiate, poll once, sign in as the admin.
+    '/QuickConnect/Enabled': true,
+    '/QuickConnect/Initiate': { Secret: 'stub-qc-secret', Code: '424242', Authenticated: false },
+    '/Users/AuthenticateWithQuickConnect': {
+      User: { Id: userId, Name: 'admin', Policy: { IsAdministrator: true } },
+      AccessToken: 'user-access-token',
+    },
     '/Library/VirtualFolders': [
       { Name: 'Movies', ItemId: 'lib-movies', CollectionType: 'movies' },
       { Name: 'Shows', ItemId: 'lib-shows', CollectionType: 'tvshows' },
@@ -59,17 +85,30 @@ function startStubMediaServer(port = STUB_PORT, serverName = 'Stub Jellyfin', us
     ],
   };
 
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     const path = (req.url ?? '').split('?')[0];
+    let request = '';
+    for await (const chunk of req) request += chunk;
     let body: unknown = routes[path];
+    if (path === '/Users/AuthenticateByName' && (JSON.parse(request || '{}') as { Username?: string }).Username === 'viewer') {
+      body = { User: viewer, AccessToken: 'viewer-access-token' };
+    }
+    if (path === '/QuickConnect/Connect') {
+      quickConnectPolls += 1;
+      body = { Secret: 'stub-qc-secret', Code: '424242', Authenticated: quickConnectPolls > 1 };
+    }
     if (body === undefined && path.endsWith('/Items')) {
       const library = [
         item('lib-1', 'Blade Runner', 'Movie', 1982, ['Sci-Fi']),
         item('lib-2', 'Arrival', 'Movie', 2016, ['Sci-Fi', 'Drama']),
         item('lib-3', 'Firefly', 'Series', 2002, ['Sci-Fi', 'Western']),
       ];
+      // Each library lists its own titles, so a library someone may not open is a real set
+      // of titles that must stay out of their pages.
+      const parent = new URL(req.url ?? '', 'http://stub').searchParams.get('ParentId');
+      const inLibrary = parent === 'lib-movies' ? library.slice(0, 2) : parent === 'lib-shows' ? library.slice(2) : library;
       // /Users/{id}/Items is the history endpoint and only reports what was played.
-      const items = path.startsWith('/Users/') ? [library[0]] : library;
+      const items = path.startsWith('/Users/') ? [library[0]] : inLibrary;
       // TotalRecordCount is what the library listing reads; Limit=0 returns only the count.
       body = { Items: (req.url ?? '').includes('Limit=0') ? [] : items, TotalRecordCount: items.length };
     }
@@ -167,6 +206,120 @@ async function seedContent() {
   ]);
 
   return admin.id;
+}
+
+/**
+ * The Plex watchlist in both directions, in this process against a faked plex.tv: the stub above
+ * is a Jellyfin, and a real Plex sign-in needs plex.tv. Runs after the app has exited, on the same
+ * database file. Returns the number of failed checks.
+ *
+ * The route is called directly; next/headers is replaced by a cookie jar, which is all getSession()
+ * and createSession() need from a request.
+ */
+async function watchlistPushChecks(): Promise<number> {
+  const Module = require('node:module') as { _load: (request: string, ...rest: unknown[]) => unknown };
+  const jar = new Map<string, string>();
+  const load = Module._load;
+  Module._load = function (request: string, ...rest: unknown[]) {
+    if (request === 'next/headers') {
+      return {
+        cookies: async () => ({
+          get: (name: string) => (jar.has(name) ? { name, value: jar.get(name) } : undefined),
+          set: (name: string, value: string) => void jar.set(name, value),
+          delete: (name: string) => void jar.delete(name),
+        }),
+        headers: async () => new Headers(),
+      };
+    }
+    return load.call(this, request, ...rest);
+  };
+
+  const calls: { method: string; url: string; token: string | null }[] = [];
+  let watchlistReply: unknown[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    calls.push({ method: init?.method ?? 'GET', url: url.href, token: new Headers(init?.headers).get('X-Plex-Token') });
+    if (url.host === 'plex-push.test:32400' && url.pathname === '/library/metadata/123') {
+      return Response.json({ MediaContainer: { Metadata: [{ ratingKey: '123', title: 'Heat', type: 'movie', guid: 'plex://movie/5d776825880197001ec967c6' }] } });
+    }
+    if (url.host === 'discover.provider.plex.tv') return new Response(null, { status: 200 });
+    if (url.pathname.endsWith('/library/sections/watchlist/all')) {
+      return Response.json({ MediaContainer: { Metadata: watchlistReply } });
+    }
+    return new Response('not faked', { status: 404 });
+  }) as typeof fetch;
+
+  let failures = 0;
+  const report = (label: string, ok: boolean) => {
+    console.log(`${ok ? 'ok  ' : 'FAIL'} - watchlist sync: ${label}`);
+    if (!ok) failures += 1;
+  };
+  const settle = async (until: () => boolean) => {
+    for (let i = 0; i < 50 && !until(); i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+  };
+
+  try {
+    const { and, eq } = await import('drizzle-orm');
+    const { db } = await import('../db');
+    const { appConfig, watchlist } = await import('../db/schema');
+    const { encryptSecret } = await import('../server/crypto');
+    const { updateSettings } = await import('../server/config');
+    const { createSession, getSession } = await import('../server/session');
+    const { syncWatchlist } = await import('../server/sync');
+    const route = await import('../app/api/watchlist/route');
+
+    const [server] = await db
+      .insert(appConfig)
+      .values({ serverType: 'plex', serverUrl: 'http://plex-push.test:32400', serverToken: encryptSecret('admin-token'), label: 'Plex Push', slug: 'plex-push' })
+      .returning();
+    const user = await createSession(server.id, { serverUserId: 'plex-friend', username: 'friend', isAdmin: false }, 'friend-plex-tv-token');
+    const json = { 'Content-Type': 'application/json' };
+    const add = (itemId: string, title: string) =>
+      route.POST(new Request('http://app/api/watchlist', { method: 'POST', headers: json, body: JSON.stringify({ itemId, title, mediaType: 'movie', year: 1995 }) }));
+    const puts = () => calls.filter((c) => c.method === 'PUT');
+
+    const added = await add('123', 'Heat');
+    await settle(() => puts().length > 0);
+    report(
+      'adding sends the title to plex.tv with the person\'s own token',
+      added.ok && puts().length === 1 &&
+        puts()[0].url === 'https://discover.provider.plex.tv/actions/addToWatchlist?ratingKey=5d776825880197001ec967c6' &&
+        puts()[0].token === 'friend-plex-tv-token',
+    );
+
+    // Back from plex.tv under its global id: the same title, so no second row.
+    watchlistReply = [
+      { ratingKey: '5d776825880197001ec967c6', title: 'Heat', type: 'movie', year: 1995 },
+      { ratingKey: '5d77000000000000000000aa', title: 'Ronin', type: 'movie', year: 1998 },
+    ];
+    await syncWatchlist((await getSession())!);
+    const rows = await db.select().from(watchlist).where(eq(watchlist.userId, user.id));
+    report(
+      'a pushed title comes back from plex.tv without a duplicate',
+      rows.length === 2 && rows.filter((r) => r.title === 'Heat').length === 1 && rows.some((r) => r.title === 'Ronin' && r.source === 'plex'),
+    );
+
+    calls.length = 0;
+    const removed = await route.DELETE(new Request('http://app/api/watchlist?itemId=123', { method: 'DELETE' }));
+    await settle(() => puts().length > 0);
+    report('removing takes it off plex.tv too', removed.ok && puts().some((c) => c.url.includes('/actions/removeFromWatchlist?ratingKey=5d776825880197001ec967c6')));
+
+    // Switched off, the lists stay separate.
+    await updateSettings({ features: { watchlistSync: false } });
+    calls.length = 0;
+    const quiet = await add('124', 'Collateral');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    report('with the watchlist sync off nothing is sent', quiet.ok && calls.length === 0);
+    await db.delete(watchlist).where(and(eq(watchlist.userId, user.id)));
+  } catch (error) {
+    console.log(`FAIL - watchlist sync checks threw: ${(error as Error).stack ?? error}`);
+    failures += 1;
+  } finally {
+    globalThis.fetch = realFetch;
+    Module._load = load;
+  }
+  return failures;
 }
 
 async function waitForServer(url: string, attempts = 60) {
@@ -520,6 +673,112 @@ async function main() {
       if (!ok) failures += 1;
     }
 
+    // Library shares. "viewer" is no admin, and the stub's policy shares only the movie
+    // library with them: the show library, its titles and its artwork must not reach them
+    // anywhere — not as a page, not in a file, not in a search.
+    {
+      const signIn = await fetch(`${base}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'viewer', password: 'secret', serverId: 1 }),
+      });
+      const viewerCookie = (signIn.headers.get('set-cookie') ?? '').split(';')[0];
+      const get = (path: string) => fetch(base + path, { headers: { Cookie: viewerCookie }, redirect: 'manual' });
+      const [shows, movies, list, exported, exportedShows, found, foundShow, palette, art, ownArt, hiddenTitle, shownTitle, home] =
+        await Promise.all([
+          get('/libraries/lib-shows'),
+          get('/libraries/lib-movies'),
+          get('/libraries').then((r) => r.text()),
+          get('/api/library/export').then((r) => r.text()),
+          get('/api/library/export?sectionId=lib-shows').then((r) => r.text()),
+          get('/api/library/search?q=arr').then((r) => r.json() as Promise<{ items: { title: string }[] }>),
+          get('/api/library/search?q=fire').then((r) => r.json() as Promise<{ items: { title: string }[] }>),
+          get('/api/search?q=fire').then((r) => r.json() as Promise<{ results: { label: string }[] }>),
+          get('/api/art/stub-jellyfin/lib-3'),
+          get('/api/art/stub-jellyfin/lib-1'),
+          get('/title/Firefly'),
+          get('/title/Arrival'),
+          get('/').then((r) => r.text()),
+        ]);
+      const checks: [string, boolean][] = [
+        ['viewer signs in', signIn.ok && !!viewerCookie],
+        [`a library that is not shared → 404 (${shows.status})`, shows.status === 404],
+        [`a shared library opens (${movies.status})`, movies.status === 200],
+        ['the library table lists only the shared library', list.includes('/libraries/lib-movies') && !list.includes('/libraries/lib-shows')],
+        ['the CSV export holds no title of the hidden library', exported.includes('Arrival') && !exported.includes('Firefly')],
+        ['exporting the hidden library by id yields nothing', !exportedShows.includes('Firefly')],
+        ['library search finds shared titles', found.items.some((i) => i.title === 'Arrival')],
+        ['library search hides the rest', foundShow.items.length === 0],
+        ['the palette offers no hidden title', !palette.results.some((r) => r.label === 'Firefly')],
+        [`artwork of a hidden title → 403 (${art.status})`, art.status === 403],
+        [`artwork of a shared title (${ownArt.status})`, ownArt.status === 200],
+        [`an unwatched hidden title is a 404 (${hiddenTitle.status})`, hiddenTitle.status === 404],
+        [`an unwatched shared title has its page (${shownTitle.status})`, shownTitle.status === 200],
+        ['the dashboard names only the shared library', home.includes('/libraries/lib-movies') && !home.includes('/libraries/lib-shows') && !home.includes('Firefly')],
+      ];
+      for (const [label, ok] of checks) {
+        console.log(`${ok ? 'ok  ' : 'FAIL'} - library shares: ${label}`);
+        if (!ok) failures += 1;
+      }
+    }
+
+    // Jellyfin Quick Connect: the code is shown, polled until approved, then signs in like a
+    // password would. The secret stays on the server, and only the browser that started the
+    // request may collect it.
+    {
+      const loginPage = await fetch(`${base}/login?server=stub-jellyfin`).then((r) => r.text());
+      const offered = loginPage.includes('qc-divider');
+      console.log(`${offered ? 'ok  ' : 'FAIL'} - the login page offers Quick Connect where Jellyfin has it on`);
+      if (!offered) failures += 1;
+
+      const start = await fetch(`${base}/api/auth/quickconnect/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serverId: 1 }),
+      });
+      const started = (await start.json()) as Record<string, unknown>;
+      const binding = (start.headers.get('set-cookie') ?? '').split(';')[0];
+      const startOk =
+        start.ok && started.code === '424242' && typeof started.expiresAt === 'number' &&
+        binding.startsWith('watcharr_quickconnect=') && !JSON.stringify(started).includes('stub-qc-secret');
+      console.log(`${startOk ? 'ok  ' : 'FAIL'} - Quick Connect start: code, expiry, bound to the browser, no secret → ${start.status}`);
+      if (!startOk) failures += 1;
+
+      const check = (cookieHeader?: string) =>
+        fetch(`${base}/api/auth/quickconnect/check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(cookieHeader ? { Cookie: cookieHeader } : {}) },
+          body: '{}',
+        });
+      const stranger = await check();
+      const forged = await check('watcharr_quickconnect=guessed.0000000000000000000000000000000000000000000000000000000000000000');
+      const strangerOk = stranger.status === 400 && forged.status === 400 && !stranger.headers.get('set-cookie')?.includes('watcharr_session');
+      console.log(`${strangerOk ? 'ok  ' : 'FAIL'} - another browser cannot poll the sign-in → ${stranger.status}/${forged.status}`);
+      if (!strangerOk) failures += 1;
+
+      const first = await check(binding);
+      const firstBody = (await first.json()) as { pending?: boolean };
+      console.log(`${first.ok && firstBody.pending ? 'ok  ' : 'FAIL'} - Quick Connect is pending until approved → ${first.status}`);
+      if (!first.ok || !firstBody.pending) failures += 1;
+
+      const second = await check(binding);
+      const secondBody = (await second.json()) as { ok?: boolean };
+      const session = second.headers.getSetCookie().find((c) => c.startsWith('watcharr_session='))?.split(';')[0] ?? '';
+      const cleared = second.headers.getSetCookie().some((c) => c.startsWith('watcharr_quickconnect=;') || /^watcharr_quickconnect=(;|$)/.test(c));
+      const signedIn = session ? (await fetch(`${base}/watchlist`, { headers: { Cookie: session }, redirect: 'manual' })).status : 0;
+      const approvedOk = second.ok && secondBody.ok === true && !!session && cleared && signedIn === 200;
+      console.log(`${approvedOk ? 'ok  ' : 'FAIL'} - an approved code signs in and the binding is cleared → ${second.status}, /watchlist ${signedIn}`);
+      if (!approvedOk) failures += 1;
+
+      const reused = await check(binding);
+      console.log(`${reused.status === 410 ? 'ok  ' : 'FAIL'} - a redeemed request cannot sign in twice → ${reused.status}`);
+      if (reused.status !== 410) failures += 1;
+
+      const cancel = await fetch(`${base}/api/auth/quickconnect`, { method: 'DELETE' });
+      console.log(`${cancel.ok ? 'ok  ' : 'FAIL'} - cancelling a sign-in → ${cancel.status}`);
+      if (!cancel.ok) failures += 1;
+    }
+
     // The healthcheck endpoint tells a stranger only whether the app is up; the detail
     // (server names, versions) is for signed-in admins.
     {
@@ -740,8 +999,12 @@ async function main() {
       ['/admin/stats?by=time', ['Top lists', 'Titles', 'Genres']],
       ['/stats?by=time', ['Top lists', 'By plays']],
       ['/admin/system', ['Watcharr version', 'update check disabled']],
-      ['/admin/transcoding', ['Direct play', 'VideoCodecNotSupported', 'H264', 'TS', '720p']],
-      ['/admin/clients', ['Jellyfin Web', 'Jellyfin Android TV', 'Fire TV', 'Clients per user']],
+      // The reason is matched as a rendered bar label: the raw token also sits in the
+      // dictionary payload of every page, so its mere presence proves nothing.
+      ['/admin/transcoding', ['Direct play', 'class="bar-label">Video codec not supported<', 'H264', 'TS', '720p']],
+      // Per user and per device are tabs now; the device names live behind the second one.
+      ['/admin/clients', ['Jellyfin Web', 'Jellyfin Android TV', 'Clients per user']],
+      ['/admin/clients?tab=device', ['Fire TV', 'Clients per device']],
       ['/admin/activity', ['Jellyfin Web', 'Transcode', 'Streams per hour', 'Bandwidth per hour']],
       ['/wrapped', ['Your Year in Review', 'Your year in days', 'Most plays of the year']],
       ['/sessions', ['Now playing', 'Blade Runner', 'scrub-fill', 'Recently watched']],
@@ -811,6 +1074,84 @@ async function main() {
       }
     }
 
+    // Period filters are one-tap segment links, not a select with an apply button.
+    {
+      const html = await fetch(`${base}/admin/stats?days=7`, { headers: { Cookie: cookie } }).then((r) => r.text());
+      const ok = !html.includes('<select name="days"') && /<a [^>]*href="\/admin\/stats\?days=30&amp;by=[a-z]+"/.test(html) &&
+        /<a [^>]*class="on"[^>]*aria-current="true"[^>]*>|<a [^>]*aria-current="true"[^>]*class="on"/.test(html);
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - /admin/stats?days=7 offers segment links, no <select name="days">`);
+      if (!ok) failures += 1;
+    }
+
+    // A page number that is no number, or past the end, is clamped rather than an error or an
+    // empty page.
+    {
+      const clamped = [
+        '/admin/clients?tab=device&page=abc',
+        '/watchlist?page=99',
+        '/admin/security?page=2',
+        '/admin/notifications?page=2',
+        '/admin/newsletter?page=2',
+        '/profile?tab=sessions&page=99',
+      ];
+      for (const path of clamped) {
+        const res = await fetch(base + path, { headers: { Cookie: cookie }, redirect: 'manual' });
+        const ok = res.status === 200;
+        console.log(`${ok ? 'ok  ' : 'FAIL'} - GET ${path} (page clamped) → ${res.status}`);
+        if (!ok) failures += 1;
+      }
+      // Clamped to the last page, so the one watchlist entry is still on it.
+      const last = await fetch(`${base}/watchlist?page=99`, { headers: { Cookie: cookie } }).then((r) => r.text());
+      console.log(`${last.includes('Arrival') ? 'ok  ' : 'FAIL'} - /watchlist?page=99 shows the last page`);
+      if (!last.includes('Arrival')) failures += 1;
+    }
+
+    // The own devices tab lists the players from this person's streams.
+    {
+      const html = await fetch(`${base}/profile?tab=devices`, { headers: { Cookie: cookie } }).then((r) => r.text());
+      const ok = html.includes('<td>Fire TV</td>') && html.includes('<td>Jellyfin Android TV</td>');
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - /profile?tab=devices renders the devices`);
+      if (!ok) failures += 1;
+    }
+
+    // The admin navigation opens the group of the page you are on and keeps the others closed.
+    {
+      const html = await fetch(`${base}/admin/stats`, { headers: { Cookie: cookie } }).then((r) => r.text());
+      const heads = html.match(/<button[^>]*class="nav-group-head[^"]*"[^>]*>/g) ?? [];
+      const current = heads.filter((tag) => /class="nav-group-head current"/.test(tag));
+      const others = heads.filter((tag) => !/class="nav-group-head current"/.test(tag));
+      const ok =
+        current.length > 0 && others.length > 0 &&
+        current.every((tag) => tag.includes('aria-expanded="true"')) &&
+        others.every((tag) => tag.includes('aria-expanded="false"'));
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - admin nav: the page's group is expanded, the others are not (${current.length}/${others.length})`);
+      if (!ok) failures += 1;
+    }
+
+    // The colour scheme is stored per account and rendered on <html> by the server.
+    {
+      const setTheme = (theme: unknown, cookieHeader?: string) =>
+        fetch(`${base}/api/profile/theme`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(cookieHeader ? { Cookie: cookieHeader } : {}) },
+          body: JSON.stringify({ theme }),
+        });
+      const htmlTag = async () =>
+        (await fetch(`${base}/watchlist`, { headers: { Cookie: cookie } }).then((r) => r.text())).match(/<html[^>]*>/)?.[0] ?? '';
+      const light = await setTheme('light', cookie);
+      const lightTag = await htmlTag();
+      const system = await setTheme('system', cookie);
+      const systemTag = await htmlTag();
+      const invalid = await setTheme('purple', cookie);
+      const anonymous = await setTheme('light');
+      const ok =
+        light.status === 200 && lightTag.includes('data-theme="light"') &&
+        system.status === 200 && !systemTag.includes('data-theme=') &&
+        invalid.status === 400 && anonymous.status === 401;
+      console.log(`${ok ? 'ok  ' : 'FAIL'} - POST /api/profile/theme: light/system/invalid/anonymous → ${light.status}/${system.status}/${invalid.status}/${anonymous.status}`);
+      if (!ok) failures += 1;
+    }
+
     // The language is a database column, so switching it has to change what the server
     // renders — not merely what a cookie says. Switched back afterwards so the checks
     // above stay valid whichever order anything runs in.
@@ -830,6 +1171,19 @@ async function main() {
         german.includes('lang="de-DE"') && german.includes('Verlauf') && !german.includes('>History<');
       console.log(`${germanOk ? 'ok  ' : 'FAIL'} - /history renders in German after the switch`);
       if (!germanOk) failures += 1;
+
+      // API errors follow the same setting: German text, the code unchanged.
+      const refused = await fetch(`${base}/api/watchlist`, {
+        method: 'POST',
+        headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const refusedBody = (await refused.json()) as { error?: string; code?: string };
+      const errorOk =
+        refused.status === 400 && refusedBody.code === 'missing-fields' &&
+        refusedBody.error === 'Die Angaben „itemId“ und „title“ werden benötigt.';
+      console.log(`${errorOk ? 'ok  ' : 'FAIL'} - a 4xx answers in German with a code → ${refused.status} ${refusedBody.code}: ${refusedBody.error}`);
+      if (!errorOk) failures += 1;
 
       await setLocale(null);
       const english = await fetch(`${base}/history`, { headers: { Cookie: cookie } }).then((r) =>
@@ -1031,6 +1385,7 @@ async function main() {
     await Promise.race([exited, new Promise((r) => setTimeout(r, 5_000))]);
     stub.close();
     stub2.close();
+    failures += await watchlistPushChecks();
     try {
       rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     } catch (err) {

@@ -340,7 +340,9 @@ export async function importFromTautulli(
       if (options.dryRun) {
         // Negative ids stand for accounts that a real run would create: enough to count their
         // rows, and never written anywhere.
-        missing.forEach((p, n) => targets.set(p.key, -(n + 1)));
+        missing.forEach((p, n) => {
+          targets.set(p.key, -(n + 1));
+        });
         createdUsers += missing.length;
       } else if (missing.length) {
         await ensureUsers(

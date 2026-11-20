@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { and, desc, eq, like, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { playbackSessions, users, watchHistory } from '@/db/schema';

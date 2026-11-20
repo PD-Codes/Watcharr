@@ -96,6 +96,15 @@ console.log('ok - migrations are idempotent');
     server_id: number;
   }[];
   assert.deepEqual(serverIds, [{ server_id: 1 }], 'existing users belong to the first server');
+  // 0023 on a table with rows: a nullable column without a default, one index more, one less.
+  const themes = check.prepare('SELECT theme FROM users').all() as { theme: string | null }[];
+  assert.equal(themes.length, 3);
+  assert.ok(themes.every((u) => u.theme === null), 'existing users follow the system theme');
+  const indexNames = (check.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as { name: string }[]).map(
+    (r) => r.name,
+  );
+  assert.ok(indexNames.includes('login_history_user_ip_idx'));
+  assert.ok(!indexNames.includes('playback_sessions_user_idx'), 'the redundant user index is gone');
   check.close();
   rmSync(upgradeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   console.log('ok - migrations apply to a database that already has rows');
@@ -857,8 +866,14 @@ async function main() {
   {
     const { globalState } = await import('../server/state');
     let created = 0;
-    const first = globalState('test.flag', () => (created += 1, false));
-    const second = globalState('test.flag', () => (created += 1, true));
+    const first = globalState('test.flag', () => {
+      created += 1;
+      return false;
+    });
+    const second = globalState('test.flag', () => {
+      created += 1;
+      return true;
+    });
     assert.equal(created, 1, 'init runs once per key');
     assert.equal(first, false);
     assert.equal(second, false, 'the first value wins, even a falsy one');
@@ -980,7 +995,7 @@ async function main() {
   // Newsletter libraries are `<serverId>:<sectionId>` keys. Two servers with the same section id
   // must not be mixed up, and ids saved before the key existed keep their old meaning.
   {
-    const { normalizeLibraries, sectionsForServer, collectNewsletter } = await import('../server/newsletter');
+    const { normalizeLibraries, sectionsForServer, collectNewsletter, issueLibraries } = await import('../server/newsletter');
     assert.deepEqual(normalizeLibraries(['1:a', '2:b', '1:a', ''], [1, 2]), ['1:a', '2:b']);
     assert.deepEqual(normalizeLibraries(['abc'], [1, 2]), ['1:abc', '2:abc'], 'a bare id applies to every server, as it did');
     assert.deepEqual(sectionsForServer([], 1), [], 'nothing selected means everything');
@@ -992,23 +1007,35 @@ async function main() {
     const { createServer: addServer, updateSettings: save } = await import('../server/config');
     const { appConfig } = await import('../db/schema');
     const asked: string[] = [];
+    let folders: unknown = [{ Name: 'Films', ItemId: 'films', CollectionType: 'movies' }];
     const stub = createHttp((req, res) => {
       const url = new URL(req.url ?? '/', 'http://stub');
-      asked.push(`${url.pathname.split('/')[1]}:${url.searchParams.get('ParentId') ?? ''}`);
       res.setHeader('content-type', 'application/json');
+      // The section list (and its counts) behind "every library": not what is being counted here.
+      if (url.pathname.endsWith('/Library/VirtualFolders')) return res.end(JSON.stringify(folders));
+      if (url.searchParams.get('Limit') === '0') return res.end(JSON.stringify({ TotalRecordCount: 1 }));
+      asked.push(`${url.pathname.split('/')[1]}:${url.searchParams.get('ParentId') ?? ''}`);
       res.end(JSON.stringify({ Items: [{ Id: 'n1', Name: 'New', Type: 'Movie', DateCreated: new Date().toISOString() }] }));
     });
     await new Promise<void>((resolve) => stub.listen(0, '127.0.0.1', resolve));
     const base = `http://127.0.0.1:${(stub.address() as { port: number }).port}`;
     const one = await addServer({ serverType: 'jellyfin', serverUrl: `${base}/s1`, serverToken: 't', label: 'NL One' });
     const two2 = await addServer({ serverType: 'jellyfin', serverUrl: `${base}/s2`, serverToken: 't', label: 'NL Two' });
+    let lastEntries: Awaited<ReturnType<typeof collectNewsletter>> = [];
     const run = async (libraries: string[]) => {
       asked.length = 0;
       await save({ newsletterLibraries: libraries, newsletterDays: 7 });
       const entries = await collectNewsletter();
+      lastEntries = entries;
       return { asked: [...asked].sort(), servers: entries.map((e) => e.serverLabel).sort() };
     };
-    assert.deepEqual(await run([]), { asked: ['s1:', 's2:'], servers: ['NL One', 'NL Two'] });
+    // Nothing selected: every library, still asked one by one, so each title knows its library.
+    assert.deepEqual(await run([]), { asked: ['s1:films', 's2:films'], servers: ['NL One', 'NL Two'] });
+    assert.deepEqual(
+      issueLibraries(lastEntries),
+      [`${one.id}:films`, `${two2.id}:films`].sort(),
+      'every title carries its library, so the issue can be cut per reader',
+    );
     assert.deepEqual(await run(['lib']), { asked: ['s1:lib', 's2:lib'], servers: ['NL One', 'NL Two'] }, 'legacy id reaches both servers');
     assert.deepEqual(await run([`${one.id}:lib`]), { asked: ['s1:lib'], servers: ['NL One'] });
     assert.deepEqual(
@@ -1016,8 +1043,16 @@ async function main() {
       { asked: ['s1:libA', 's2:libB'], servers: ['NL One', 'NL Two'] },
       'each server only gets its own library ids',
     );
+    assert.deepEqual(issueLibraries(lastEntries), [`${one.id}:libA`, `${two2.id}:libB`].sort());
+
+    // No section list to go by: the server-wide feed stands in, its titles of unknown library.
+    folders = { error: 'no list' };
+    const three = await addServer({ serverType: 'jellyfin', serverUrl: `${base}/s3`, serverToken: 't', label: 'NL Three' });
+    assert.deepEqual((await run([])).asked, ['s1:films', 's2:films', 's3:'], 'one server-wide request for the server without a list');
+    assert.deepEqual(issueLibraries(lastEntries).filter((key) => key.startsWith(`${three.id}:`)), [`${three.id}:?`], 'library unknown: marked as such');
+
     await save({ newsletterLibraries: [] });
-    await db.delete(appConfig).where(inArray(appConfig.id, [one.id, two2.id]));
+    await db.delete(appConfig).where(inArray(appConfig.id, [one.id, two2.id, three.id]));
     await new Promise<void>((resolve) => stub.close(() => resolve()));
     console.log('ok - newsletter libraries are per server');
   }
@@ -1237,7 +1272,9 @@ async function main() {
     const { runInBackground } = await import('../server/sync');
     let reported = false;
     const warn = console.warn;
-    console.warn = (...args: unknown[]) => void (reported ||= String(args[0]).includes('plex down'));
+    console.warn = (...args: unknown[]) => {
+      reported ||= String(args[0]).includes('plex down');
+    };
     runInBackground(new Promise(() => {}), 'probe');
     runInBackground(Promise.reject(new Error('plex down')), 'probe-fail');
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1341,6 +1378,156 @@ async function main() {
     await db.delete(appConfig).where(eq(appConfig.id, created.id));
     await new Promise<void>((resolve) => stub.close(() => resolve()));
     console.log('ok - stream rows are kept per play, not per device key');
+  }
+
+  // getTrend and getMonthlyActivity now narrow by a range on watched_at instead of scanning every
+  // play of the scope; the numbers must be exactly those of the old full-scan form.
+  {
+    const { getTrend, getMonthlyActivity } = await import('../server/stats');
+    const { sql } = await import('drizzle-orm');
+    const [trendUser] = await db.insert(users).values({ serverUserId: 'trend-u', username: 'trend-user' }).returning();
+    const at = (y: number, m: number, d: number, h = 12, min = 0, s = 0, ms = 0) => new Date(y, m, d, h, min, s, ms);
+    const day = 86_400_000;
+    const plays: Date[] = [
+      // The year edges in local time, where a range and a formatted year could disagree.
+      at(2023, 11, 31, 23, 59, 59, 999),
+      at(2024, 0, 1, 0, 0, 0, 0),
+      at(2024, 0, 1, 0, 0, 0, 1),
+      at(2024, 5, 15),
+      at(2024, 11, 31, 23, 59, 59, 999),
+      at(2025, 0, 1, 0, 0, 0, 0),
+      at(2025, 2, 30, 2, 30),
+      // Around both trend windows, and one in the future (a clock skewed media server).
+      ...Array.from({ length: 70 }, (_, k) => new Date(Date.now() - k * day - 3_600_000)),
+      new Date(Date.now() + 3_600_000),
+    ];
+    await db.insert(watchHistory).values(
+      plays.map((watchedAt, i) => ({
+        userId: trendUser.id,
+        itemId: `trend-${i}`,
+        title: `Trend ${i}`,
+        mediaType: 'movie',
+        watchedAt,
+        durationMs: 60_000 * (1 + (i % 7)),
+      })),
+    );
+    const oldTrend = async (where: ReturnType<typeof sql>, days: number) => {
+      const [row] = await db.all<{ current: number; previous: number }>(sql`
+        SELECT coalesce(sum(duration_ms) FILTER (WHERE watched_at >= (unixepoch('now', ${`-${days} days`}) * 1000)), 0) AS current,
+               coalesce(sum(duration_ms) FILTER (WHERE watched_at >= (unixepoch('now', ${`-${days * 2} days`}) * 1000)
+                 AND watched_at < (unixepoch('now', ${`-${days} days`}) * 1000)), 0) AS previous
+        FROM watch_history WHERE ${where}`);
+      const previous = Number(row?.previous ?? 0);
+      return previous === 0 ? null : Math.round(((Number(row?.current ?? 0) - previous) / previous) * 100);
+    };
+    const oldMonthly = async (where: ReturnType<typeof sql>, year: number) => {
+      const rows = await db.all<{ month: string; minutes: number }>(sql`
+        SELECT strftime('%m', watched_at / 1000, 'unixepoch', 'localtime') AS month, sum(duration_ms) / 60000 AS minutes
+        FROM watch_history WHERE ${where} AND strftime('%Y', watched_at / 1000, 'unixepoch', 'localtime') = ${String(year)}
+        GROUP BY month`);
+      const found = new Map(rows.map((r) => [Number(r.month), Number(r.minutes)]));
+      return Array.from({ length: 12 }, (_, i) => found.get(i + 1) ?? 0);
+    };
+    const scopes = [
+      { scope: { userId: trendUser.id }, where: sql`user_id = ${trendUser.id}` },
+      { scope: { userId: null, serverId: 1 }, where: sql`user_id IN (SELECT id FROM users WHERE server_id = 1)` },
+      { scope: { userId: null }, where: sql`1 = 1` },
+    ] as const;
+    for (const { scope, where } of scopes) {
+      for (const days of [1, 7, 30]) {
+        assert.equal(await getTrend(scope, days), await oldTrend(where, days), `trend over ${days} days`);
+      }
+      for (const year of [2023, 2024, 2025, new Date().getFullYear()]) {
+        assert.deepEqual(
+          (await getMonthlyActivity(scope, year)).map((m) => m.value),
+          await oldMonthly(where, year),
+          `months of ${year}`,
+        );
+      }
+    }
+    assert.notEqual(await getTrend({ userId: trendUser.id }, 7), null, 'the probe data has both windows');
+    assert.equal((await getMonthlyActivity({ userId: trendUser.id }, 2024))[0].value > 0, true);
+    await db.delete(watchHistory).where(eq(watchHistory.userId, trendUser.id));
+    await db.delete(users).where(eq(users.id, trendUser.id));
+    console.log('ok - getTrend and getMonthlyActivity give the same numbers with range filters');
+  }
+
+  // Retention must not turn a returning device into a "new address" alert, and two tables are
+  // capped even when nobody configured retention.
+  {
+    const { prune, NOTIFICATION_LOG_MAX_DAYS } = await import('../server/retention');
+    const { updateSettings } = await import('../server/config');
+    const { checkThresholds, listAlerts } = await import('../server/monitor');
+    const { loginHistory, notificationLog, geoipCache } = await import('../db/schema');
+    const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000);
+    const [traveller] = await db.insert(users).values({ serverUserId: 'ret-u', username: 'traveller' }).returning();
+    const rows = await db
+      .insert(loginHistory)
+      .values([
+        { userId: traveller.id, username: 'traveller', success: true, ip: '198.51.100.7', createdAt: daysAgo(200) },
+        { userId: traveller.id, username: 'traveller', success: true, ip: '198.51.100.7', createdAt: daysAgo(150) },
+        { userId: traveller.id, username: 'traveller', success: false, ip: '198.51.100.7', createdAt: daysAgo(120) },
+        { userId: traveller.id, username: 'traveller', success: true, ip: '198.51.100.8', createdAt: daysAgo(120) },
+        { userId: traveller.id, username: 'traveller', success: true, ip: '198.51.100.8', createdAt: daysAgo(1) },
+        { userId: traveller.id, username: 'traveller', success: true, ip: null, createdAt: daysAgo(100) },
+      ])
+      .returning({ id: loginHistory.id });
+    const [old200, kept150, failed120, kept120, recent1, noIp] = rows.map((r) => r.id);
+
+    await updateSettings({ retentionLogDays: 30 });
+    await prune();
+    const left = new Set(
+      (await db.select({ id: loginHistory.id }).from(loginHistory).where(eq(loginHistory.userId, traveller.id))).map((r) => r.id),
+    );
+    assert.ok(!left.has(old200), 'an older login of the same pair goes');
+    assert.ok(left.has(kept150), 'the newest expired success per (user, address) stays');
+    assert.ok(!left.has(failed120), 'failed attempts are pruned as before');
+    assert.ok(left.has(kept120) && left.has(recent1), 'each address keeps its own newest');
+    assert.ok(!left.has(noIp), 'a login without an address proves nothing and goes');
+    await prune();
+    assert.ok(
+      (await db.select({ id: loginHistory.id }).from(loginHistory).where(eq(loginHistory.userId, traveller.id))).some(
+        (r) => r.id === kept150,
+      ),
+      'a second pass keeps it too',
+    );
+
+    // Back after five months: the address is known, so no alert.
+    await updateSettings({ monitorNewAddressAlert: true, monitorFailedLoginWindowMin: 10 });
+    await db.insert(loginHistory).values({ userId: traveller.id, username: 'traveller', success: true, ip: '198.51.100.7' });
+    await checkThresholds();
+    assert.ok(
+      !(await listAlerts(50)).some((a) => a.rule === 'new_address' && a.message.includes('198.51.100.7')),
+      'a returning device is not a new address',
+    );
+    await updateSettings({ monitorNewAddressAlert: false });
+
+    // notification_log: 90 days without any setting, the shorter one when it is set.
+    const logRow = (days: number, event: string) => ({ channelType: 'webhook', event, success: true, createdAt: daysAgo(days) });
+    await updateSettings({ retentionLogDays: null });
+    await db.insert(notificationLog).values([logRow(NOTIFICATION_LOG_MAX_DAYS + 5, 'cap-old'), logRow(60, 'cap-mid')]);
+    await db.insert(geoipCache).values([
+      { ip: '192.0.2.1', country: 'XX', fetchedAt: daysAgo(200) },
+      { ip: '192.0.2.2', country: 'XX', fetchedAt: daysAgo(10) },
+    ]);
+    await prune();
+    let events = (await db.select({ event: notificationLog.event }).from(notificationLog)).map((r) => r.event);
+    assert.ok(!events.includes('cap-old'), 'the log is capped at 90 days without a setting');
+    assert.ok(events.includes('cap-mid'));
+    const geo = (await db.select({ ip: geoipCache.ip }).from(geoipCache)).map((r) => r.ip);
+    assert.ok(!geo.includes('192.0.2.1') && geo.includes('192.0.2.2'), 'GeoIP answers expire after 180 days');
+    await updateSettings({ retentionLogDays: 365 });
+    await db.insert(notificationLog).values(logRow(NOTIFICATION_LOG_MAX_DAYS + 5, 'cap-old-2'));
+    await prune();
+    events = (await db.select({ event: notificationLog.event }).from(notificationLog)).map((r) => r.event);
+    assert.ok(!events.includes('cap-old-2'), 'a longer setting does not lift the cap');
+    await updateSettings({ retentionLogDays: 30 });
+    await prune();
+    events = (await db.select({ event: notificationLog.event }).from(notificationLog)).map((r) => r.event);
+    assert.ok(!events.includes('cap-mid'), 'a shorter setting wins');
+    await updateSettings({ retentionLogDays: null });
+    await db.delete(users).where(eq(users.id, traveller.id));
+    console.log('ok - retention keeps the newest login per address and caps the notification log');
   }
 
   // WAL files stay locked on Windows until the handle is closed.

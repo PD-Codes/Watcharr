@@ -492,13 +492,17 @@ export async function getUserLeaderboard(
 
 /** Watch time per calendar month of a year, always twelve buckets. */
 export async function getMonthlyActivity(scope: Scope, year?: number): Promise<LabelledValue[]> {
-  const target = String(year ?? new Date().getFullYear());
+  const target = year ?? new Date().getFullYear();
+  // The year as a range on watched_at (local midnight to local midnight, like wrapped.ts::
+  // yearFilter) rather than a strftime() comparison: a formatted date cannot use an index, so
+  // the old form read every play the scope has ever had to find one year of them.
   const rows = await db.all<{ month: string; minutes: number }>(sql`
     SELECT strftime('%m', watched_at / 1000, 'unixepoch', 'localtime') AS month,
            sum(duration_ms) / 60000 AS minutes
     FROM watch_history
     WHERE ${scopeFilter(scope)}
-      AND strftime('%Y', watched_at / 1000, 'unixepoch', 'localtime') = ${target}
+      AND watched_at >= ${new Date(target, 0, 1).getTime()}
+      AND watched_at < ${new Date(target + 1, 0, 1).getTime()}
     GROUP BY month
   `);
   const found = new Map(rows.map((r) => [Number(r.month), Number(r.minutes)]));
@@ -601,7 +605,9 @@ export async function getTrend(scope: Scope, days: number): Promise<number | nul
           AND watched_at < (unixepoch('now', ${`-${days} days`}) * 1000)
       ), 0) AS previous
     FROM watch_history
-    WHERE ${scopeFilter(scope)}
+    -- Both windows together, in the WHERE too: the FILTERs alone still read every play the scope
+    -- ever had, where this lets the (user_id, watched_at) and watched_at indexes stop at the start.
+    WHERE ${scopeFilter(scope)} AND watched_at >= (unixepoch('now', ${`-${days * 2} days`}) * 1000)
   `);
 
   const previous = Number(row?.previous ?? 0);

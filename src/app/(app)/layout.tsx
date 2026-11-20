@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { and, like, sql } from 'drizzle-orm';
 import { db } from '@/db';
@@ -6,12 +7,14 @@ import { getSettings, isConfigured } from '@/server/config';
 import { isEnabled } from '@/server/features';
 import { liveSessionFilter, syncActivity, runInBackground } from '@/server/sync';
 import { getSession, isAdmin } from '@/server/session';
+import { secretHintKey } from '@/server/secret';
+import { compareVersions, currentVersion } from '@/server/update';
 import { getT } from '@/i18n/server';
 import NavLink from './NavLink';
 import SignOutButton from './SignOutButton';
-import AppBar from './AppBar';
+import AppBar, { AdminNav } from './AppBar';
 import BottomNav from './BottomNav';
-import { adminNav, bottomNav, userNav } from './nav';
+import { adminGroups, bottomNav, userNav } from './nav';
 import Tooltip from '@/components/Tooltip';
 import CommandPalette from '@/components/CommandPalette';
 import Shortcuts from '@/components/Shortcuts';
@@ -56,10 +59,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const playingCount = Number(live?.playing ?? 0);
   const minePlaying = Number(live?.mine ?? 0);
 
+  const admin = isAdmin(session.user);
   const nav = userNav(t, suggestionsEnabled);
-  const adminItems = isAdmin(session.user)
-    ? adminNav(t, serverStatsEnabled, session.user.globalAdmin)
-    : [];
+  const groups = admin ? adminGroups(t, serverStatsEnabled, session.user.globalAdmin) : [];
+  const adminItems = groups.flatMap((group) => group.items);
+
+  // Only what the last check stored: getUpdateStatus() may call GitHub, and this layout runs
+  // before every page. The system page and the background sync keep the cached value fresh.
+  const updateAvailable =
+    admin &&
+    isEnabled(settings.features, 'updateCheck') &&
+    settings.updateLatestVersion !== null &&
+    compareVersions(settings.updateLatestVersion, currentVersion) > 0;
+
+  // A weak secret protects every stored media server token, so admins hear about it on every
+  // page, not only on the system check. Deliberately not amber: it is a warning, not data.
+  const secretKey = admin ? secretHintKey(process.env.SESSION_SECRET) : null;
 
   return (
     <div className="shell" data-live={playingCount > 0 ? '1' : undefined}>
@@ -89,30 +104,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
           ))}
 
-          {adminItems.length > 0 && (
-            <>
-              <p className="group">{t('nav.admin')}</p>
-              {adminItems.map((item) => (
-                <NavLink
-                  key={item.href}
-                  href={item.href}
-                  icon={item.icon}
-                  trailing={
-                    item.href === '/admin/activity' && liveCount > 0 ? (
-                      <span className="badge live">{liveCount}</span>
-                    ) : null
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </>
-          )}
-
+          <AdminNav groups={groups} liveCount={liveCount} updateAvailable={updateAvailable} />
         </nav>
 
-        {/* Sticky at the bottom: with the admin group the nav is taller than most screens,
-            and sign-out plus the rail switch must not sit below the fold. */}
+        {/* Sticky at the bottom: the grouped admin navigation fits a 1000px window, but not a
+            short laptop screen, and sign-out plus the rail switch must not sit below the fold. */}
         <div className="sidebar-foot">
           <nav aria-label={session.user.username}>
             <SignOutButton />
@@ -126,7 +122,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           username={session.user.username}
           liveCount={liveCount}
           playingCount={playingCount}
-          liveHref={isAdmin(session.user) ? '/admin/activity' : '/activity'}
+          liveHref={admin ? '/admin/activity' : '/activity'}
         />
         <AppBar
           username={session.user.username}
@@ -134,10 +130,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           playingCount={playingCount}
           minePlaying={minePlaying}
           nav={nav}
-          adminItems={adminItems}
+          adminGroups={groups}
+          updateAvailable={updateAvailable}
         />
         <main className="main" id="main" tabIndex={-1}>
           <DataProgress />
+          {secretKey && (
+            <p className="shell-notice" role="status">
+              <span>{t(secretKey)}</span>
+              {/* The system check is a global-admin page; a server admin gets the text only. */}
+              {session.user.globalAdmin && (
+                <Link href="/admin/doctor">{t('ui2.secret.open')}</Link>
+              )}
+            </p>
+          )}
           {children}
         </main>
       </div>

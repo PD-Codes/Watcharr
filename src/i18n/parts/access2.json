@@ -1,0 +1,31 @@
+{
+  "acc2.qc.or": { "en": "or", "de": "oder" },
+  "acc2.qc.button": { "en": "Sign in with Quick Connect", "de": "Mit Quick Connect anmelden" },
+  "acc2.qc.starting": { "en": "Requesting a code…", "de": "Code wird angefordert …" },
+  "acc2.qc.intro": {
+    "en": "On a device where you are signed in to Jellyfin, open Settings → Quick Connect and enter this code.",
+    "de": "Öffne auf einem Gerät, auf dem du bei Jellyfin angemeldet bist, Einstellungen → Quick Connect und gib diesen Code ein."
+  },
+  "acc2.qc.codeLabel": { "en": "Quick Connect code", "de": "Quick-Connect-Code" },
+  "acc2.qc.expiresIn": { "en": "expires in", "de": "läuft ab in" },
+  "acc2.qc.waiting": { "en": "Waiting for approval…", "de": "Warte auf Bestätigung …" },
+  "acc2.qc.copy": { "en": "Copy code", "de": "Code kopieren" },
+  "acc2.qc.copied": { "en": "Copied", "de": "Kopiert" },
+  "acc2.qc.openJellyfin": { "en": "Open Quick Connect in Jellyfin", "de": "Quick Connect in Jellyfin öffnen" },
+  "acc2.qc.cancel": { "en": "Cancel", "de": "Abbrechen" },
+  "acc2.qc.finishing": { "en": "Approved, signing you in…", "de": "Bestätigt, du wirst angemeldet …" },
+  "acc2.qc.disabled": {
+    "en": "Quick Connect is switched off on this server. Sign in with your password instead.",
+    "de": "Quick Connect ist auf diesem Server ausgeschaltet. Melde dich stattdessen mit deinem Passwort an."
+  },
+  "acc2.qc.expired": { "en": "The code has expired.", "de": "Der Code ist abgelaufen." },
+  "acc2.qc.restart": { "en": "Get a new code", "de": "Neuen Code anfordern" },
+  "acc2.qc.failed": {
+    "en": "Quick Connect could not be started. Try again or use your password.",
+    "de": "Quick Connect konnte nicht gestartet werden. Versuche es erneut oder nutze dein Passwort."
+  },
+  "acc2.qc.otherBrowser": {
+    "en": "This sign-in was started in another browser or tab. Start again here.",
+    "de": "Diese Anmeldung wurde in einem anderen Browser oder Tab gestartet. Starte hier neu."
+  }
+}

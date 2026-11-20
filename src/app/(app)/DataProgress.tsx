@@ -16,6 +16,7 @@ export default function DataProgress() {
   const pathname = usePathname();
   const [progress, setProgress] = useState<{ cached: number; total: number } | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the pathname is the trigger: polling restarts on every navigation
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;

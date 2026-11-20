@@ -10,7 +10,7 @@ export default function SyncUsersButton() {
   const [busy, setBusy] = useState(false);
 
   return (
-    <button
+    <button type="button"
       disabled={busy}
       onClick={async () => {
         setBusy(true);

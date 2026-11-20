@@ -1,0 +1,278 @@
+{
+  "err.unexpected": {
+    "en": "Something went wrong. Please try again.",
+    "de": "Etwas ist schiefgelaufen. Bitte versuche es erneut."
+  },
+  "err.badBody": {
+    "en": "Invalid request body",
+    "de": "Die Anfrage ist ungültig."
+  },
+  "err.unauthorized": {
+    "en": "Sign in first",
+    "de": "Bitte melde dich zuerst an."
+  },
+  "err.adminRequired": {
+    "en": "Admin access required",
+    "de": "Dafür sind Administratorrechte nötig."
+  },
+  "err.globalAdminRequired": {
+    "en": "Global admin access required",
+    "de": "Dafür sind globale Administratorrechte nötig."
+  },
+  "err.idRequired": {
+    "en": "id is required",
+    "de": "Die Angabe „id“ fehlt."
+  },
+  "err.limited": {
+    "en": "Too many attempts, try again later",
+    "de": "Zu viele Versuche. Bitte versuche es später erneut."
+  },
+  "err.tooManyRequests": {
+    "en": "Too many requests, try again later",
+    "de": "Zu viele Anfragen. Bitte versuche es später erneut."
+  },
+  "err.tooManyLookups": {
+    "en": "Too many lookups, try again shortly",
+    "de": "Zu viele Abfragen. Bitte versuche es gleich noch einmal."
+  },
+  "err.unknownServer": {
+    "en": "Unknown server",
+    "de": "Unbekannter Server."
+  },
+  "err.userNotFound": {
+    "en": "User not found",
+    "de": "Benutzer nicht gefunden."
+  },
+  "err.unknownSession": {
+    "en": "Unknown session",
+    "de": "Unbekannte Sitzung."
+  },
+  "err.invalidServerType": {
+    "en": "Invalid server type",
+    "de": "Ungültiger Servertyp."
+  },
+  "err.serverFieldsRequired": {
+    "en": "Server URL and token are required",
+    "de": "Server-URL und Token werden benötigt."
+  },
+  "err.serverUnreachable": {
+    "en": "Could not reach the media server",
+    "de": "Der Media-Server ist nicht erreichbar."
+  },
+  "err.serverTokenRequired": {
+    "en": "The server address changed, so the token has to be entered again",
+    "de": "Die Serveradresse hat sich geändert, deshalb muss der Token erneut eingegeben werden."
+  },
+  "err.serverInUse": {
+    "en": "You cannot remove the server you are signed in through",
+    "de": "Den Server, über den du angemeldet bist, kannst du nicht entfernen."
+  },
+  "err.lastServer": {
+    "en": "The last server cannot be removed",
+    "de": "Der letzte Server kann nicht entfernt werden."
+  },
+  "err.alreadyConfigured": {
+    "en": "Already configured",
+    "de": "Watcharr ist bereits eingerichtet."
+  },
+  "err.setupTokenRequired": {
+    "en": "The setup token from the server log is required",
+    "de": "Dafür wird das Setup-Token aus dem Server-Log benötigt."
+  },
+  "err.setupTokenInvalid": {
+    "en": "Invalid setup token",
+    "de": "Ungültiges Setup-Token."
+  },
+  "err.badgeNotFound": {
+    "en": "Unknown badge",
+    "de": "Unbekanntes Abzeichen."
+  },
+  "err.backupNotFound": {
+    "en": "No such backup",
+    "de": "Dieses Backup gibt es nicht."
+  },
+  "err.backupInvalid": {
+    "en": "The backup failed its integrity check",
+    "de": "Das Backup hat die Integritätsprüfung nicht bestanden."
+  },
+  "err.restartManually": {
+    "en": "Restart the app yourself",
+    "de": "Bitte starte die App selbst neu."
+  },
+  "err.actionFailed": {
+    "en": "The action failed",
+    "de": "Die Aktion ist fehlgeschlagen."
+  },
+  "err.roleFieldsRequired": {
+    "en": "userId and globalAdmin are required",
+    "de": "Die Angaben „userId“ und „globalAdmin“ werden benötigt."
+  },
+  "err.lastGlobalAdmin": {
+    "en": "At least one global admin has to remain",
+    "de": "Mindestens ein globaler Administrator muss bleiben."
+  },
+  "err.ownAccount": {
+    "en": "You cannot delete your own account",
+    "de": "Dein eigenes Konto kannst du nicht löschen."
+  },
+  "err.revokeRoleFirst": {
+    "en": "Revoke the global admin role first",
+    "de": "Entziehe zuerst die Rolle des globalen Administrators."
+  },
+  "err.invalidChannelType": {
+    "en": "Invalid channel type",
+    "de": "Ungültiger Kanaltyp."
+  },
+  "err.deliveryFailed": {
+    "en": "Delivery failed",
+    "de": "Die Zustellung ist fehlgeschlagen."
+  },
+  "err.sendFailed": {
+    "en": "Could not send",
+    "de": "Konnte nicht gesendet werden."
+  },
+  "err.invalidEmail": {
+    "en": "That does not look like an email address",
+    "de": "Das sieht nicht nach einer E-Mail-Adresse aus."
+  },
+  "err.emailRequired": {
+    "en": "An email address is required",
+    "de": "Eine E-Mail-Adresse wird benötigt."
+  },
+  "err.sessionKeyRequired": {
+    "en": "sessionKey is required",
+    "de": "Die Angabe „sessionKey“ fehlt."
+  },
+  "err.notYourServer": {
+    "en": "Not your server",
+    "de": "Das ist nicht dein Server."
+  },
+  "err.terminateUnsupported": {
+    "en": "{type} does not support terminating streams",
+    "de": "{type} kann Streams nicht beenden."
+  },
+  "err.streamGone": {
+    "en": "That stream is no longer running",
+    "de": "Dieser Stream läuft nicht mehr."
+  },
+  "err.terminateRefused": {
+    "en": "The media server refused to stop the stream",
+    "de": "Der Media-Server hat das Beenden des Streams abgelehnt."
+  },
+  "err.importSource": {
+    "en": "Give either a database path or an uploaded file",
+    "de": "Gib entweder einen Datenbankpfad oder eine hochgeladene Datei an."
+  },
+  "err.nothingToResume": {
+    "en": "There is no interrupted import to continue",
+    "de": "Es gibt keinen unterbrochenen Import, der fortgesetzt werden könnte."
+  },
+  "err.importFailed": {
+    "en": "Import failed",
+    "de": "Der Import ist fehlgeschlagen."
+  },
+  "err.refreshFailed": {
+    "en": "Refresh failed",
+    "de": "Die Aktualisierung ist fehlgeschlagen."
+  },
+  "err.chunkTooLarge": {
+    "en": "Chunk is larger than the agreed size",
+    "de": "Der Upload-Abschnitt ist größer als vereinbart."
+  },
+  "err.uploadInUse": {
+    "en": "This file is being imported right now",
+    "de": "Diese Datei wird gerade importiert."
+  },
+  "err.otherBrowser": {
+    "en": "This sign-in was started in another browser",
+    "de": "Diese Anmeldung wurde in einem anderen Browser gestartet."
+  },
+  "err.codeExpired": {
+    "en": "The code has expired, start again",
+    "de": "Der Code ist abgelaufen. Bitte starte erneut."
+  },
+  "err.quickConnectUnsupported": {
+    "en": "Quick Connect is not supported",
+    "de": "Quick Connect wird nicht unterstützt."
+  },
+  "err.quickConnectDisabled": {
+    "en": "Quick Connect is switched off on this server",
+    "de": "Quick Connect ist auf diesem Server ausgeschaltet."
+  },
+  "err.serverNoAnswer": {
+    "en": "The media server did not answer",
+    "de": "Der Media-Server hat nicht geantwortet."
+  },
+  "err.serverTimeout": {
+    "en": "The media server did not answer in time, retrying",
+    "de": "Der Media-Server hat nicht rechtzeitig geantwortet, neuer Versuch läuft."
+  },
+  "err.signInIncomplete": {
+    "en": "The sign-in could not be completed, start again",
+    "de": "Die Anmeldung konnte nicht abgeschlossen werden. Bitte starte erneut."
+  },
+  "err.noServerConfigured": {
+    "en": "No media server configured",
+    "de": "Es ist kein Media-Server eingerichtet."
+  },
+  "err.invalidCode": {
+    "en": "Invalid code",
+    "de": "Ungültiger Code."
+  },
+  "err.pinUnsupported": {
+    "en": "PIN auth is not supported",
+    "de": "Die Anmeldung per PIN wird nicht unterstützt."
+  },
+  "err.pinIdRequired": {
+    "en": "pinId is required",
+    "de": "Die Angabe „pinId“ fehlt."
+  },
+  "err.plexNoAccess": {
+    "en": "This Plex account has no access to this server",
+    "de": "Dieses Plex-Konto hat keinen Zugriff auf diesen Server."
+  },
+  "err.pinExpired": {
+    "en": "The PIN has expired, start again",
+    "de": "Die PIN ist abgelaufen. Bitte starte erneut."
+  },
+  "err.plexTimeout": {
+    "en": "Plex did not answer in time, retrying",
+    "de": "Plex hat nicht rechtzeitig geantwortet, neuer Versuch läuft."
+  },
+  "err.credentialsRequired": {
+    "en": "Username and password are required",
+    "de": "Benutzername und Passwort werden benötigt."
+  },
+  "err.invalidCredentials": {
+    "en": "Invalid credentials",
+    "de": "Benutzername oder Passwort ist falsch."
+  },
+  "err.watchlistFieldsRequired": {
+    "en": "itemId and title are required",
+    "de": "Die Angaben „itemId“ und „title“ werden benötigt."
+  },
+  "err.itemIdRequired": {
+    "en": "itemId is required",
+    "de": "Die Angabe „itemId“ fehlt."
+  },
+  "err.invalidStatus": {
+    "en": "Invalid status",
+    "de": "Ungültiger Status."
+  },
+  "err.invalidAddress": {
+    "en": "Invalid address",
+    "de": "Ungültige Adresse."
+  },
+  "err.invalidTheme": {
+    "en": "theme must be dark, light or system",
+    "de": "„theme“ muss dark, light oder system sein."
+  },
+  "err.noPlaysThisYear": {
+    "en": "No plays in this year",
+    "de": "In diesem Jahr gibt es keine Wiedergaben."
+  },
+  "err.cardRenderFailed": {
+    "en": "The card could not be rendered",
+    "de": "Die Karte konnte nicht erstellt werden."
+  }
+}

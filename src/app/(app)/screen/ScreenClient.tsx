@@ -591,7 +591,7 @@ export default function ScreenClient({
         </Link>
       </div>
 
-      {can && can.keyboard && can.fullscreen && !fullscreen && (
+      {can?.keyboard && can.fullscreen && !fullscreen && (
         <p className="scr-hint" data-show={hint ? '1' : undefined}>
           {t('screen.hint')}
           {can.wakeLock && ` · ${t('screen.hintAwake')}`}

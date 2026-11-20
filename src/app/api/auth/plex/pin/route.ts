@@ -1,20 +1,21 @@
 import { NextResponse } from 'next/server';
 import { supportsPinAuth } from '@/server/adapters';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { getAdapter, getServer, listServers } from '@/server/config';
 import { acceptedHosts } from '@/server/sameorigin';
 import { bindPlexPin } from '@/server/session';
+import { apiError, badBody, withApiErrors } from '@/server/apierror';
 
 /** Starts the Plex PIN OAuth flow and returns the URL the user has to visit. */
-export async function POST(request: Request) {
+export const POST = withApiErrors(async (request: Request) => {
   const body = await readBody(request, { serverId: 'number' });
   if (!body) return badBody();
   const server = body?.serverId ? await getServer(body.serverId) : (await listServers())[0];
-  if (!server) return NextResponse.json({ error: 'Unknown server' }, { status: 400 });
+  if (!server) return apiError(400, 'unknown-server', 'err.unknownServer');
 
   const adapter = await getAdapter(server.id);
   if (!supportsPinAuth(adapter)) {
-    return NextResponse.json({ error: 'PIN auth is not supported' }, { status: 400 });
+    return apiError(400, 'unsupported', 'err.pinUnsupported');
   }
   // The browser's own origin beats APP_URL, which may name another address than the one this
   // person is using right now — but only an origin this app answers as: a script can send any
@@ -34,4 +35,4 @@ export async function POST(request: Request) {
   const pin = await adapter.startPinAuth(forward);
   await bindPlexPin(pin.pinId);
   return NextResponse.json(pin);
-}
+});

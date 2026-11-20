@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
 import { csvResponse, toCsv } from '@/server/csv';
 import { HISTORY_PERIODS } from '@/server/history';
 import { listSessionHistory } from '@/server/playback';
 import { adminScope, getSession, isAdmin } from '@/server/session';
+import { adminRequired } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,9 +14,7 @@ const MAX_ROWS = 50000;
  */
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session || !isAdmin(session.user)) {
-    return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
-  }
+  if (!session || !isAdmin(session.user)) return adminRequired();
 
   const sp = new URL(request.url).searchParams;
   // Whitelisted like the page: `1e9` makes SQLite's unixepoch() return NULL and the export an

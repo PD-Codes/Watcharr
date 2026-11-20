@@ -1,0 +1,437 @@
+/* ============================================================
+   Shell — navigation drawer (desktop) + app bar / navigation bar (mobile)
+   ============================================================ */
+
+.shell {
+  position: relative;
+  /* Own stacking context, so the ambient light below can sit behind every card
+     without ever dropping behind the page background. */
+  isolation: isolate;
+  display: flex;
+  min-height: 100vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: the vh line before it is the fallback for browsers without dynamic viewport units */
+  min-height: 100dvh;
+}
+
+/* Ambient room light: two very soft neutral pools, so a flat graphite page has depth. */
+.shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 520px at 76% -10%, color-mix(in srgb, var(--text) 5.5%, transparent), transparent 72%),
+    radial-gradient(760px 460px at 4% 110%, color-mix(in srgb, var(--text) 3.5%, transparent), transparent 72%);
+}
+
+/* The projector spill. Amber because it means "something is playing": the layout stamps
+   data-live only while a stream is running, so the light is information, not decoration. */
+.shell[data-live='1']::after {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 420px;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(620px 300px at 16% -70px, var(--beam-wash), transparent 72%);
+  animation: spill 7s ease-in-out infinite alternate;
+}
+
+@keyframes spill {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Permanent navigation drawer. On mobile the same element becomes modal. */
+.sidebar {
+  width: var(--sidebar-w);
+  flex: 0 0 var(--sidebar-w);
+  background: linear-gradient(180deg, var(--lift), transparent 38%), var(--surface);
+  border-right: 1px solid var(--line);
+  padding: 18px 12px 18px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: the vh line before it is the fallback for browsers without dynamic viewport units */
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: 40;
+  transition: width var(--dur-long) var(--ease-emphasized),
+    flex-basis var(--dur-long) var(--ease-emphasized);
+}
+
+.sidebar > nav {
+  flex: 1;
+}
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 10px;
+  margin-bottom: 18px;
+  min-height: 40px;
+}
+
+.wordmark span {
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 120;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
+/* The bulb: dark when the server is idle, lit while something is playing. */
+.bulb {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  flex: 0 0 9px;
+}
+
+.bulb.on {
+  background: var(--beam);
+  box-shadow: 0 0 0 3px var(--beam-wash), 0 0 12px var(--beam-glow);
+}
+
+/* M3 navigation-drawer item: full-height pill, state layer on hover. */
+.sidebar nav a {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: var(--shape-full);
+  color: var(--text-dim);
+  font-size: 14px;
+  transition: background var(--dur-short) var(--ease-standard),
+    color var(--dur-short) var(--ease-standard);
+}
+
+.sidebar nav a:hover {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+.sidebar nav a:active {
+  background: var(--state-press);
+}
+
+/* The section you are in keeps a filled pill and a lit edge. */
+.sidebar nav a.active {
+  color: var(--text);
+  background: var(--surface-container-high);
+}
+
+.sidebar nav a.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 20px;
+  margin-top: -10px;
+  border-radius: 0 3px 3px 0;
+  background: var(--text); /* neutral: amber means "playing" or "data", never navigation */
+}
+
+.sidebar .group,
+.drawer .group {
+  margin: 20px 0 4px;
+  padding: 0 14px;
+}
+
+/* Icon + label, so a long destination name truncates instead of pushing the badge out. */
+.nav-label {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.nav-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar nav a svg,
+.drawer nav a svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  opacity: 0.9;
+}
+
+.sidebar-foot {
+  position: sticky;
+  /* Chrome insets the sticky edge by the scroll container's padding, so the strip would
+     float 18px above the bottom with the last nav item peeking out beneath it. */
+  bottom: -18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  /* Bleeds into the sidebar padding so the sticky strip is flush with the bottom edge. */
+  margin: 14px -12px -18px;
+  padding: 10px 12px 14px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+.sidebar-foot nav {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Column that carries the app bar above the page on mobile. */
+.content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 26px 36px 72px;
+  max-width: var(--page-max);
+  margin-inline: auto;
+  /* Container queries let cards react to their column, not the viewport — a chart in
+     a half-width grid cell on desktop has the same room as a full-width one on a phone. */
+  container-type: inline-size;
+}
+
+/* --- Mobile top app bar --- */
+
+.appbar {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  align-items: center;
+  gap: 4px;
+  height: var(--appbar-h);
+  padding: 0 6px;
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--backdrop);
+  backdrop-filter: var(--backdrop);
+  border-bottom: 1px solid var(--glass-line);
+}
+
+.appbar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 118;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.appbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* --- Icon button (M3 standard icon button, 48px touch target) --- */
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--shape-full);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--dur-short) var(--ease-standard),
+    color var(--dur-short) var(--ease-standard);
+}
+
+.icon-btn:hover {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+.icon-btn:active {
+  background: var(--state-press);
+}
+
+.icon-btn svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+/* --- Modal navigation drawer (mobile) --- */
+
+/* A <button>, so it has to shed the pill shape and hover lift every button gets — as a
+   pill the dimming covered an oval and left the screen corners bright. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  min-height: 0;
+  background: rgba(0, 0, 0, 0.55);
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  transition: opacity var(--dur-medium) var(--ease-standard);
+}
+
+.scrim:hover,
+.scrim:active {
+  box-shadow: none;
+  filter: none;
+}
+
+.drawer {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 46;
+  width: min(300px, 84vw);
+  /* dvh, not the top/bottom pair: on a phone the bottom edge of a fixed box can sit under
+     the browser's own toolbar, taking the last navigation items with it. */
+  height: 100vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: the vh line before it is the fallback for browsers without dynamic viewport units */
+  height: 100dvh;
+  padding: 14px 12px 24px;
+  background: var(--surface-container-low);
+  border-right: 1px solid var(--line);
+  box-shadow: var(--elev-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transition: transform var(--dur-long) var(--ease-emphasized),
+    opacity var(--dur-medium) var(--ease-standard);
+}
+
+.drawer nav a {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 10px 16px;
+  border-radius: var(--shape-full);
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.drawer nav a:hover,
+.drawer nav a:active {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+.drawer nav a.active {
+  background: var(--surface-container-high);
+  color: var(--text);
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px 10px 14px;
+}
+
+/* --- Bottom navigation bar (mobile, primary destinations only) --- */
+
+.bottomnav {
+  display: none;
+  position: fixed;
+  /* Floats clear of the edges like a dock; the safe-area inset keeps it above the
+     home indicator instead of under it. */
+  inset: auto 10px calc(8px + env(safe-area-inset-bottom)) 10px;
+  z-index: 35;
+  height: calc(var(--bottomnav-h) - 6px);
+  max-width: 520px;
+  margin-inline: auto;
+  border-radius: var(--shape-2xl);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: var(--backdrop);
+  backdrop-filter: var(--backdrop);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--elev-4);
+}
+
+.bottomnav ul {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bottomnav li {
+  flex: 1;
+  min-width: 0;
+}
+
+.bottomnav a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 100%;
+  padding: 6px 2px;
+  /* text-dim, not faint: 11px labels over a translucent bar need the stronger contrast. */
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+/* M3 navigation-bar active indicator: a pill behind the icon, not a color change. */
+.bottomnav .ind {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 30px;
+  border-radius: var(--shape-full);
+  transition: background var(--dur-medium) var(--ease-standard);
+}
+
+.bottomnav a.active {
+  color: var(--text);
+}
+
+.bottomnav a.active .ind {
+  background: var(--surface-container-highest);
+}
+
+.bottomnav svg {
+  width: 20px;
+  height: 20px;
+}
+
+.bottomnav .bulb {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  vertical-align: middle;
+}

@@ -6,7 +6,7 @@ node_modules
 .env.*
 data
 *.tsbuildinfo
-CLAUDE.md
+*.md
 *.db
 *.db-shm
 *.db-wal
@@ -19,3 +19,6 @@ _to_delete
 Dockerfile
 docker-compose.yml
 .dockerignore
+_ops_backup*
+docs
+.fuse_hidden*

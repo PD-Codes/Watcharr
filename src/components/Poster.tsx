@@ -48,10 +48,10 @@ export default function Poster({
   // The server-rendered <img> can fail before React has hydrated, and React never replays
   // that missed `error` event — the broken-image glyph would stay. A finished load with no
   // pixels is the same failure, so it is checked once the element is mounted.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-checked when the source changes; fail() only reads state of that same render
   useEffect(() => {
     const element = image.current;
     if (element?.complete && element.naturalWidth === 0) fail();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current]);
 
   if (!current || failed) {
@@ -63,7 +63,6 @@ export default function Poster({
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
     <img
       ref={image}
       className={className}

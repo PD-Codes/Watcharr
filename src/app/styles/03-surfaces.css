@@ -1,0 +1,168 @@
+/* ============================================================
+   Surfaces
+   ============================================================ */
+
+.card {
+  background: linear-gradient(180deg, var(--lift), transparent 52%), var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--shape-lg);
+  /* The 1px inner highlight is the lamp-above-the-table edge. */
+  box-shadow: inset 0 1px 0 var(--lift);
+  padding: 18px;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: known: this replaces the inset highlight above (and --elev-rest is none in the dark scheme); left as rendered today until the design decides which one the card keeps */
+  box-shadow: var(--elev-rest);
+}
+
+.card.elevated {
+  box-shadow: var(--elev-1);
+}
+
+.grid {
+  display: grid;
+  gap: 14px;
+}
+
+.grid.cols-4 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 178px), 1fr));
+}
+
+.grid.cols-2 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+}
+
+.grid.cols-3 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+
+/* Sections in a grid stretch, so neighbouring cards end at the same baseline. */
+.grid > section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.grid > section > .card {
+  flex: 1;
+}
+
+/* Two short sections sharing one grid cell: the first keeps its content height, the last
+   takes what is left, so the column ends level with a tall neighbour. */
+.grid > .grid-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.grid-stack > section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.grid-stack > section:last-child,
+.grid-stack > section:last-child > .card {
+  flex: 1;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* A checkbox and its sentence stay on one line; with wrapping allowed, a sentence too long for the
+   rest of the row dropped below its box and left the box looking unlabeled. */
+label.row:has(> input[type='checkbox'], > input[type='radio']) {
+  flex-wrap: nowrap;
+}
+
+label.row > input[type='checkbox'],
+label.row > input[type='radio'] {
+  flex: none;
+}
+
+.section {
+  margin-top: 30px;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.section-head h2 {
+  margin: 0;
+}
+
+/* ============================================================
+   Metric cards
+   ============================================================ */
+
+.stat {
+  padding: 15px 16px 16px;
+}
+
+.stat-label {
+  margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+.stat-value {
+  margin: 9px 0 0;
+  font-size: clamp(21px, 5.5cqw, 25px);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.stat-hint {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  /* The hint carries a title from the media server. A long one without spaces would
+     otherwise be one unbreakable word running past the card. */
+  overflow-wrap: anywhere;
+}
+
+/* A clickable metric is a drill-down. It lifts, so the affordance is visible before
+   the pointer arrives — on a touch screen there is no hover to discover it with. */
+.stat-link {
+  display: block;
+  position: relative;
+  transition: border-color var(--dur-short) var(--ease-standard),
+    box-shadow var(--dur-medium) var(--ease-standard),
+    transform var(--dur-medium) var(--ease-emphasized);
+}
+
+/* Keeps the label clear of the chevron, including the info marker it may carry. */
+.stat-link .stat-label {
+  padding-right: 18px;
+}
+
+.stat-link::after {
+  content: '›';
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+
+.stat-link:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--elev-2);
+  transform: translateY(-1px);
+}
+
+.stat-link:active {
+  transform: none;
+}

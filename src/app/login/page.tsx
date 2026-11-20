@@ -4,6 +4,7 @@ import { listServers } from '@/server/config';
 import { getSession } from '@/server/session';
 import { announceSetupToken, setupTokenPending } from '@/server/setuptoken';
 import { getT } from '@/i18n/server';
+import { quickConnectAvailable } from '@/server/quickconnect';
 import LoginForm from './LoginForm';
 import PlexLogin from './PlexLogin';
 
@@ -54,7 +55,13 @@ export default async function LoginPage({
       {selected.serverType === 'plex' ? (
         <PlexLogin serverId={selected.id} askSetupToken={askSetupToken} />
       ) : (
-        <LoginForm serverId={selected.id} askSetupToken={askSetupToken} />
+        <LoginForm
+          serverId={selected.id}
+          askSetupToken={askSetupToken}
+          // Jellyfin only, and only when the server has it switched on: a button that can only
+          // answer "switched off" is worse than none.
+          quickConnect={await quickConnectAvailable(selected.id).catch(() => false)}
+        />
       )}
       <p className="muted">
         <Link href="/adminlogin">{t('login.adminAccess')}</Link>

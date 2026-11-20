@@ -1,25 +1,21 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { createAdapter, SERVER_TYPES, type ServerType } from '@/server/adapters';
 import { createServer, deleteServer, getServer, listServers, updateServer } from '@/server/config';
-import { getSession } from '@/server/session';
+import { sameEndpoint } from '@/server/notifications';
+import { getGlobalAdminSession } from '@/server/session';
+import { apiError, badBody, globalAdminRequired } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
-/**
+/*
  * Server management is global-admin only. A server admin who could add a server would be
  * able to grant themselves admin rights on a machine they control, and with them a second
  * account inside this deployment — which is exactly the boundary the role is meant to draw.
  */
-async function requireGlobal() {
-  const session = await getSession();
-  return session?.user.globalAdmin ? session : null;
-}
 
 export async function POST(request: Request) {
-  if (!(await requireGlobal())) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!(await getGlobalAdminSession())) return globalAdminRequired();
 
   const body = await readBody(request, {
     serverType: 'string',
@@ -30,10 +26,10 @@ export async function POST(request: Request) {
   if (!body) return badBody();
 
   if (!body.serverType || !SERVER_TYPES.includes(body.serverType as ServerType)) {
-    return NextResponse.json({ error: 'Invalid server type' }, { status: 400 });
+    return apiError(400, 'invalid-server-type', 'err.invalidServerType');
   }
   if (!body.serverUrl?.startsWith('http') || !body.serverToken) {
-    return NextResponse.json({ error: 'Server URL and token are required' }, { status: 400 });
+    return apiError(400, 'missing-fields', 'err.serverFieldsRequired');
   }
 
   const serverType = body.serverType as ServerType;
@@ -41,7 +37,7 @@ export async function POST(request: Request) {
     .ping()
     .catch(() => ({ ok: false }));
   if (!health.ok) {
-    return NextResponse.json({ error: 'Could not reach the media server' }, { status: 400 });
+    return apiError(400, 'server-unreachable', 'err.serverUnreachable');
   }
 
   const server = await createServer({
@@ -55,9 +51,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!(await requireGlobal())) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!(await getGlobalAdminSession())) return globalAdminRequired();
 
   const body = await readBody(request, {
     id: 'number',
@@ -67,7 +61,14 @@ export async function PATCH(request: Request) {
   });
   if (!body) return badBody();
   const current = body.id ? await getServer(body.id) : null;
-  if (!current) return NextResponse.json({ error: 'Unknown server' }, { status: 404 });
+  if (!current) return apiError(404, 'unknown-server', 'err.unknownServer');
+
+  // The token field is never shown and blank means "keep it". Moving the address to another
+  // scheme, host or port without entering the token again would send the stored admin token
+  // there — the probe below alone does that, before anything is saved.
+  if (body.serverUrl && !body.serverToken && !sameEndpoint(current.serverUrl, body.serverUrl)) {
+    return apiError(400, 'token-required', 'err.serverTokenRequired');
+  }
 
   // Never persist connection details that do not actually work.
   if (body.serverUrl || body.serverToken) {
@@ -77,7 +78,7 @@ export async function PATCH(request: Request) {
       body.serverToken || current.serverToken,
     );
     if (!(await probe.ping().catch(() => ({ ok: false }))).ok) {
-      return NextResponse.json({ error: 'Could not reach the media server' }, { status: 400 });
+      return apiError(400, 'server-unreachable', 'err.serverUnreachable');
     }
   }
 
@@ -90,23 +91,18 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const session = await requireGlobal();
-  if (!session) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  const session = await getGlobalAdminSession();
+  if (!session) return globalAdminRequired();
 
   const deleteBody = await readBody(request, { id: 'number' });
   if (!deleteBody) return badBody();
   const id = deleteBody.id;
-  if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+  if (!id) return apiError(400, 'id-required', 'err.idRequired');
   if (id === session.user.serverId) {
-    return NextResponse.json(
-      { error: 'You cannot remove the server you are signed in through' },
-      { status: 400 },
-    );
+    return apiError(400, 'server-in-use', 'err.serverInUse');
   }
   if ((await listServers()).length < 2) {
-    return NextResponse.json({ error: 'The last server cannot be removed' }, { status: 400 });
+    return apiError(400, 'last-server', 'err.lastServer');
   }
 
   await deleteServer(id);

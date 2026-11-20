@@ -1,5 +1,5 @@
 import { ImageResponse } from 'next/og';
-import { NextResponse } from 'next/server';
+import { apiError, unauthorized } from '@/server/apierror';
 import { rateLimit } from '@/server/ratelimit';
 import { getServer } from '@/server/config';
 import { getSession } from '@/server/session';
@@ -36,18 +36,16 @@ const cache = globalState('wrapped.card', () => new Map<string, { at: number; pn
  */
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE });
-  }
+  if (!session) return unauthorized({ headers: NO_STORE });
 
   if (!rateLimit(`wrapped-card:${session.user.id}`, CARD_LIMIT_PER_MINUTE, 60_000)) {
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429, headers: NO_STORE });
+    return apiError(429, 'limited', 'err.tooManyRequests', { headers: NO_STORE });
   }
 
   const query = new URL(request.url).searchParams;
   const year = parseYear(query.get('year'));
   const server = await getServer(session.user.serverId);
-  if (!server) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: NO_STORE });
+  if (!server) return unauthorized({ headers: NO_STORE });
   // Personal by default; an admin may ask for a server's year, resolved by the same rule as the page.
   const view = await resolveView(
     { ...session, server },
@@ -61,7 +59,7 @@ export async function GET(request: Request) {
 
   const wrapped = await getWrapped(view.scope, year);
   if (wrapped.plays === 0) {
-    return NextResponse.json({ error: 'No plays in this year' }, { status: 404, headers: NO_STORE });
+    return apiError(404, 'no-plays', 'err.noPlaysThisYear', { headers: NO_STORE });
   }
 
   const [t, locale] = await Promise.all([getT(), getLocale()]);
@@ -284,7 +282,7 @@ export async function GET(request: Request) {
     png = await image.arrayBuffer();
   } catch (error) {
     console.error('[watcharr] wrapped card render failed:', error);
-    return NextResponse.json({ error: 'The card could not be rendered' }, { status: 500, headers: NO_STORE });
+    return apiError(500, 'render-failed', 'err.cardRenderFailed', { headers: NO_STORE });
   }
 
   cache.set(cacheKey, { at: Date.now(), png });

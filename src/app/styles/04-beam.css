@@ -1,0 +1,140 @@
+/* ============================================================
+   The beam — now playing
+   ============================================================ */
+
+.beam {
+  position: relative;
+  display: grid;
+  /* minmax(0, 1fr): a long unbroken title must shrink the column, not stretch the card. */
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 22px;
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--shape-md);
+  box-shadow: var(--elev-1);
+  overflow: hidden;
+}
+
+/* The only card with a lit edge: it is the only one that is live. */
+.beam.live {
+  border-color: var(--beam-soft);
+}
+
+/* The projector wash only exists while something is actually playing. */
+.beam.live::before {
+  content: '';
+  position: absolute;
+  inset: -60% -10% auto -10%;
+  height: 200%;
+  background: radial-gradient(52% 46% at 10% 50%, var(--beam-wash), transparent 72%);
+  pointer-events: none;
+}
+
+.beam > * {
+  position: relative;
+}
+
+.beam-art {
+  width: 96px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: var(--shape-sm);
+  background: var(--surface-container);
+  border: 1px solid var(--line);
+}
+
+.beam-title {
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 108;
+  font-weight: 700;
+  font-size: clamp(17px, 4.8vw, 23px);
+  letter-spacing: -0.01em;
+  margin: 6px 0 2px;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.beam-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+/* A paused session is still a session, but the room lights come up. */
+.beam.paused .scrub-fill,
+.beam.paused .scrub-head {
+  background: var(--text-faint);
+  box-shadow: none;
+}
+
+.beam-sub {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 0;
+}
+
+.beam-meta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.timecode {
+  font-size: 13px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+/* Scrub line: a hairline with a lit playhead. */
+.scrub {
+  position: relative;
+  height: 3px;
+  background: var(--line-strong);
+  border-radius: 3px;
+  margin-top: 16px;
+}
+
+.scrub-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--beam);
+  border-radius: 2px;
+  animation: scrub-in 0.7s var(--ease-emphasized) both;
+}
+
+.scrub-head {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%;
+  background: var(--beam);
+  box-shadow: 0 0 12px var(--beam-glow);
+  animation: scrub-in 0.7s var(--ease-emphasized) both;
+}
+
+@keyframes scrub-in {
+  from {
+    transform: scaleX(0);
+    transform-origin: left;
+    opacity: 0;
+  }
+}
+
+.beam-idle {
+  /* The grid has an art column; an idle beam has no art and must not wrap in it. */
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  min-height: 92px;
+  color: var(--text-dim);
+}

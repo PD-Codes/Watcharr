@@ -4,5 +4,8 @@ node_modules
 data
 next-env.d.ts
 *.tsbuildinfo
-CLAUDE.md
 /_ops_backup*
+.fuse_hidden*
+/docs/promo/
+/docs/ROADMAP.md
+/docs/internal/

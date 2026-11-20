@@ -1,4 +1,5 @@
 import { runDoctor } from '@/server/doctor';
+import { TEXT_PREFIX } from '@/server/doctor-core';
 import { requireGlobalAdmin } from '@/server/session';
 import { getT } from '@/i18n/server';
 
@@ -8,6 +9,7 @@ const FIX: Record<string, string> = {
   backup: '/admin/backups',
   migrations: '/admin/system',
   servers: '/admin/servers',
+  plexPlain: '/admin/servers',
   email: '/admin/notifications',
   tmdb: '/admin/config',
   timezone: '/admin/config',
@@ -36,6 +38,7 @@ export default async function AdminDoctorPage() {
         {checks.map((check) => (
           <li key={check.id} className="row" style={{ gap: 12, alignItems: 'baseline', padding: '8px 0' }}>
             <span
+              role="img"
               aria-label={t(`doctor.level.${check.level}` as 'doctor.level.ok')}
               style={{ width: 20, fontWeight: 700, color: check.level === 'fail' ? 'var(--danger)' : undefined }}
             >
@@ -44,9 +47,11 @@ export default async function AdminDoctorPage() {
             {/* min-width 0 lets the text shrink inside the flex row, and long unbroken values (a
                 plex.direct host, a data path) wrap instead of widening the page on a phone. */}
             <span style={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
-              <strong>{text(`doctor.${check.id}`)}</strong>
+              <strong>{text(TEXT_PREFIX[check.id] ?? `doctor.${check.id}`)}</strong>
               <br />
-              <span className="muted">{text(`doctor.${check.id}.${check.level}`, check.params)}</span>
+              <span className="muted">
+                {text(`${TEXT_PREFIX[check.id] ?? `doctor.${check.id}`}.${check.level}`, check.params)}
+              </span>
               {check.level !== 'ok' && FIX[check.id] && (
                 <>
                   {' '}

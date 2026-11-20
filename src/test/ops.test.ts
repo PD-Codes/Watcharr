@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import Database from 'better-sqlite3';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -445,7 +445,7 @@ async function main() {
     assert.ok(html.includes('Line one<br>Line &lt;two&gt;'), 'the intro keeps its line breaks, escaped');
 
     const bare = await renderNewsletter(
-      [{ serverLabel: 'Srv', serverSlug: 'srv', items: [
+      [{ serverId: 1, serverLabel: 'Srv', serverSlug: 'srv', items: [
         { itemId: '1', title: 'Show', mediaType: 'episode', genres: ['Drama'] },
         { itemId: '2', title: 'Show', mediaType: 'episode', genres: ['Drama'] },
         { itemId: '3', title: 'Film', mediaType: 'movie', year: 2020, genres: [] },
@@ -574,6 +574,206 @@ async function main() {
     assert.deepEqual(totals, { plays: 4, watchtimeMs: 10000, lastPlayedAt: new Date(500), lastTitle: 'Heat' });
     assert.deepEqual(totalsOf([]), { plays: 0, watchtimeMs: 0, lastPlayedAt: null, lastTitle: null });
     console.log('ok - library totals add up groups and name the latest title');
+  }
+
+  /* ---------- startup script: secret gate, VACUUM, unfinished backups ---------- */
+  {
+    const { secretProblem, secretHintKey } = await import('../server/secret');
+    const startDir = mkdtempSync(join(tmpdir(), 'watcharr-start-'));
+    const path = join(startDir, 'start.db');
+    const strong = 'f'.repeat(64);
+    // A clean environment for the gate: no NODE_ENV and no npm lifecycle from `npm test`.
+    const migrate = (env: Record<string, string | undefined>) => {
+      const merged: Record<string, string | undefined> = { ...process.env, DATABASE_PATH: path, NODE_ENV: '', npm_lifecycle_event: '', ...env };
+      for (const [k, v] of Object.entries(merged)) if (v === undefined) delete merged[k];
+      return spawnSync('node', ['scripts/migrate.mjs'], { env: merged as NodeJS.ProcessEnv, encoding: 'utf8' });
+    };
+
+    // The script carries its own copy of the rules (the image has no src/); both must agree.
+    const cases: [string | undefined, string | null][] = [
+      [undefined, 'missing'],
+      ['   ', 'missing'],
+      ['change-me', 'placeholder'],
+      ['CHANGEME', 'placeholder'],
+      ['only-twenty-chars-xx', 'short'],
+      [strong, null],
+    ];
+    for (const [value, verdict] of cases) {
+      if (value !== undefined) assert.equal(secretProblem(value), verdict, `secret.ts on ${JSON.stringify(value)}`);
+      const result = migrate({ SESSION_SECRET: value, NODE_ENV: 'production' });
+      assert.equal(result.status, verdict ? 1 : 0, `a fresh production start with ${JSON.stringify(value)}: ${result.stderr}`);
+      if (verdict) assert.match(result.stderr, /openssl rand -hex 32/, 'the refusal says how to fix it');
+    }
+    assert.equal(secretHintKey('change-me'), 'data2.secret.placeholder');
+    assert.equal(secretHintKey(strong), null);
+    // Outside production (dev, tests, preview) a fresh database only gets the warning.
+    const dev = migrate({ SESSION_SECRET: 'change-me' });
+    assert.equal(dev.status, 0, dev.stderr);
+    assert.match(dev.stderr, /new production install would refuse/);
+    // `npm start` on a host counts as production.
+    assert.equal(migrate({ SESSION_SECRET: 'change-me', npm_lifecycle_event: 'start' }).status, 1);
+
+    // Once something is encrypted with the secret, a weak one is warned about, never refused.
+    const raw = new Database(path);
+    raw.prepare("INSERT INTO app_config (server_type, server_url, server_token, label, slug) VALUES ('jellyfin', 'http://x', 'enc', 'S', 's')").run();
+    raw.close();
+    const existing = migrate({ SESSION_SECRET: 'change-me', NODE_ENV: 'production' });
+    assert.equal(existing.status, 0, existing.stderr);
+    assert.match(existing.stderr, /not enforced on an existing install/);
+    console.log('ok - a weak secret stops a fresh production install and only warns an existing one');
+
+    // Free a large share of the file so the startup VACUUM is due.
+    const bloat = () => {
+      const c = new Database(path);
+      c.exec('CREATE TABLE junk (x BLOB)');
+      c.transaction(() => {
+        const add = c.prepare('INSERT INTO junk VALUES (randomblob(400))');
+        for (let i = 0; i < 20_000; i++) add.run();
+      })();
+      c.exec('DROP TABLE junk');
+      c.pragma('wal_checkpoint(TRUNCATE)');
+      const free = Number(c.pragma('freelist_count', { simple: true })) / Number(c.pragma('page_count', { simple: true }));
+      c.close();
+      assert.ok(free >= 0.25, `the probe frees enough pages (${free})`);
+    };
+    bloat();
+    // A second instance holding the write lock makes VACUUM fail; the start must go on.
+    const holder = new Database(path);
+    holder.exec('BEGIN IMMEDIATE');
+    const locked = migrate({ SESSION_SECRET: strong });
+    holder.exec('ROLLBACK');
+    holder.close();
+    assert.equal(locked.status, 0, `a failed VACUUM does not stop the start: ${locked.stderr}`);
+    assert.match(locked.stderr, /VACUUM skipped, starting anyway/);
+    // The switch turns it off altogether.
+    const off = migrate({ SESSION_SECRET: strong, WATCHARR_NO_STARTUP_VACUUM: '1' });
+    assert.equal(off.status, 0);
+    assert.doesNotMatch(off.stdout, /reclaiming/);
+    // Unfinished backups are cleared before the server starts; finished ones are not touched.
+    const backupDir = join(startDir, 'backups');
+    mkdirSync(backupDir, { recursive: true });
+    writeFileSync(join(backupDir, 'watcharr-2020-01-01.db.partial'), 'half');
+    writeFileSync(join(backupDir, 'manual-2020-01-01.db'), 'whole');
+    const ran = migrate({ SESSION_SECRET: strong });
+    assert.equal(ran.status, 0, ran.stderr);
+    assert.match(ran.stdout, /reclaiming \d+% free space/, 'and with the lock gone it runs');
+    assert.deepEqual(readdirSync(backupDir), ['manual-2020-01-01.db']);
+    rmSync(startDir, { recursive: true, force: true });
+    console.log('ok - the startup VACUUM never blocks a start and unfinished backups are cleared');
+  }
+
+  /* ---------- backups are written under .partial and renamed ---------- */
+  {
+    const { backupTo, assertSpaceFor, InsufficientSpaceError, PARTIAL_SUFFIX } = await import('../db');
+    const { BACKUP_DIR, pruneOldBackups, removeStalePartials } = await import('../server/autobackup');
+    const { listBackups } = await import('../server/backups');
+    mkdirSync(BACKUP_DIR, { recursive: true });
+    for (const name of readdirSync(BACKUP_DIR)) rmSync(join(BACKUP_DIR, name), { force: true });
+
+    const target = join(BACKUP_DIR, 'watcharr-2020-01-03.db');
+    await backupTo(target);
+    assert.ok(existsSync(target), 'the finished snapshot has its name');
+    assert.ok(!existsSync(`${target}${PARTIAL_SUFFIX}`), 'and no .partial is left');
+    await assert.rejects(backupTo(join(BACKUP_DIR, 'missing-dir', 'x.db')));
+    assert.ok(!existsSync(join(BACKUP_DIR, 'missing-dir')));
+    await assert.rejects(assertSpaceFor(BACKUP_DIR, Number.MAX_SAFE_INTEGER), InsufficientSpaceError);
+
+    // Two older finished backups and a newer, half-written one: keeping two must keep the two
+    // newest *finished* ones; the .partial neither counts nor pushes one out.
+    writeFileSync(join(BACKUP_DIR, 'watcharr-2020-01-01.db'), 'old');
+    writeFileSync(join(BACKUP_DIR, 'watcharr-2020-01-02.db'), 'older than 03');
+    const partial = join(BACKUP_DIR, `watcharr-2099-01-01.db${PARTIAL_SUFFIX}`);
+    writeFileSync(partial, 'half');
+    assert.ok(!(await listBackups()).some((b) => b.name.endsWith(PARTIAL_SUFFIX)), 'a .partial is never listed');
+    await pruneOldBackups(2);
+    assert.deepEqual(
+      readdirSync(BACKUP_DIR).filter((n) => n.endsWith('.db')).sort(),
+      ['watcharr-2020-01-02.db', 'watcharr-2020-01-03.db'],
+    );
+    assert.ok(existsSync(partial), 'a .partial still being written is left alone');
+    const stale = new Date(Date.now() - 3_600_000);
+    utimesSync(partial, stale, stale);
+    assert.equal(await removeStalePartials(), 1);
+    assert.ok(!existsSync(partial), 'one nobody writes to any more is removed by the prune');
+    console.log('ok - backups only get their name when complete and .partial files never count');
+  }
+
+  /* ---------- read cache housekeeping ---------- */
+  {
+    const { readDb, clearReadCache, readCacheSize, MAX_CACHED_ROWS } = await import('../server/readcache');
+    const { sql } = await import('drizzle-orm');
+    const slow = (tag: string) =>
+      sql`WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 4000000) SELECT count(*) AS n, ${tag} AS tag FROM c`;
+    clearReadCache();
+    await readDb.all(slow('a'));
+    assert.equal(readCacheSize(), 1);
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + 31_000;
+      await readDb.all(slow('b'));
+      assert.equal(readCacheSize(), 1, 'the expired answer went when the next one was stored');
+    } finally {
+      Date.now = realNow;
+    }
+    clearReadCache();
+    let t = performance.now();
+    const wide = await readDb.all(
+      sql`WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 4000000) SELECT x FROM c WHERE x % 200 = 0`,
+    );
+    assert.ok(performance.now() - t > 150, 'the probe is slow enough to be cached otherwise');
+    assert.ok(wide.length > MAX_CACHED_ROWS);
+    assert.equal(readCacheSize(), 0, 'a listing that long is not kept');
+    console.log('ok - the read cache drops expired answers and never keeps huge ones');
+  }
+
+  /* ---------- startup script: a way back before an update ---------- */
+  {
+    // A copy of the shipped migrations in a folder of its own, so a "new release" can be made by
+    // adding one file. The script reads drizzle/ from its working directory.
+    const root = mkdtempSync(join(tmpdir(), 'watcharr-upgrade-'));
+    const migrations = join(root, 'drizzle');
+    mkdirSync(migrations);
+    for (const file of readdirSync('drizzle').filter((f) => f.endsWith('.sql'))) {
+      writeFileSync(join(migrations, file), readFileSync(join('drizzle', file)));
+    }
+    const path = join(root, 'data', 'up.db');
+    const backups = join(root, 'data', 'backups');
+    const run = () =>
+      spawnSync('node', [join(process.cwd(), 'scripts/migrate.mjs')], {
+        cwd: root,
+        env: { ...process.env, DATABASE_PATH: path, NODE_ENV: '', npm_lifecycle_event: '', SESSION_SECRET: 'f'.repeat(64) } as unknown as NodeJS.ProcessEnv,
+        encoding: 'utf8',
+      });
+    // Only the .db files: opening a copy below leaves its -wal/-shm next to it.
+    const upgrades = () =>
+      existsSync(backups) ? readdirSync(backups).filter((f) => f.startsWith('pre-upgrade-') && f.endsWith('.db')) : [];
+
+    assert.equal(run().status, 0);
+    assert.deepEqual(upgrades(), [], 'a fresh database has nothing to go back to');
+    const db = new Database(path);
+    db.prepare("INSERT INTO users (server_id, server_user_id, username) VALUES (1, 'kept', 'kept')").run();
+    db.close();
+    assert.equal(run().status, 0);
+    assert.deepEqual(upgrades(), [], 'nothing pending: no backup');
+
+    const last = readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort().at(-1)!.replace(/\.sql$/, '');
+    writeFileSync(join(migrations, '9999_next_release.sql'), 'CREATE TABLE `next_release` (`x` integer);');
+    const upgraded = run();
+    assert.equal(upgraded.status, 0, upgraded.stderr);
+    const made = upgrades();
+    assert.equal(made.length, 1, 'one backup before the new migration');
+    assert.ok(made[0].startsWith(`pre-upgrade-${last}-`) && made[0].endsWith('.db'), `named after the last migration it holds: ${made[0]}`);
+    assert.ok(!readdirSync(backups).some((f) => f.endsWith('.partial')), 'no unfinished file left behind');
+    const copy = new Database(join(backups, made[0]), { readonly: true });
+    assert.equal(copy.prepare("SELECT count(*) FROM _migrations WHERE name = '9999_next_release.sql'").pluck().get(), 0, 'taken before it ran');
+    assert.equal(copy.prepare("SELECT username FROM users WHERE server_user_id = 'kept'").pluck().get(), 'kept', 'with the data');
+    copy.close();
+    assert.match(upgraded.stdout, /backing up the database before the update/);
+
+    assert.equal(run().status, 0);
+    assert.equal(upgrades().length, 1, 'the next start, with nothing pending, takes none');
+    rmSync(root, { recursive: true, force: true });
+    console.log('ok - an update backs up an existing database before its first migration, a fresh one is left alone');
   }
 
   console.log('all ops tests passed');

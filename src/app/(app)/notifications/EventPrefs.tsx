@@ -96,7 +96,7 @@ export default function EventPrefs({
       </div>
 
       <div className="row" style={{ gap: 10, marginTop: 12 }}>
-        <button disabled={busy}>{t('action.save')}</button>
+        <button type="submit" disabled={busy}>{t('action.save')}</button>
         {(email || events.length > 0) && (
           <button
             type="button"

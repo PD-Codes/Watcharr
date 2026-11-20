@@ -1,6 +1,7 @@
 import 'server-only';
+import { isIP } from 'node:net';
 
-// ponytail: in-memory counters, reset on restart. One app container is the documented
+// Trade-off: in-memory counters, reset on restart. One app container is the documented
 // deployment; swap for Redis if the app is ever run with more than one replica.
 const hits = new Map<string, { count: number; resetAt: number }>();
 
@@ -59,8 +60,24 @@ export function clientIp(request: Request, hops = trustedHops()): string {
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean);
-  if (chain.length) return chain[Math.max(0, chain.length - hops)];
-  return request.headers.get('x-real-ip')?.trim() || 'unknown';
+  const raw = chain.length ? chain[Math.max(0, chain.length - hops)] : request.headers.get('x-real-ip')?.trim();
+  const picked = raw && stripPort(raw);
+  // Only a real address counts. Without a reverse proxy in front the header is the client's
+  // own text: any string would be a fresh rate-limit bucket, and it lands in the console and
+  // the login history verbatim. Everything that is not an address shares one bucket.
+  return picked && isIP(picked) ? picked : 'unknown';
+}
+
+/**
+ * Some proxies append the client's endpoint rather than its address ("1.2.3.4:5678",
+ * "[::1]:443"); unwrapped, the same client would share the "unknown" bucket with everybody.
+ * A bare IPv6 address is left alone: its colons are no port.
+ */
+function stripPort(value: string): string {
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(value);
+  if (bracketed) return bracketed[1];
+  const v4 = /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/.exec(value);
+  return v4 ? v4[1] : value;
 }
 
 function trustedHops(): number {

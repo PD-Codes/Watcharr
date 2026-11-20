@@ -2,6 +2,7 @@ import 'server-only';
 import { isNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { geoipCache, suggestionsCache, tmdbCache } from '@/db/schema';
+import { getT } from '@/i18n/server';
 import { listServers } from './config';
 import { getLibrary, getSections, libraryCacheInfo } from './library';
 import { globalState } from './state';
@@ -101,10 +102,16 @@ export async function runCacheAction(action: CacheAction): Promise<{ started?: b
   switch (action) {
     case 'tmdb.refresh': {
       if (job.running) return { started: false };
+      // Taken from the request that starts the refresh: its fallback text is read on that page.
+      const t = await getT();
       Object.assign(job, { running: true, startedAt: Date.now(), finishedAt: null, looked: null, error: null });
       void prefetchArtwork(MANUAL_LIMIT)
-        .then((looked) => void (job.looked = looked))
-        .catch((e: unknown) => void (job.error = e instanceof Error ? e.message : 'Refresh failed'))
+        .then((looked) => {
+          job.looked = looked;
+        })
+        .catch((e: unknown) => {
+          job.error = e instanceof Error ? e.message : t('err.refreshFailed');
+        })
         .finally(() => Object.assign(job, { running: false, finishedAt: Date.now() }));
       return { started: true };
     }

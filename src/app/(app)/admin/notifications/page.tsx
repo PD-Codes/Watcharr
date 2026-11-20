@@ -1,8 +1,9 @@
 import { formatDate } from '@/components/format';
+import Pager, { pageOf } from '@/components/Pager';
 import { listServers } from '@/server/config';
 import { CHANNEL_TYPES, NOTIFICATION_EVENTS } from '@/server/features';
 import { getSections, sectionKey } from '@/server/library';
-import { listChannels, listNotificationLog } from '@/server/notifications';
+import { countNotificationLog, listChannels, listNotificationLog } from '@/server/notifications';
 import { requireGlobalAdmin } from '@/server/session';
 import { getLocale, getT } from '@/i18n/server';
 import NotificationsManager from './NotificationsManager';
@@ -30,13 +31,18 @@ async function libraryOptions(): Promise<{ key: string; label: string }[]> {
   return perServer.flat();
 }
 
-export default async function AdminNotificationsPage() {
+export default async function AdminNotificationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string | string[] }>;
+}) {
   await requireGlobalAdmin();
   const t = await getT();
   const locale = await getLocale();
+  const { page, pages, offset, limit } = pageOf((await searchParams).page, await countNotificationLog());
   const [channels, log, libraries] = await Promise.all([
     listChannels(),
-    listNotificationLog(50),
+    listNotificationLog(limit, offset),
     libraryOptions(),
   ]);
 
@@ -69,7 +75,9 @@ export default async function AdminNotificationsPage() {
         libraries={libraries}
       />
 
-      <h2 className="section">{t('notifications.log')}</h2>
+      <h2 className="section" id="log">
+        {t('notifications.log')}
+      </h2>
       <p className="subtitle" style={{ marginTop: -8 }}>
         {t('notifications.logSubtitle')}
       </p>
@@ -108,6 +116,7 @@ export default async function AdminNotificationsPage() {
           </tbody>
         </table>
       </div>
+      <Pager page={page} pages={pages} hash="log" />
     </>
   );
 }

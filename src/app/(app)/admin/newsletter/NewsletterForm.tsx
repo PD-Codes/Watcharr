@@ -243,7 +243,7 @@ export default function NewsletterForm({
       </p>
 
       <div className="row" style={{ gap: 10, marginTop: 16 }}>
-        <button disabled={busy}>{t('action.save')}</button>
+        <button type="submit" disabled={busy}>{t('action.save')}</button>
         <button
           type="button"
           className="outlined"

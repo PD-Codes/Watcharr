@@ -119,6 +119,7 @@ const KINDS: RecentKind[] = ['page', 'title', 'library', 'user'];
 // A same-origin path only: the stored href goes straight into router.push, and storage can
 // be edited by anything running on this origin.
 // No `//host`, no `/\host` (browsers read a backslash as a slash), no control chars or spaces.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are exactly what this check refuses
 const isLocalPath = (href: string) => /^\/(?![/\\])[^\x00-\x20]*$/.test(href);
 
 /** Tolerant reader: anything that is not a well-formed entry is dropped, never thrown on. */

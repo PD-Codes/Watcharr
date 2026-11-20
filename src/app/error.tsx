@@ -8,7 +8,7 @@ import { useT } from '@/i18n/client';
  * that went away mid-request is the common one — drops the visitor onto the stock
  * Next.js error screen, outside this app's world and with no way back.
  */
-export default function Error({
+export default function ErrorPage({
   error,
   reset,
 }: {
@@ -29,7 +29,7 @@ export default function Error({
       <h1>{t('error.page.title')}</h1>
       <p>{t('error.page.body')}</p>
       <div className="actions">
-        <button onClick={reset}>{t('error.tryAgain')}</button>
+        <button type="button" onClick={reset}>{t('error.tryAgain')}</button>
         <a href="/">{t('error.backToDashboard')}</a>
       </div>
       {error.digest && (

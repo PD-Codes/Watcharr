@@ -1,0 +1,14 @@
+{
+  "data2.secret.missing": {
+    "en": "SESSION_SECRET is not set. Stored media server tokens are not protected; set one with openssl rand -hex 32 and restart.",
+    "de": "SESSION_SECRET ist nicht gesetzt. Gespeicherte Media-Server-Tokens sind nicht geschützt; mit openssl rand -hex 32 einen erzeugen und neu starten."
+  },
+  "data2.secret.placeholder": {
+    "en": "SESSION_SECRET is still the placeholder from .env.example. Anyone with a copy of the database can decrypt the stored tokens; replace it with the output of openssl rand -hex 32. Everyone has to sign in again afterwards.",
+    "de": "SESSION_SECRET ist noch der Platzhalter aus .env.example. Wer eine Kopie der Datenbank hat, kann die gespeicherten Tokens entschlüsseln; durch die Ausgabe von openssl rand -hex 32 ersetzen. Danach müssen sich alle neu anmelden."
+  },
+  "data2.secret.short": {
+    "en": "SESSION_SECRET is shorter than 32 characters and could be guessed. Replace it with the output of openssl rand -hex 32. Everyone has to sign in again afterwards.",
+    "de": "SESSION_SECRET ist kürzer als 32 Zeichen und ließe sich erraten. Durch die Ausgabe von openssl rand -hex 32 ersetzen. Danach müssen sich alle neu anmelden."
+  }
+}

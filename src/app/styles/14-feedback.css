@@ -1,0 +1,72 @@
+/* ============================================================
+   Empty states, inline alerts, server picker
+   ============================================================ */
+
+/* Text first, then at most one action. No illustration: the page is a tool, and a blank
+   chart is the answer "nothing yet", not an error to decorate. */
+.empty {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 12px;
+  min-height: 96px;
+  margin: 0;
+  padding: 18px 12px;
+  color: var(--text-dim);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.empty p {
+  margin: 0;
+}
+
+/* A failed action, said where the action was. role="alert" on the element announces it. */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--danger);
+  border-radius: var(--shape-sm);
+  background: var(--surface-container);
+  color: var(--text);
+  font-size: 13px;
+  transition: opacity var(--dur-medium) var(--ease-standard),
+    transform var(--dur-medium) var(--ease-emphasized);
+}
+
+@supports (color: color-mix(in srgb, red, blue)) {
+  .alert {
+    border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+    background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  }
+}
+
+/* Sign-in with more than one server: one full-width row per server. */
+.server-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.server-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-md);
+  background: var(--surface-container);
+  transition: background var(--dur-short) var(--ease-standard);
+}
+
+.server-choice:hover {
+  background: var(--surface-container-high);
+}
+
+.server-choice .muted {
+  font-size: 12px;
+}

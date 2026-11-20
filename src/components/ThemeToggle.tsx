@@ -40,6 +40,21 @@ export function revealTransition(apply: () => void, origin?: { x: number; y: num
   document.startViewTransition(apply);
 }
 
+/**
+ * Stores the choice on the account, so every device of this person follows it. Fire and
+ * forget: the scheme is already applied locally, and a refused write (signed out, or an
+ * admin previewing someone else) must not undo what the person just saw change.
+ */
+export function saveTheme(choice: Theme | 'system') {
+  void fetch('/api/profile/theme', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ theme: choice }),
+  }).catch(() => {
+    // Offline: localStorage still carries the choice for this browser.
+  });
+}
+
 /** Stamps the scheme on <html> and remembers it. Shared by the button and the `t` shortcut. */
 export function applyTheme(next: Theme, origin?: { x: number; y: number }) {
   try {
@@ -47,11 +62,25 @@ export function applyTheme(next: Theme, origin?: { x: number; y: number }) {
   } catch {
     // Private mode or a blocked origin: the choice just does not survive the tab.
   }
+  saveTheme(next);
   heading = next;
   revealTransition(() => {
     document.documentElement.dataset.theme = next;
     if (heading === next) heading = null;
   }, origin);
+}
+
+/** Back to prefers-color-scheme: no stamp, nothing remembered, nothing on the account. */
+export function followSystemTheme() {
+  try {
+    localStorage.removeItem(THEME_KEY);
+  } catch {
+    // Nothing stored that could be removed.
+  }
+  saveTheme('system');
+  revealTransition(() => {
+    delete document.documentElement.dataset.theme;
+  });
 }
 
 // <html data-theme> is the source of truth (the boot script in the root layout sets it

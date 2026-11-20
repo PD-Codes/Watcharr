@@ -561,6 +561,7 @@ export function validateCustomBadge(
   if (!name || name.length > 40) return { ok: false, error: 'Name is required (up to 40 characters)' };
   if (description.length > 120) return { ok: false, error: 'Description is too long (up to 120 characters)' };
   // Eight UTF-16 units fit any single emoji, including flags and skin tones.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are exactly what this check refuses
   if (icon.length > 8 || /[\u0000-\u001f<>&]/.test(icon)) return { ok: false, error: 'Icon must be one emoji' };
   if (!(CUSTOM_METRICS as readonly string[]).includes(metric)) return { ok: false, error: 'Unknown metric' };
   if (!(CUSTOM_FILTERS as readonly string[]).includes(filter)) return { ok: false, error: 'Unknown filter' };

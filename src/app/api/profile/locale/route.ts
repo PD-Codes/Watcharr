@@ -1,4 +1,5 @@
 import { getSession, setUserLocale } from '@/server/session';
+import { unauthorized } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +10,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: Request) {
   const session = await getSession();
-  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session) return unauthorized();
 
   const body = (await request.json().catch(() => null)) as { locale?: string | null } | null;
   // An unknown tag is stored as null, which means "follow the deployment default" — the

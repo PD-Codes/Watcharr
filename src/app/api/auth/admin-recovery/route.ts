@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { redeemRecoveryCode } from '@/server/adminrecovery';
 import { clientIp } from '@/server/ratelimit';
+import { apiError, badBody } from '@/server/apierror';
 
 /** Signs in as the global admin with the one-time code from the server console. */
 export async function POST(request: Request) {
@@ -10,9 +11,8 @@ export async function POST(request: Request) {
   const ip = clientIp(request);
   const result = await redeemRecoveryCode(body.code, { ip, userAgent: request.headers.get('user-agent') ?? undefined });
   if (result === 'ok') return NextResponse.json({ ok: true });
-  if (result === 'no-server') return NextResponse.json({ error: 'No media server configured', code: result }, { status: 409 });
-  return NextResponse.json(
-    { error: result === 'limited' ? 'Too many attempts' : 'Invalid code', code: result },
-    { status: result === 'limited' ? 429 : 401 },
-  );
+  if (result === 'no-server') return apiError(409, result, 'err.noServerConfigured');
+  return result === 'limited'
+    ? apiError(429, result, 'err.limited')
+    : apiError(401, result, 'err.invalidCode');
 }

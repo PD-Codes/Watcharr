@@ -100,10 +100,11 @@ jobs:
 
       # A broken release is expensive to withdraw, so the gate runs again here rather than
       # trusting that CI passed on this exact commit.
-      - name: Typecheck and tests
+      - name: Typecheck, lint and tests
         if: steps.check.outputs.publish == 'true'
         run: |
           npm run typecheck
+          npm run lint
           npm test
           npm run test:routes
 
@@ -129,6 +130,11 @@ jobs:
           platforms: ${{ steps.meta.outputs.platforms }}
           push: true
           provenance: false # keeps the package page readable on ghcr.io
+          # The Dockerfile has no copy of the Node version; pyproject.toml is the source.
+          # The build id feeds Next's deploymentId (cache busting, hard reload on a new version).
+          build-args: |
+            NODE_VERSION=${{ steps.meta.outputs.node }}
+            WATCHARR_BUILD_ID=${{ steps.meta.outputs.version }}-${{ github.sha }}
           # `latest` is deliberately absent for pre-releases.
           tags: |
             ${{ steps.meta.outputs.registry }}/${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
@@ -137,7 +143,7 @@ jobs:
             ${{ steps.meta.outputs.prerelease == 'false' && format('{0}/{1}:latest', steps.meta.outputs.registry, steps.meta.outputs.image) || '' }}
           labels: |
             org.opencontainers.image.title=Watcharr
-            org.opencontainers.image.description=Self-hosted companion app for a single Plex, Jellyfin or Emby server
+            org.opencontainers.image.description=Self-hosted companion app for one or more Plex, Jellyfin or Emby servers
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}

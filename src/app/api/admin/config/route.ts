@@ -1,16 +1,15 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { updateSettings } from '@/server/config';
 import { getSession } from '@/server/session';
+import { badBody, globalAdminRequired } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
 /** Deployment-wide settings. Server connection details live under /api/admin/servers. */
 export async function POST(request: Request) {
   const session = await getSession();
-  if (!session?.user.globalAdmin) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!session?.user.globalAdmin) return globalAdminRequired();
 
   const body = await readBody(request, {
     tmdbApiKey: 'string',

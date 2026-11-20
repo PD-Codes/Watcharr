@@ -1,0 +1,160 @@
+/* ============================================================
+   Auth and setup
+   ============================================================ */
+
+.center {
+  max-width: 400px;
+  margin: 13vh auto;
+  padding: 0 18px;
+}
+
+/* The sign-in and setup panels are cards, but .center (declared after .card) had zeroed the
+   vertical padding, so the heading sat on the top edge and the last control on the bottom. */
+.center.card {
+  padding: 26px 22px 28px;
+  box-shadow: var(--elev-1);
+}
+
+.center h1 {
+  margin-bottom: 4px;
+}
+
+/* ============================================================
+   Title detail, episodes and wrapped
+   ============================================================ */
+
+.title-head {
+  display: flex;
+  gap: 22px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 26px;
+}
+
+.title-head .poster {
+  width: 124px;
+  flex: 0 0 124px;
+}
+
+/* The text block takes what is left of the row. Sized by its content it asked for the width
+   of its widest chip row and wrapped under the poster on a phone. */
+.title-head > :not(.poster) {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.back-link:hover {
+  color: var(--text);
+}
+
+.back-link svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+/* One episode: a row that is entirely a link, so it works with a thumb. */
+.episode-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 48px;
+  padding: 8px 10px;
+  border-radius: var(--shape-sm);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.episode-row:last-child {
+  border-bottom: 0;
+}
+
+.episode-row:hover {
+  background: var(--state-hover);
+}
+
+.episode-row .ep-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.episode-row .ep-meta {
+  font-family: var(--font-mono-stack);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.wrapped-hero {
+  text-align: center;
+  padding: 40px 0 30px;
+}
+
+.wrapped-hero .year {
+  font-family: var(--font-display-stack);
+  font-variation-settings: 'wdth' 125;
+  font-size: clamp(56px, 13vw, 132px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 0.85;
+  margin: 0;
+  color: var(--text);
+}
+
+.wrapped-hero h2 {
+  margin: 14px 0 0;
+}
+
+.wrapped-hero .subtitle {
+  margin: 8px auto 0;
+}
+
+.wrapped-hero .chips {
+  justify-content: center;
+  margin-top: 22px;
+}
+
+.wrapped-rank {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  min-height: 52px;
+  padding: 9px 8px;
+  border-radius: var(--shape-sm);
+  border-bottom: 1px solid var(--line);
+}
+
+.wrapped-rank:last-child {
+  border-bottom: 0;
+}
+
+.wrapped-rank:hover {
+  background: var(--state-hover);
+}
+
+.wrapped-rank .rank {
+  font-family: var(--font-mono-stack);
+  font-size: 15px;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+/* The leader is brighter, not amber: a rank is a position, not a reading off the server. */
+.wrapped-rank:first-child .rank {
+  color: var(--text);
+}

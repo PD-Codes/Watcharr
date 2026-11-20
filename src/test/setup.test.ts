@@ -42,7 +42,8 @@ async function main() {
   assert.equal(await checkSetupToken('WRONG-TOKEN', 'ip-a'), 'invalid');
   assert.equal(await checkSetupToken(token.toLowerCase().replace('-', ' '), 'ip-b'), 'valid');
   for (let i = 0; i < 8; i += 1) await checkSetupToken('NOPE-NOPE', 'ip-c');
-  assert.equal(await checkSetupToken(token, 'ip-c'), 'limited', 'guessing is throttled even for the right token');
+  assert.equal(await checkSetupToken('NOPE-NOPE', 'ip-c'), 'limited', 'guessing is throttled');
+  assert.equal(await checkSetupToken(token, 'ip-c'), 'valid', 'but the right token is compared first and gets through');
 
   // Two admins signing in at once: exactly one becomes the global admin.
   const rows = await db

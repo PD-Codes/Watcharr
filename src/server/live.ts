@@ -26,7 +26,7 @@ import { liveSessionFilter, syncActivity } from './sync';
  *     holding a dead connection open is the classic case — must not be the only thing
  *     standing between the app and its data.
  *
- * ponytail: in-process, one container, no coordination. Two app instances would each open
+ * Trade-off: in-process, one container, no coordination. Two app instances would each open
  * their own socket and each run the sync; that is the same assumption the throttle in
  * sync.ts already makes.
  */

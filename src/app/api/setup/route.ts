@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { createAdapter, SERVER_TYPES, type ServerType } from '@/server/adapters';
 import { createFirstServer, isConfigured, listServers, updateSettings } from '@/server/config';
 import { clientIp } from '@/server/ratelimit';
 import { getRealSession } from '@/server/session';
 import { checkSetupToken, setupTokenPending } from '@/server/setuptoken';
+import { apiError, badBody, globalAdminRequired, withApiErrors } from '@/server/apierror';
 
 export async function GET() {
   const servers = await listServers();
@@ -18,9 +19,9 @@ export async function GET() {
  * First-run setup for the first server. Refuses to run again once one exists — further
  * servers are added from the admin area, which requires a global admin.
  */
-export async function POST(request: Request) {
+export const POST = withApiErrors(async (request: Request) => {
   if (await isConfigured()) {
-    return NextResponse.json({ error: 'Already configured' }, { status: 409 });
+    return apiError(409, 'already-configured', 'err.alreadyConfigured');
   }
 
   const body = await readBody(request, {
@@ -40,27 +41,28 @@ export async function POST(request: Request) {
   if (await setupTokenPending()) {
     const check = await checkSetupToken(body.setupToken, clientIp(request));
     if (check !== 'valid') {
-      return NextResponse.json(
-        { error: check === 'limited' ? 'Too many attempts, try again later' : 'The setup token from the server log is required', code: 'setup-token' },
-        { status: check === 'limited' ? 429 : 401 },
+      return apiError(
+        check === 'limited' ? 429 : 401,
+        'setup-token',
+        check === 'limited' ? 'err.limited' : 'err.setupTokenRequired',
       );
     }
   } else if (!(await getRealSession())?.user.globalAdmin) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
+    return globalAdminRequired();
   }
 
   if (!body.serverType || !SERVER_TYPES.includes(body.serverType as ServerType)) {
-    return NextResponse.json({ error: 'Invalid server type' }, { status: 400 });
+    return apiError(400, 'invalid-server-type', 'err.invalidServerType');
   }
   if (!body.serverUrl?.startsWith('http') || !body.serverToken) {
-    return NextResponse.json({ error: 'Server URL and token are required' }, { status: 400 });
+    return apiError(400, 'missing-fields', 'err.serverFieldsRequired');
   }
 
   const serverType = body.serverType as ServerType;
   const adapter = createAdapter(serverType, body.serverUrl, body.serverToken);
   const health = await adapter.ping();
   if (!health.ok) {
-    return NextResponse.json({ error: 'Could not reach the media server' }, { status: 400 });
+    return apiError(400, 'server-unreachable', 'err.serverUnreachable');
   }
 
   const created = createFirstServer({
@@ -71,7 +73,7 @@ export async function POST(request: Request) {
     label: body.label ?? undefined,
   });
   // Someone else finished setup while the media server was being pinged.
-  if (!created) return NextResponse.json({ error: 'Already configured' }, { status: 409 });
+  if (!created) return apiError(409, 'already-configured', 'err.alreadyConfigured');
   if (body.tmdbApiKey) await updateSettings({ tmdbApiKey: body.tmdbApiKey });
   return NextResponse.json({ ok: true, serverName: health.serverName });
-}
+});

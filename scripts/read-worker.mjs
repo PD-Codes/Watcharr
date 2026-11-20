@@ -24,7 +24,15 @@ function prepare(sql) {
   return statement;
 }
 
-parentPort.on('message', ({ id, sql, params }) => {
+parentPort.on('message', ({ id, sql, params, close }) => {
+  // Asked to stop (shutdown, tests): close the connection ourselves so the main one is the last
+  // on the file when it checkpoints, then let the thread run out.
+  if (close) {
+    statements.clear();
+    db.close();
+    parentPort.close();
+    return;
+  }
   try {
     const started = performance.now();
     const rows = prepare(sql).all(...params);

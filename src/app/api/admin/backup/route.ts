@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { NextResponse } from 'next/server';
-import { backupTo } from '@/db';
+import { backupTo, InsufficientSpaceError } from '@/db';
 import { backupPath } from '@/server/backups';
 import { getSession } from '@/server/session';
+import { apiError, globalAdminRequired } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,15 +18,13 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session?.user.globalAdmin) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!session?.user.globalAdmin) return globalAdminRequired();
 
   // ?name= serves a stored backup as it is; without it, a fresh snapshot is taken.
   const name = new URL(request.url).searchParams.get('name');
   if (name) {
     const path = await backupPath(name);
-    if (!path) return NextResponse.json({ error: 'No such backup' }, { status: 404 });
+    if (!path) return apiError(404, 'backup-not-found', 'err.backupNotFound');
     return new NextResponse(Readable.toWeb(createReadStream(path)) as unknown as ReadableStream, {
       headers: {
         'Content-Type': 'application/vnd.sqlite3',
@@ -55,6 +54,11 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     await cleanup();
+    // backupTo checks the temp folder first: a snapshot that fills /tmp (often the same volume
+    // as the data) would take the live database down with it. Said plainly, not as a 500.
+    if (error instanceof InsufficientSpaceError) {
+      return apiError(507, 'insufficient-space', 'err.actionFailed', { message: error.message });
+    }
     throw error;
   }
 }

@@ -1,0 +1,30 @@
+{
+  "fix2.doctor.plexPlain": {
+    "en": "Plex connection",
+    "de": "Plex-Verbindung"
+  },
+  "fix2.doctor.plexPlain.ok": {
+    "en": "Plex is reached through its configured address.",
+    "de": "Plex wird über die eingetragene Adresse erreicht."
+  },
+  "fix2.doctor.plexPlain.warn": {
+    "en": "The configured address does not answer from here, so Plex is reached over unencrypted HTTP at a bare LAN address: {routes}. This is what a router without NAT loopback and with DNS rebind protection leaves as the only way in. It works, but the Plex admin token travels the local network unencrypted. Allow NAT loopback (hairpin NAT) or an exception for plex.direct in the router's DNS rebind protection, or enter the server's LAN plex.direct address.",
+    "de": "Die eingetragene Adresse antwortet von hier aus nicht, deshalb wird Plex unverschlüsselt per HTTP über eine nackte LAN-Adresse erreicht: {routes}. Das bleibt als einziger Weg, wenn der Router kein NAT-Loopback kann und einen DNS-Rebind-Schutz hat. Es funktioniert, aber der Plex-Admin-Token läuft dabei unverschlüsselt durchs lokale Netz. Abhilfe: NAT-Loopback (Hairpin-NAT) im Router erlauben, plex.direct im DNS-Rebind-Schutz freigeben oder die LAN-plex.direct-Adresse des Servers eintragen."
+  },
+  "fix2.libraries.typeMixed": {
+    "en": "Movies & series",
+    "de": "Filme & Serien"
+  },
+  "fix2.qc.ownCodeOnly": {
+    "en": "Enter this code only yourself, and only because you see it on this page. Never approve a code somebody sent you: it would sign them in as you.",
+    "de": "Gib diesen Code nur selbst ein, und nur, weil du ihn auf dieser Seite siehst. Bestätige nie einen Code, den dir jemand geschickt hat: Damit würdest du diese Person als dich anmelden."
+  },
+  "fix2.newsletter.notForYou": {
+    "en": "This issue also covers libraries you do not have access to, so it cannot be shown here. The copy you received by email contains everything that is meant for you.",
+    "de": "Diese Ausgabe enthält auch Bibliotheken, auf die du keinen Zugriff hast, deshalb kann sie hier nicht angezeigt werden. Die Ausgabe, die du per E-Mail bekommen hast, enthält alles, was für dich bestimmt ist."
+  },
+  "fix2.backups.kindPreUpgrade": {
+    "en": "Before an update",
+    "de": "Vor Update"
+  }
+}

@@ -1,21 +1,15 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { updateSettings } from '@/server/config';
 import { sendNewsletter } from '@/server/newsletter';
-import { getSession } from '@/server/session';
+import { getGlobalAdminSession } from '@/server/session';
+import { apiError, badBody, globalAdminRequired, withApiErrors } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
-async function requireGlobal() {
-  const session = await getSession();
-  return session?.user.globalAdmin ? session : null;
-}
-
 /** Newsletter configuration. Subscriptions are the users' own, see /api/newsletter. */
-export async function POST(request: Request) {
-  if (!(await requireGlobal())) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+export const POST = withApiErrors(async (request: Request) => {
+  if (!(await getGlobalAdminSession())) return globalAdminRequired();
 
   const body = await readBody(request, {
     enabled: 'boolean',
@@ -45,9 +39,10 @@ export async function POST(request: Request) {
 
   if (body.sendNow) {
     const result = await sendNewsletter();
-    return NextResponse.json(
-      result.ok ? { ok: true, sent: result.sent } : { error: result.error ?? 'Could not send' },
-    );
+    // 200 either way, as before: the settings were saved, only the send failed.
+    return result.ok
+      ? NextResponse.json({ ok: true, sent: result.sent })
+      : apiError(200, 'send-failed', 'err.sendFailed', { message: result.error });
   }
   return NextResponse.json({ ok: true });
-}
+});

@@ -13,12 +13,18 @@ import { globalState } from './state';
 // can read the console (or the container log) can do that — which is the same person who can
 // already restart the app, and the point.
 //
-// ponytail: the token lives in memory only. A restart prints a fresh one, which is exactly
+// Trade-off: the token lives in memory only. A restart prints a fresh one, which is exactly
 // when a lost log line matters; nothing is written to disk.
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
 const LENGTH = 8;
 const FAILURES = 8;
+// Across all addresses. The per-address limit trusts X-Forwarded-For, which a client can
+// write freely when no reverse proxy is in front; this one does not depend on it. 50 wrong
+// guesses per window against a 32^8 token is still nothing, and a real admin who is locked
+// out for a moment by somebody else's guessing only has to wait the window out.
+const GLOBAL_FAILURES = 50;
+const GLOBAL_KEY = 'setup-token:*';
 const WINDOW_MS = 10 * 60_000;
 
 const state = globalState('setupToken', () => ({ token: null as string | null }));
@@ -61,19 +67,23 @@ export async function announceSetupToken(): Promise<void> {
 export type TokenCheck = 'none' | 'valid' | 'invalid' | 'limited';
 
 /**
- * 'none' = nothing to check (no input, or an admin already exists). Only wrong guesses count
- * toward the limit, so a correct token is never turned away by the poll loop of a Plex login.
+ * 'none' = nothing to check (no input, or an admin already exists). The token is compared
+ * first, so the right one always gets through: the limits only slow down guessing, and with
+ * the global one checked before the comparison, anybody could lock the real admin out of
+ * setup by sending 50 wrong guesses per window. Only wrong guesses count, so a correct token
+ * is never turned away by the poll loop of a Plex login either.
  */
 export async function checkSetupToken(input: string | null | undefined, ip: string): Promise<TokenCheck> {
   const given = normalize(input ?? '');
   if (!given || !(await setupTokenPending())) return 'none';
-  const key = `setup-token:${ip}`;
-  if (isRateLimited(key, FAILURES)) return 'limited';
   await announceSetupToken();
   const a = Buffer.from(given);
   const b = Buffer.from(state.token ?? '');
   if (a.length === b.length && b.length > 0 && timingSafeEqual(a, b)) return 'valid';
+  const key = `setup-token:${ip}`;
+  if (isRateLimited(key, FAILURES) || isRateLimited(GLOBAL_KEY, GLOBAL_FAILURES)) return 'limited';
   rateLimit(key, FAILURES, WINDOW_MS);
+  rateLimit(GLOBAL_KEY, GLOBAL_FAILURES, WINDOW_MS);
   return 'invalid';
 }
 

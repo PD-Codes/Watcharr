@@ -63,7 +63,7 @@ export default function SetupForm() {
           {t('setup.tmdbKey')}
           <input name="tmdbApiKey" type="password" />
         </label>
-        <button disabled={busy}>{t('setup.submit')}</button>
+        <button type="submit" disabled={busy}>{t('setup.submit')}</button>
         {error && <p className="error">{error}</p>}
       </form>
     </div>

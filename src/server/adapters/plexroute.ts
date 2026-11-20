@@ -12,6 +12,7 @@
  * The route found is process memory only: a restart pays one timeout and finds it again.
  * No 'server-only' import: pure apart from fetch and the clock, so the tests import it.
  */
+import { isIP } from 'node:net';
 import { globalState } from '../state';
 import { clearStrained } from '../strain';
 
@@ -76,6 +77,23 @@ export function isUnreachable(error: unknown): boolean {
 const PLEX_DIRECT = /\.([0-9a-f]{32})\.plex\.direct$/i;
 
 /**
+ * The detour in use when it is plain http to a bare IP address, else null: what a router
+ * without NAT loopback and with DNS rebind protection leaves as the only way in. The admin
+ * token then crosses the network unencrypted, which the system check reports. A configured URL
+ * that is itself plain http is the admin's own choice and not reported here.
+ */
+export function plainLanRoute(configuredUrl: string): string | null {
+  const url = plexRoute(configuredUrl);
+  if (url === norm(configuredUrl)) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' && isIP(parsed.hostname.replace(/^\[|\]$/g, '')) !== 0 ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Which of the account's servers the configured URL means, and every URL worth trying for
  * it, best first. Pure, so the ordering is testable.
  */
@@ -116,13 +134,20 @@ export function routeCandidates(
   const server = servers.find(matches) ?? (owned.length === 1 ? owned[0] : undefined);
   if (!server?.clientIdentifier) return null;
 
+  // Configured URL first, then the LAN (its plex.direct name, then the bare address), public,
+  // relay last. Every candidate is confirmed through /identity (machine id, no token) before a
+  // request with the admin token goes there.
+  //
+  // Plain http to a bare LAN address is kept on purpose, whatever the configured URL looks like:
+  // the case this module exists for is an https plex.direct URL without NAT loopback, and many
+  // routers (Fritz!Box among them) refuse DNS answers that point at a private address, so the
+  // LAN plex.direct name does not resolve either. Without the bare address that setup has no
+  // way in at all. The price, the admin token crossing the LAN unencrypted, is made visible in
+  // the system check (plainLanRoute below) instead of locking the deployment out.
   const rank = (c: PlexConnection) => (c.relay ? 4 : c.IPv6 ? 3 : c.local ? 0 : 2);
   const urls: string[] = [norm(configuredUrl)];
   for (const c of [...(server.connections ?? [])].sort((a, b) => rank(a) - rank(b))) {
     if (c.uri) urls.push(norm(c.uri));
-    // Many routers (Fritz!Box among them) refuse DNS answers that point at a private address,
-    // so a LAN plex.direct name may not even resolve. The bare address works whenever Plex
-    // allows plain connections on the LAN, which is its default.
     if (c.local && !c.relay && c.address && c.port) {
       const address = c.IPv6 ? `[${c.address}]` : c.address;
       urls.push(`http://${address}:${c.port}`);

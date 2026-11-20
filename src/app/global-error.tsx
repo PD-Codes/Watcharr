@@ -47,7 +47,7 @@ export default function GlobalError({
             The application shell failed to render. Check that the database file is readable
             and that SESSION_SECRET is set, then try again.
           </p>
-          <button
+          <button type="button"
             onClick={reset}
             style={{
               padding: '9px 16px',

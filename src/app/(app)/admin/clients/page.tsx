@@ -1,6 +1,11 @@
+import Link from 'next/link';
 import { BarChart, DonutChart, StatCard } from '@/components/Charts';
+import Pager, { pageOf } from '@/components/Pager';
+import Tabs, { activeTab, type TabDef } from '@/components/Tabs';
 import { firstParam, formatDuration, formatMinutes } from '@/components/format';
 import {
+  countClientsPerDevice,
+  countClientsPerUser,
   getClientSessions,
   getClientWatchtime,
   getClientsPerDevice,
@@ -13,27 +18,42 @@ import type { Translate } from '@/i18n';
 
 export const dynamic = 'force-dynamic';
 
+const PERIODS = ['7', '30', '90', 'all'] as const;
+
 export default async function AdminClientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string | string[] }>;
+  searchParams: Promise<{ days?: string | string[]; tab?: string | string[]; page?: string | string[] }>;
 }) {
   const session = await requireAdmin();
   const t = await getT();
-  const requested = firstParam((await searchParams).days);
-  // Whitelisted against the period select; `abc` would be NaN, which `since()` reads as all time.
-  const raw = requested === 'all' || ['7', '30', '90'].includes(requested ?? '') ? requested : '30';
+  const params = await searchParams;
+  const requested = firstParam(params.days);
+  // Whitelisted against the period bar; `abc` would be NaN, which `since()` reads as all time.
+  const raw = PERIODS.find((period) => period === requested) ?? '30';
   const days = raw === 'all' ? undefined : Number(raw);
   // A server admin only sees their own server's streams, like every other admin page.
   const scope = adminScope(session.user);
 
-  const [totals, sessions, watchtime, perUser, perDevice] = await Promise.all([
+  // One table at a time behind tabs: two paged tables on one page would need two page
+  // parameters and still push the second one below the fold.
+  const TABS: TabDef[] = [
+    { key: 'user', label: t('clients.perUser') },
+    { key: 'device', label: t('clients.perDevice') },
+  ];
+  const tab = activeTab(TABS, firstParam(params.tab));
+  const perDevice = tab === 'device';
+
+  const [totals, sessions, watchtime, total] = await Promise.all([
     getPlaybackTotals(days, scope),
     getClientSessions(days, scope),
     getClientWatchtime(days, scope),
-    getClientsPerUser(days, scope),
-    getClientsPerDevice(days, scope),
+    perDevice ? countClientsPerDevice(days, scope) : countClientsPerUser(days, scope),
   ]);
+  const { page, pages, offset, limit } = pageOf(params.page, total);
+  const rows = await (perDevice
+    ? getClientsPerDevice(days, scope, limit, offset)
+    : getClientsPerUser(days, scope, limit, offset));
 
   return (
     <>
@@ -41,18 +61,18 @@ export default async function AdminClientsPage({
       <h1>{t('clients.title')}</h1>
       <p className="subtitle">{t('clients.subtitle')}</p>
 
-      <form className="filters">
-        <label>
-          {t('serverstats.period')}
-          <select name="days" defaultValue={raw}>
-            <option value="7">{t('serverstats.last7')}</option>
-            <option value="30">{t('serverstats.last30')}</option>
-            <option value="90">{t('serverstats.last90')}</option>
-            <option value="all">{t('common.allTime')}</option>
-          </select>
-        </label>
-        <button>{t('action.apply')}</button>
-      </form>
+      <div className="seg" style={{ marginBottom: 22 }}>
+        {PERIODS.map((period) => (
+          <Link
+            key={period}
+            href={`/admin/clients?days=${period}&tab=${tab}`}
+            className={raw === period ? 'on' : undefined}
+            aria-current={raw === period ? 'true' : undefined}
+          >
+            {period === 'all' ? t('common.allTime') : t('common.days', { count: Number(period) })}
+          </Link>
+        ))}
+      </div>
 
       <div className="grid cols-4">
         <StatCard label={t('clients.totalSessions')} value={String(totals.sessions)} />
@@ -87,14 +107,18 @@ export default async function AdminClientsPage({
         </section>
       </div>
 
-      <section className="section">
-        <h2>{t('clients.perUser')}</h2>
-        <UsageTable rows={perUser} firstColumn={t('common.user')} t={t} />
-      </section>
-
-      <section className="section">
-        <h2>{t('clients.perDevice')}</h2>
-        <UsageTable rows={perDevice} firstColumn={t('common.device')} t={t} />
+      <section className="section" id="usage">
+        <Tabs
+          tabs={TABS}
+          current={tab}
+          hrefFor={(key) => `/admin/clients?days=${raw}&tab=${key}#usage`}
+        />
+        <UsageTable
+          rows={rows}
+          firstColumn={perDevice ? t('common.device') : t('common.user')}
+          t={t}
+        />
+        <Pager page={page} pages={pages} params={{ days: raw, tab }} hash="usage" />
       </section>
     </>
   );

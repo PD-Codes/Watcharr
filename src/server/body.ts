@@ -49,5 +49,3 @@ export async function readBody<S extends Record<string, keyof Values>>(
   }
   return body as { [K in keyof S]?: Values[S[K]] | null };
 }
-
-export const badBody = () => Response.json({ error: 'Invalid request body' }, { status: 400 });

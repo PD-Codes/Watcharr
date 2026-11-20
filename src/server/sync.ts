@@ -17,10 +17,11 @@ import { cachedLibrary, cachedSectionName, getLibrary, resolveSectionKey, warmLi
 import { artworkCoverage, prefetchTitleMeta } from './tmdb';
 import { revokeSession, type Session } from './session';
 import { notify } from './notifications';
-import { ensureUsers } from './userroster';
+import { ensureUsers, loadRoster } from './userroster';
 import { globalState } from './state';
 import { singleFlight, timed } from './jobs';
 import { isStrained } from './strain';
+import { sameWatchlistTitle } from './watchlistmatch';
 
 /** TMDB is throttled like a media server when it answers 429. */
 const TMDB_URL = 'https://api.themoviedb.org';
@@ -75,7 +76,7 @@ export function reportSyncError(what: string) {
   };
 }
 
-// ponytail: in-process throttle instead of a job scheduler. One app container is the
+// Trade-off: in-process throttle instead of a job scheduler. One app container is the
 // documented deployment; move to a queue if the app is ever scaled out.
 const lastRun = state.lastRun;
 
@@ -119,10 +120,27 @@ export async function syncHistory(session: Session) {
 async function pullHistory(session: Session) {
   const user = session.user;
   const userId = user.id;
+  // Where the last run for this user got to. lastServerPlayAt() alone cannot be the cursor:
+  // a play the server reports that is already stored from a session or the Tautulli import is
+  // dropped as a near-duplicate and never becomes a 'server' row, and after an import that is
+  // the whole history — every run would start from the beginning again, and with `more` set,
+  // never finish. Process memory is enough: after a restart one walk catches up.
+  const cursors = globalState('historyCursor', () => new Map<number, number>());
+  /** A follow-up run when the server had more than one call may carry; see HistoryPage. */
+  const FOLLOW_UP_MS = 2_000;
+
+  // Plays older than the history retention would only be deleted again at the next prune:
+  // once a user's last kept play is gone, the media server hands back its whole recent list,
+  // and without this every prune was followed by the same plays coming back. Asked for from
+  // there on directly, so a long history past the retention is not paged through for nothing.
+  const { retentionHistoryDays } = await getSettings();
+  const keepFrom = retentionHistoryDays ? Date.now() - retentionHistoryDays * 86_400_000 : 0;
+  const sinceMs = Math.max((await lastServerPlayAt(userId))?.getTime() ?? 0, cursors.get(userId) ?? 0, keepFrom);
+  const since = sinceMs ? new Date(sinceMs) : undefined;
 
   const adapter = await getAdapter(user.serverId);
-  const entries = await adapter
-    .getHistory(session.serverToken, user.serverUserId, await lastServerPlayAt(userId), user.username)
+  const { entries, more } = await adapter
+    .getHistory(session.serverToken, user.serverUserId, since, user.username)
     .catch(async (error: unknown) => {
       // A 401 for a user token is not transient: the media server dropped it (a restart,
       // a password change, a purged device) and it will never work again. The token lives
@@ -133,19 +151,45 @@ async function pullHistory(session: Session) {
       if (isUnauthorized(error)) await revokeSession(session.id).catch(() => {});
       throw error;
     });
-  if (!entries.length) return;
+  if (!entries.length) {
+    // "More to come" with nothing in this batch would make no progress, and the cursor cannot
+    // move either; said out loud instead of silently asking the same thing on every sync.
+    // Once per user until a batch arrives again: the regular sync asks every minute.
+    const warned = globalState('historyStuckWarned', () => new Set<number>());
+    if (more && !warned.has(userId)) {
+      warned.add(userId);
+      console.warn(
+        `[watcharr] history sync for ${user.username}: the media server reports more history but sent ` +
+          'none newer than the last stored play; nothing to continue from until it does',
+      );
+    }
+    return;
+  }
 
-  // Plays older than the history retention would only be deleted again at the next prune:
-  // once a user's last kept play is gone, the media server hands back its whole recent list,
-  // and without this every prune was followed by the same plays coming back.
-  const { retentionHistoryDays } = await getSettings();
-  const keepFrom = retentionHistoryDays ? Date.now() - retentionHistoryDays * 86_400_000 : 0;
+  globalState('historyStuckWarned', () => new Set<number>()).delete(userId);
   const kept = keepFrom ? entries.filter((entry) => entry.watchedAt.getTime() >= keepFrom) : entries;
-  if (!kept.length) return;
-
   // Through recordPlays() rather than a direct insert: sessions that finished here write
   // to the same table, and the unique index cannot tell two views of one play apart.
-  await recordPlays(userId, kept, 'server');
+  if (kept.length) await recordPlays(userId, kept, 'server');
+
+  // Only after the write: a failed one leaves the cursor where it was, and the next run asks
+  // for the same plays again.
+  const newest = entries.reduce((max, entry) => Math.max(max, entry.watchedAt.getTime()), 0);
+  if (!(newest > sinceMs)) return; // no progress: never chain a run that would ask the same
+  cursors.set(userId, newest);
+  if (!more) return;
+
+  // The rest of a long history, right after this run instead of a minute later at the next
+  // page view. Errors end the chain (reported once, like any background sync); the next
+  // regular sync picks up from the cursor. The chain ends by itself: every link advances the
+  // cursor or stops, and a server paused for load is left alone.
+  setTimeout(() => {
+    void (async () => {
+      const server = await getServer(user.serverId);
+      if (!server || isStrained(serverRoute(server.serverType, server.serverUrl))) return;
+      await singleFlight(`history:${userId}`, () => timed(`history sync for ${user.username}`, () => pullHistory(session)));
+    })().catch(reportSyncError('history sync'));
+  }, FOLLOW_UP_MS).unref?.();
 }
 
 /**
@@ -203,7 +247,7 @@ async function runActivity() {
     // One unreachable server must not stop the others from being polled.
     await syncServerActivity(server).catch((error: unknown) => {
       downUntil.set(server.id, Date.now() + DOWN_BACKOFF_MS);
-      // ponytail: reachability is remembered in process memory, so a restart can repeat a
+      // Trade-off: reachability is remembered in process memory, so a restart can repeat a
       // server.down notification. A column would survive restarts; not worth one yet.
       if (reachable.get(server.id) !== false) {
         reachable.set(server.id, false);
@@ -242,7 +286,10 @@ async function housekeeping() {
   // Artwork for the poster grids is filled here rather than while a page renders: a grid
   // of two dozen tiles would otherwise fire two dozen TMDB searches on its first view.
   if (!isStrained(TMDB_URL) && !throttled('tmdb', 10 * 60_000)) {
-    const looked = await prefetchArtwork().catch((e: unknown) => (reportSyncError('TMDB prefetch')(e), 0));
+    const looked = await prefetchArtwork().catch((e: unknown) => {
+      reportSyncError('TMDB prefetch')(e);
+      return 0;
+    });
     // While there is a backlog (a fresh install has the whole library to fetch), come back in
     // a minute instead of ten: 25 titles per ten minutes would take a day for a large library.
     if (looked > 0) lastRun.set('tmdb', Date.now() - 9 * 60_000);
@@ -251,6 +298,8 @@ async function housekeeping() {
   // database: one title page went from 5 ms to 450 ms on a million plays. Cheap when current.
   if (!throttled('optimize', 6 * 3_600_000)) {
     try {
+      // Sampled (see scripts/migrate.mjs): a full pass over a large index blocks the thread.
+      db.run(sql`PRAGMA analysis_limit = 1000`);
       db.run(sql`PRAGMA optimize(0x10002)`);
     } catch (e: unknown) {
       reportSyncError('database optimize')(e);
@@ -265,7 +314,8 @@ async function housekeeping() {
 /** Pulls the media server's user list and creates the accounts that are missing. */
 async function syncRoster(server: ServerRow) {
   const adapter = createAdapter(server.serverType as ServerType, server.serverUrl, server.serverToken);
-  await ensureUsers(server.id, await adapter.listUsers());
+  const roster = await loadRoster(adapter);
+  await ensureUsers(server.id, roster.users, { fullRoster: roster.complete });
 }
 
 /**
@@ -726,10 +776,21 @@ async function pullWatchlist(session: Session) {
   });
   if (!entries.length) return;
 
+  // A title added here goes to plex.tv under its local library id (api/watchlist pushes it) and
+  // comes back from plex.tv under its global id: two ids, one title. The unique index only knows
+  // ids, so without this every title added in Watcharr would turn up twice after the next pull.
+  const existing = await db
+    .select({ itemId: watchlist.itemId, title: watchlist.title, year: watchlist.year, mediaType: watchlist.mediaType })
+    .from(watchlist)
+    .where(eq(watchlist.userId, userId));
+  // Same title and year, or same title and kind where a year is missing: see sameWatchlistTitle.
+  const fresh = entries.filter((e) => !existing.some((row) => row.itemId === e.itemId || sameWatchlistTitle(row, e)));
+  if (!fresh.length) return;
+
   await db
     .insert(watchlist)
     .values(
-      entries.map((e) => ({
+      fresh.map((e) => ({
         userId,
         itemId: e.itemId,
         title: e.title,

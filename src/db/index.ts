@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { mkdirSync, readdirSync } from 'node:fs';
+import { rename, rm, statfs } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import * as schema from './schema';
 import { readerCount, startReaders, stopReaders } from './readers';
@@ -57,8 +58,9 @@ function warnAboutPendingMigrations(sqlite: Database.Database) {
  * which would look like the bug this fixes.
  */
 // The zone the process started with (the container's TZ), restored when the setting is cleared.
-const startupTz = ((globalThis as { __watcharrStartTz?: string | null }).__watcharrStartTz ??=
-  process.env.TZ ?? null);
+const startTzHolder = globalThis as { __watcharrStartTz?: string | null };
+startTzHolder.__watcharrStartTz ??= process.env.TZ ?? null;
+const startupTz = startTzHolder.__watcharrStartTz;
 
 export function applyTimezone(zone: string | null | undefined): boolean {
   if (!zone) return false;
@@ -158,17 +160,33 @@ export const dbInfo = (): DbInfo =>
 
 export const db = drizzle(sqlite, { schema });
 
-// Closing the last connection checkpoints the WAL, so a stop leaves one clean file instead of a
-// -wal/-shm pair the next start has to recover (Next calls process.exit on SIGTERM, which lands here).
+// A stop should leave one clean file instead of a -wal/-shm pair the next start has to recover
+// (Next calls process.exit on SIGTERM, which lands here). Closing checkpoints only when this is
+// the last connection, and the reader threads may still hold theirs — the SIGTERM handler in
+// instrumentation-node.ts stops them first, but any other exit gets here with them running.
+// So the checkpoint is explicit: TRUNCATE needs no other connection gone, only none of them in
+// the middle of a read, and leaves an empty WAL even when the close cannot remove it.
 if (!(globalThis as { dbExitHook?: boolean }).dbExitHook) {
   (globalThis as { dbExitHook?: boolean }).dbExitHook = true;
-  process.once('exit', () => {
-    try {
-      sqlite.close();
-    } catch {
-      // Already closed (tests) or never opened: nothing left to checkpoint.
-    }
-  });
+  process.once('exit', () => closeForExit(sqlite));
+}
+
+/** Checkpoint and close, never throwing: an exit hook has nobody to report to. */
+export function closeForExit(connection: Database.Database): void {
+  try {
+    if (!connection.open) return;
+    // Short: a reader in the middle of a query holds the WAL, and the default five seconds
+    // would stretch every stop by that long for a checkpoint the next start does anyway.
+    connection.pragma('busy_timeout = 250');
+    connection.pragma('wal_checkpoint(TRUNCATE)');
+  } catch {
+    // Busy or not in WAL mode: closing still leaves a consistent database.
+  }
+  try {
+    connection.close();
+  } catch {
+    // Already closed (tests): nothing left to checkpoint.
+  }
 }
 
 /** Closes the connection so the database file can be removed (used by the tests). */
@@ -177,16 +195,61 @@ export function closeDb() {
   sqlite.close();
 }
 
+/** Thrown when the target folder has no room for a snapshot; the caller says so instead of a 500. */
+export class InsufficientSpaceError extends Error {
+  constructor(
+    readonly neededBytes: number,
+    readonly freeBytes: number,
+  ) {
+    super(
+      `Not enough free disk space for a backup: ${Math.round(freeBytes / 1024 ** 2)} MB free, ` +
+        `about ${Math.round(neededBytes / 1024 ** 2)} MB needed`,
+    );
+    this.name = 'InsufficientSpaceError';
+  }
+}
+
+/** Suffix of a snapshot that is still being written. Never counted as a backup. */
+export const PARTIAL_SUFFIX = '.partial';
+
+/** Size of the database's pages — what a snapshot of it will roughly take. */
+export function databaseBytes(): number {
+  return Number(sqlite.pragma('page_count', { simple: true })) * Number(sqlite.pragma('page_size', { simple: true }));
+}
+
+/**
+ * Refuses when the folder cannot take a snapshot with some room to spare: a backup that fills
+ * the volume takes the live database down with it, because that is the file that then cannot
+ * grow. An unknown free space (statfs unsupported) is not a reason to refuse.
+ */
+export async function assertSpaceFor(dir: string, bytes = databaseBytes()): Promise<void> {
+  const fs = await statfs(dir).catch(() => null);
+  if (!fs) return;
+  const free = Number(fs.bavail) * Number(fs.bsize);
+  const needed = Math.ceil(bytes * 1.2);
+  if (free < needed) throw new InsufficientSpaceError(needed, free);
+}
+
 /**
  * Consistent snapshot of the live database, taken through better-sqlite3's own backup API
  * rather than copying the file — a plain file copy of a WAL-mode database can land mid-
- * checkpoint and be unreadable. There is deliberately no restore endpoint: swapping the
- * file out from under an open WAL connection is how you corrupt it. Restoring means
- * replacing data/watcharr.db while the process is stopped, which is an operational step,
- * not an HTTP request.
+ * checkpoint and be unreadable. Restoring is never done under the open connection: it is
+ * staged and applied by scripts/migrate.mjs at the next start.
+ *
+ * Written to <path>.partial and renamed when complete, so a crash or a full disk never leaves
+ * a truncated file under a name that looks like a backup (the rotation would count it, and a
+ * restore would pick it). The free space is checked first for the same reason.
  */
 export async function backupTo(path: string): Promise<void> {
-  await sqlite.backup(path);
+  await assertSpaceFor(dirname(path));
+  const partial = `${path}${PARTIAL_SUFFIX}`;
+  try {
+    await sqlite.backup(partial);
+    await rename(partial, path);
+  } catch (error) {
+    await rm(partial, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 /**

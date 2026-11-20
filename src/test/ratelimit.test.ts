@@ -43,5 +43,20 @@ console.log('ok - rate limit counters are bounded and expire');
   assert.equal(clientIp(req('203.0.113.9'), 5), '203.0.113.9', 'more hops than entries: the first one');
   assert.equal(clientIp(req(undefined, '10.0.0.2')), '10.0.0.2');
   assert.equal(clientIp(req()), 'unknown');
+  assert.equal(clientIp(req('2001:db8::1')), '2001:db8::1', 'IPv6 is an address too');
+  // Without a reverse proxy the header is the client's own text: anything that is not an
+  // address would be a fresh rate-limit bucket and lands in logs verbatim.
+  assert.equal(clientIp(req('not-an-ip')), 'unknown');
+  assert.equal(clientIp(req('203.0.113.9, evil')), 'unknown');
+  // A proxy that appends the endpoint: the port goes, the address stays.
+  assert.equal(clientIp(req('203.0.113.9:4711')), '203.0.113.9', 'a port is not part of the address');
+  assert.equal(clientIp(req('6.6.6.6, [::1]:443')), '::1', 'bracketed IPv6 with a port');
+  assert.equal(clientIp(req('[2001:db8::7]')), '2001:db8::7', 'bracketed IPv6 without a port');
+  assert.equal(clientIp(req(undefined, '10.0.0.2:80')), '10.0.0.2', 'X-Real-IP with a port');
+  assert.equal(clientIp(req('2001:db8::1:443')), '2001:db8::1:443', 'a bare IPv6 address keeps its last group');
+  assert.equal(clientIp(req('[evil]:443')), 'unknown', 'brackets around something that is no address');
+  assert.equal(clientIp(req('999.1.1.1:80')), 'unknown');
+  assert.equal(clientIp(req(undefined, '<script>')), 'unknown');
+  assert.equal(clientIp(req('999.1.1.1')), 'unknown');
   console.log('ok - the client address comes from our own proxy, not from the client');
 }

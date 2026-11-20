@@ -103,7 +103,28 @@ function startStub() {
   const library = TITLES.map(([n, t, y, g], i) =>
     item(`lib-${i}`, n, t === 'movie' ? 'Movie' : 'Series', y, g),
   );
+  const people = [
+    { Id: 'srv-admin', Name: 'admin', Policy: { IsAdministrator: true, EnableAllFolders: true, EnabledFolders: [] } },
+    { Id: 'srv-mara', Name: 'mara', Policy: { IsAdministrator: false, EnableAllFolders: false, EnabledFolders: ['lib-movies'] } },
+    { Id: 'srv-jonas', Name: 'jonas', Policy: { IsAdministrator: false, EnableAllFolders: true, EnabledFolders: [] } },
+  ];
   const routes: Record<string, unknown> = {
+    // One entry and one views list per person, for getUserSectionIds().
+    ...Object.fromEntries(people.flatMap((p) => [
+      [`/Users/${p.Id}`, p],
+      [
+        `/Users/${p.Id}/Views`,
+        { Items: p.Policy.EnableAllFolders ? [{ Id: 'lib-movies', Name: 'Movies' }, { Id: 'lib-shows', Name: 'Shows' }] : [{ Id: 'lib-movies', Name: 'Movies' }] },
+      ],
+    ])),
+    // Quick Connect, already authorized: initiate, poll once, sign in as the admin.
+    '/QuickConnect/Enabled': true,
+    '/QuickConnect/Initiate': { Secret: 'preview-qc-secret', Code: '424242', Authenticated: false },
+    '/QuickConnect/Connect': { Secret: 'preview-qc-secret', Code: '424242', Authenticated: true },
+    '/Users/AuthenticateWithQuickConnect': {
+      User: { Id: 'srv-admin', Name: 'admin', Policy: { IsAdministrator: true } },
+      AccessToken: 'user-access-token',
+    },
     '/System/Info': { ServerName: 'Projection Booth', Version: '10.9.0' },
     '/Users/Me': { Id: 'srv-admin', Name: 'admin', Policy: { IsAdministrator: true } },
     '/Users/AuthenticateByName': {
@@ -156,7 +177,10 @@ function startStub() {
 /** Deterministic pseudo-randomness, so the preview looks the same on every run. */
 function rng(seed: number) {
   let s = seed;
-  return () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  return () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
 }
 
 async function seed() {

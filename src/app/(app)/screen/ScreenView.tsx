@@ -18,6 +18,7 @@ import { globalState } from '@/server/state';
 import { getRecentPlays, getStreak, getTotals } from '@/server/stats';
 import { cachedPosters } from '@/server/tmdb';
 import type { LibraryItem } from '@/server/adapters/types';
+import { visibleRecentlyAdded } from '@/server/library';
 import { getLocale, getT } from '@/i18n/server';
 import ScreenClient from './ScreenClient';
 
@@ -94,7 +95,9 @@ export default async function ScreenView({ kind, slug }: { kind: 'me' | 'server'
   let slides: ScreenSlide[] = [];
   let stats: ScreenStats | null = null;
   if (streams.length === 0) {
-    const added = await recentlyAdded(serverId);
+    // The server-wide answer is shared between screens, which is only right for an admin: a
+    // shared user's loop must not show arrivals from libraries they cannot open.
+    const added = admin ? await recentlyAdded(serverId) : await visibleRecentlyAdded(session, SLIDES).catch(() => []);
     const posters = await cachedPosters(added);
     if (added.length > 0) {
       slides = added.map((item) => ({

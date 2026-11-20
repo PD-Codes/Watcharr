@@ -23,8 +23,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # package.json promises >=22 and the Docker image ships 22; 24 guards the next upgrade.
-        node: ['22.23.4', '24']
+        # package.json requires >=26 and the Docker image ships 26; keep this in step with
+        # `node` in pyproject.toml.
+        node: ['26']
 
     steps:
       - uses: actions/checkout@v7
@@ -37,6 +38,9 @@ jobs:
       - run: npm ci
 
       - run: npm run typecheck
+
+      # Biome, lint rules only (no formatting): correctness, suspicious code, hook rules.
+      - run: npm run lint
 
       # Adapter mapping, suggestion scoring, migrations, aggregate SQL, encryption.
       - run: npm test

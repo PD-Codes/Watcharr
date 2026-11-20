@@ -45,7 +45,7 @@ export function fuzzyMatch(query: string, text: string): FuzzyHit | null {
   const best: number[][] = Array.from({ length: m }, () => new Array<number>(n).fill(-Infinity));
   const from: number[][] = Array.from({ length: m }, () => new Array<number>(n).fill(-1));
 
-  // shortcut: O(m * n^2), fine for labels under ~80 chars; use prefix maxima if it ever runs on long text.
+  // Trade-off: O(m * n^2), fine for labels under ~80 chars; use prefix maxima if it ever runs on long text.
   for (let i = 0; i < m; i++) {
     for (let j = i; j < n; j++) {
       if (folded[j] !== q[i]) continue;

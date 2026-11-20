@@ -2,6 +2,8 @@ import 'server-only';
 import { sql, type SQL } from 'drizzle-orm';
 import { readDb as db } from './readcache';
 import { scopeFilter, type LabelledValue, type Scope } from './stats';
+// Lives next to the page that labels the reasons; pure, so the tests can import it too.
+import { tallyReasons } from './transcodereasons';
 
 // Statistics derived from playback_sessions: how content was delivered, not what was watched.
 // Watch time per session is the last observed playback position.
@@ -402,8 +404,16 @@ export const getPlayMethods = (days?: number, scope?: Scope) =>
     scope,
   );
 
-export const getTranscodeReasons = (days?: number, scope?: Scope) =>
-  grouped(sql`transcode_reason`, days, 10, scope);
+/**
+ * Top transcode reasons, one bar per single reason. The stored value can be a joined list,
+ * so the distinct stored values are fetched (there are a few dozen at most) and split before
+ * counting; a LIMIT on the stored values would cut reasons that only appear in combinations.
+ * Labels stay the raw tokens here — the page translates them (reasonLabel).
+ */
+export async function getTranscodeReasons(days?: number, scope?: Scope): Promise<LabelledValue[]> {
+  const rows = await grouped(sql`transcode_reason`, days, 500, scope);
+  return tallyReasons(rows, 10);
+}
 
 export const getVideoCodecs = (days?: number, scope?: Scope) =>
   grouped(sql`upper(video_codec)`, days, 10, scope);
@@ -469,7 +479,14 @@ export interface UsageRow {
   transcodes: number;
 }
 
-async function usage(primary: SQL, secondary: SQL, days?: number, scope?: Scope): Promise<UsageRow[]> {
+async function usage(
+  primary: SQL,
+  secondary: SQL,
+  days?: number,
+  scope?: Scope,
+  limit = 30,
+  offset = 0,
+): Promise<UsageRow[]> {
   const rows = await db.all<{
     primary_label: string | null;
     secondary_label: string | null;
@@ -486,8 +503,8 @@ async function usage(primary: SQL, secondary: SQL, days?: number, scope?: Scope)
     LEFT JOIN users u ON u.id = p.user_id
     WHERE ${since(days, 'p.')} AND ${scoped(scope, 'p.')}
     GROUP BY primary_label, secondary_label
-    ORDER BY sessions DESC
-    LIMIT 30
+    ORDER BY sessions DESC, primary_label ASC, secondary_label ASC
+    LIMIT ${limit} OFFSET ${offset}
   `);
 
   return rows.map((r) => ({
@@ -621,8 +638,86 @@ export async function getUserPlayers(userId: number, limit = 20): Promise<Labell
   return rows.map((r) => ({ label: r.label, value: Number(r.total) }));
 }
 
-export const getClientsPerUser = (days?: number, scope?: Scope) =>
-  usage(sql`coalesce(u.username, 'Unknown')`, sql`coalesce(p.client_name, 'Unknown')`, days, scope);
+/** How many rows usage() pages through for the same grouping. */
+async function countUsage(primary: SQL, secondary: SQL, days?: number, scope?: Scope): Promise<number> {
+  const [row] = await db.all<{ total: number }>(sql`
+    SELECT count(*) AS total FROM (
+      SELECT 1
+      FROM playback_sessions p
+      LEFT JOIN users u ON u.id = p.user_id
+      WHERE ${since(days, 'p.')} AND ${scoped(scope, 'p.')}
+      GROUP BY ${primary}, ${secondary}
+    )
+  `);
+  return Number(row?.total ?? 0);
+}
 
-export const getClientsPerDevice = (days?: number, scope?: Scope) =>
-  usage(sql`coalesce(p.device_name, 'Unknown')`, sql`coalesce(p.client_name, 'Unknown')`, days, scope);
+const PER_USER = [sql`coalesce(u.username, 'Unknown')`, sql`coalesce(p.client_name, 'Unknown')`] as const;
+const PER_DEVICE = [sql`coalesce(p.device_name, 'Unknown')`, sql`coalesce(p.client_name, 'Unknown')`] as const;
+
+export const getClientsPerUser = (days?: number, scope?: Scope, limit?: number, offset?: number) =>
+  usage(...PER_USER, days, scope, limit, offset);
+
+export const getClientsPerDevice = (days?: number, scope?: Scope, limit?: number, offset?: number) =>
+  usage(...PER_DEVICE, days, scope, limit, offset);
+
+export const countClientsPerUser = (days?: number, scope?: Scope) => countUsage(...PER_USER, days, scope);
+
+export const countClientsPerDevice = (days?: number, scope?: Scope) => countUsage(...PER_DEVICE, days, scope);
+
+export interface DeviceRow {
+  device: string;
+  client: string;
+  lastSeen: Date;
+  plays: number;
+  /** 'lan', 'wan', 'both', or null when no session carried an address. */
+  network: 'lan' | 'wan' | 'both' | null;
+}
+
+/**
+ * The players one account has streamed from: device plus client, newest first. Comes from
+ * playback_sessions like every other stream statistic, so it starts on the day Watcharr was
+ * installed. Neither media server reports a platform separately; the client name ("Plex for
+ * Android", "Jellyfin Web") is the closest thing and is shown as such.
+ */
+export async function getDevices(scope: Scope, limit = 20, offset = 0): Promise<DeviceRow[]> {
+  const rows = await db.all<{
+    device: string;
+    client: string;
+    last_seen: number;
+    plays: number;
+    any_local: number | null;
+    any_remote: number | null;
+  }>(sql`
+    SELECT coalesce(device_name, 'Unknown') AS device,
+           coalesce(client_name, 'Unknown') AS client,
+           max(last_seen_at) AS last_seen,
+           count(*) AS plays,
+           max(CASE WHEN is_local = 1 THEN 1 END) AS any_local,
+           max(CASE WHEN is_local = 0 THEN 1 END) AS any_remote
+    FROM playback_sessions
+    WHERE ${scoped(scope)}
+    GROUP BY device, client
+    ORDER BY last_seen DESC, device ASC
+    LIMIT ${limit} OFFSET ${offset}
+  `);
+  return rows.map((r) => ({
+    device: r.device,
+    client: r.client,
+    lastSeen: new Date(Number(r.last_seen)),
+    plays: Number(r.plays),
+    network: r.any_local && r.any_remote ? 'both' : r.any_local ? 'lan' : r.any_remote ? 'wan' : null,
+  }));
+}
+
+/** How many device/client pairs getDevices() pages through. */
+export async function countDevices(scope: Scope): Promise<number> {
+  const [row] = await db.all<{ total: number }>(sql`
+    SELECT count(*) AS total FROM (
+      SELECT 1 FROM playback_sessions
+      WHERE ${scoped(scope)}
+      GROUP BY coalesce(device_name, 'Unknown'), coalesce(client_name, 'Unknown')
+    )
+  `);
+  return Number(row?.total ?? 0);
+}

@@ -1,0 +1,103 @@
+{
+  "ui2.nav.groupLive": { "en": "Live", "de": "Live" },
+  "ui2.nav.groupAccess": { "en": "Users & access", "de": "Nutzer & Zugriff" },
+  "ui2.nav.groupAnalysis": { "en": "Analytics", "de": "Auswertung" },
+  "ui2.nav.groupContent": { "en": "Content", "de": "Inhalte" },
+  "ui2.nav.groupSetup": { "en": "Setup", "de": "Einrichtung" },
+  "ui2.nav.groupSystem": { "en": "System", "de": "System" },
+  "ui2.nav.update": { "en": "Update", "de": "Update" },
+  "ui2.nav.updateTip": {
+    "en": "A newer Watcharr release is available",
+    "de": "Eine neuere Watcharr-Version ist verfügbar"
+  },
+
+  "ui2.secret.open": { "en": "Open system check", "de": "Systemcheck öffnen" },
+
+  "ui2.theme.label": { "en": "Theme", "de": "Design" },
+  "ui2.theme.system": { "en": "Follow the system", "de": "Wie das System" },
+  "ui2.theme.dark": { "en": "Dark", "de": "Dunkel" },
+  "ui2.theme.light": { "en": "Light", "de": "Hell" },
+
+  "ui2.devices.tab": { "en": "Devices", "de": "Geräte" },
+  "ui2.devices.subtitle": {
+    "en": "Every player you have streamed from since Watcharr was set up, most recent first.",
+    "de": "Jeder Player, über den du seit der Einrichtung von Watcharr gestreamt hast, der zuletzt genutzte zuerst."
+  },
+  "ui2.devices.empty": {
+    "en": "No streams recorded for your account yet.",
+    "de": "Für dein Konto wurden noch keine Streams aufgezeichnet."
+  },
+  "ui2.devices.client": { "en": "Client / platform", "de": "Client / Plattform" },
+  "ui2.devices.lastSeen": { "en": "Last seen", "de": "Zuletzt gesehen" },
+  "ui2.devices.plays": { "en": "Plays", "de": "Wiedergaben" },
+  "ui2.devices.network": { "en": "Network", "de": "Netzwerk" },
+  "ui2.devices.both": { "en": "LAN + WAN", "de": "LAN + WAN" },
+
+  "ui2.reason.ContainerNotSupported": { "en": "Container not supported", "de": "Container nicht unterstützt" },
+  "ui2.reason.VideoCodecNotSupported": { "en": "Video codec not supported", "de": "Videocodec nicht unterstützt" },
+  "ui2.reason.AudioCodecNotSupported": { "en": "Audio codec not supported", "de": "Audiocodec nicht unterstützt" },
+  "ui2.reason.SubtitleCodecNotSupported": {
+    "en": "Subtitles not supported (burned in)",
+    "de": "Untertitel nicht unterstützt (eingebrannt)"
+  },
+  "ui2.reason.AudioIsExternal": { "en": "External audio track", "de": "Externe Audiospur" },
+  "ui2.reason.SecondaryAudioNotSupported": {
+    "en": "Secondary audio track not supported",
+    "de": "Zweite Audiospur nicht unterstützt"
+  },
+  "ui2.reason.VideoProfileNotSupported": { "en": "Video profile not supported", "de": "Videoprofil nicht unterstützt" },
+  "ui2.reason.VideoLevelNotSupported": { "en": "Video level not supported", "de": "Video-Level nicht unterstützt" },
+  "ui2.reason.VideoResolutionNotSupported": {
+    "en": "Resolution not supported",
+    "de": "Auflösung nicht unterstützt"
+  },
+  "ui2.reason.VideoBitDepthNotSupported": { "en": "Video bit depth not supported", "de": "Video-Farbtiefe nicht unterstützt" },
+  "ui2.reason.VideoFramerateNotSupported": { "en": "Frame rate not supported", "de": "Bildrate nicht unterstützt" },
+  "ui2.reason.RefFramesNotSupported": {
+    "en": "Too many reference frames",
+    "de": "Zu viele Referenzbilder"
+  },
+  "ui2.reason.AnamorphicVideoNotSupported": {
+    "en": "Anamorphic video not supported",
+    "de": "Anamorphes Video nicht unterstützt"
+  },
+  "ui2.reason.InterlacedVideoNotSupported": {
+    "en": "Interlaced video not supported",
+    "de": "Interlaced-Video nicht unterstützt"
+  },
+  "ui2.reason.AudioChannelsNotSupported": {
+    "en": "Audio channels not supported",
+    "de": "Audiokanäle nicht unterstützt"
+  },
+  "ui2.reason.AudioProfileNotSupported": { "en": "Audio profile not supported", "de": "Audioprofil nicht unterstützt" },
+  "ui2.reason.AudioSampleRateNotSupported": {
+    "en": "Audio sample rate not supported",
+    "de": "Audio-Abtastrate nicht unterstützt"
+  },
+  "ui2.reason.AudioBitDepthNotSupported": {
+    "en": "Audio bit depth not supported",
+    "de": "Audio-Bittiefe nicht unterstützt"
+  },
+  "ui2.reason.ContainerBitrateExceedsLimit": {
+    "en": "Bitrate above the client limit",
+    "de": "Bitrate über dem Client-Limit"
+  },
+  "ui2.reason.VideoBitrateNotSupported": { "en": "Video bitrate not supported", "de": "Video-Bitrate nicht unterstützt" },
+  "ui2.reason.AudioBitrateNotSupported": { "en": "Audio bitrate not supported", "de": "Audio-Bitrate nicht unterstützt" },
+  "ui2.reason.UnknownVideoStreamInfo": { "en": "Unknown video stream", "de": "Unbekannter Videostream" },
+  "ui2.reason.UnknownAudioStreamInfo": { "en": "Unknown audio stream", "de": "Unbekannter Audiostream" },
+  "ui2.reason.DirectPlayError": { "en": "Direct play failed", "de": "Direkte Wiedergabe fehlgeschlagen" },
+  "ui2.reason.VideoRangeTypeNotSupported": {
+    "en": "HDR / dynamic range not supported",
+    "de": "HDR / Dynamikumfang nicht unterstützt"
+  },
+  "ui2.reason.VideoCodecTagNotSupported": { "en": "Video codec tag not supported", "de": "Videocodec-Tag nicht unterstützt" },
+  "ui2.reason.StreamCountExceedsLimit": {
+    "en": "Too many streams in the file",
+    "de": "Zu viele Streams in der Datei"
+  },
+  "ui2.reason.transcode": { "en": "Transcode", "de": "Transkodierung" },
+  "ui2.reason.copy": { "en": "Direct stream (copy)", "de": "Direct Stream (Kopie)" },
+  "ui2.reason.burn": { "en": "Subtitles burned in", "de": "Untertitel eingebrannt" },
+  "ui2.reason.directplay": { "en": "Direct play", "de": "Direkte Wiedergabe" }
+}

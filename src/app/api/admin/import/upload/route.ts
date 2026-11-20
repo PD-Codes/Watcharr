@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { IMPORT_DIR, getJob } from '@/server/importjob';
 import {
   CHUNK_BYTES,
@@ -11,19 +11,21 @@ import {
   uploadInfo,
 } from '@/server/importupload';
 import { getSession } from '@/server/session';
+import { apiError, badBody, globalAdminRequired } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
 async function guarded(run: () => Promise<Response>): Promise<Response> {
   const session = await getSession();
-  if (!session?.user.globalAdmin) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!session?.user.globalAdmin) return globalAdminRequired();
   try {
     return await run();
   } catch (error) {
     if (error instanceof UploadError) {
-      return NextResponse.json({ error: error.message, received: error.received }, { status: error.status });
+      return apiError(error.status, 'upload-rejected', 'err.actionFailed', {
+        message: error.message,
+        extra: { received: error.received },
+      });
     }
     throw error;
   }
@@ -57,12 +59,10 @@ export function PUT(request: Request) {
     if (!Number.isSafeInteger(offset) || offset < 0) return badBody();
     // Checked before reading: the point of the limit is not to buffer an oversized body.
     if (Number(request.headers.get('content-length') ?? 0) > CHUNK_BYTES) {
-      throw new UploadError('Chunk is larger than the agreed size', 413);
+      return apiError(413, 'chunk-too-large', 'err.chunkTooLarge');
     }
     const data = Buffer.from(await request.arrayBuffer());
-    if (data.length > CHUNK_BYTES) {
-      throw new UploadError('Chunk is larger than the agreed size', 413);
-    }
+    if (data.length > CHUNK_BYTES) return apiError(413, 'chunk-too-large', 'err.chunkTooLarge');
     return NextResponse.json({ upload: await appendChunk(IMPORT_DIR, params.get('id') ?? '', offset, data) });
   });
 }
@@ -73,7 +73,7 @@ export function DELETE(request: Request) {
     const job = await getJob();
     // Pulling the file out from under a running import would fail it halfway.
     if (job?.status === 'running' && job.params.uploadId === id) {
-      throw new UploadError('This file is being imported right now', 409);
+      return apiError(409, 'upload-in-use', 'err.uploadInUse');
     }
     await deleteUpload(IMPORT_DIR, id);
     return NextResponse.json({ ok: true });

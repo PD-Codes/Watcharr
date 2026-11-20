@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Icon, type IconName } from './Icons';
 import { highlightRuns } from './fuzzy';
@@ -18,6 +18,7 @@ import { currentTheme } from './ThemeToggle';
 import { trapTab, useDialog } from './overlay';
 import { useRail } from './useRail';
 import { useT } from '@/i18n/client';
+import { modifierLabel } from '@/app/(app)/nav';
 import './shortcuts.css';
 
 export { OPEN_SEARCH_EVENT };
@@ -119,6 +120,7 @@ export default function CommandPalette({
   }, [close, show]);
 
   // A navigation is always the end of a search.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the pathname is the trigger: a navigation ends the search
   useEffect(close, [pathname, close]);
 
   useDialog(open, inputRef);
@@ -260,10 +262,11 @@ export default function CommandPalette({
 
   const rows = useMemo(() => flatten(sections), [sections]);
   const found = rows.findIndex((row) => row.id === activeId);
-  const activeIndex = found < 0 ? 0 : found;
+  const activeIndex = Math.max(0, found);
   const optionId = (index: number) => `${uid}-o${index}`;
 
   // Keep the keyboard selection in view. A first row brings its group heading along.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: optionId is derived from uid, which is listed
   useEffect(() => {
     if (!scrollRef.current) return;
     scrollRef.current = false;
@@ -274,7 +277,6 @@ export default function CommandPalette({
       ? document.getElementById(`${uid}-g-${row.group}`)
       : document.getElementById(optionId(activeIndex));
     target?.scrollIntoView({ block: 'nearest' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIndex, rows, uid]);
 
   if (!open) return null;
@@ -362,6 +364,7 @@ export default function CommandPalette({
   let index = -1;
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes; the keyboard closes with Escape
     <div
       className="palette-scrim"
       onMouseDown={(event) => {
@@ -417,6 +420,7 @@ export default function CommandPalette({
           aria-busy={searching}
         >
           {sections.map((section) => (
+            // biome-ignore lint/a11y/useSemanticElements: a group of options inside a listbox; a fieldset is not allowed there
             <div key={section.group} role="group" aria-labelledby={`${uid}-g-${section.group}`}>
               <div id={`${uid}-g-${section.group}`} className="pal-group" role="presentation">
                 {heading[section.group]}
@@ -426,6 +430,8 @@ export default function CommandPalette({
                 const mine = index;
                 const active = mine === activeIndex;
                 return (
+                  // biome-ignore lint/a11y/useFocusableInteractive: combobox pattern: options are never focused themselves (aria-activedescendant)
+                  // biome-ignore lint/a11y/useKeyWithClickEvents: combobox pattern: the input keeps focus and handles the keys, options are reached via aria-activedescendant
                   <div
                     key={row.id}
                     id={optionId(mine)}
@@ -497,9 +503,16 @@ export default function CommandPalette({
 }
 
 /** The affordance that tells people the palette exists at all. */
+// The platform never changes while the page is open, so there is nothing to subscribe to.
+const noSubscription = () => () => {};
+const readShortcut = () => modifierLabel(navigator.platform || navigator.userAgent);
+
 export function SearchTrigger({ compact = false }: { compact?: boolean }) {
   const t = useT();
   const fire = () => window.dispatchEvent(new Event(OPEN_SEARCH_EVENT));
+  // The server cannot know the keyboard: it renders nothing in the key cap, and the client
+  // fills in "⌘K" or "Ctrl K" right after hydration instead of mismatching it.
+  const shortcut = useSyncExternalStore(noSubscription, readShortcut, () => null);
 
   if (compact) {
     return (
@@ -513,7 +526,8 @@ export function SearchTrigger({ compact = false }: { compact?: boolean }) {
     <button type="button" className="search-trigger" onClick={fire}>
       <Icon name="search" />
       {t('action.search')}
-      <kbd>⌘K</kbd>
+      {/* Reserved width while unknown, so the label does not jump when it appears. */}
+      <kbd style={shortcut ? undefined : { visibility: 'hidden' }}>{shortcut ?? 'Ctrl K'}</kbd>
     </button>
   );
 }

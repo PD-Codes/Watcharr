@@ -65,7 +65,6 @@ export function CastStrip({ cast, heading }: { cast: TmdbMeta['cast']; heading: 
         {cast.map((person) => (
           <Link key={person.id} className="cast-card" href={`/person/${person.id}`}>
             {person.profileUrl ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
               <img className="cast-photo" src={person.profileUrl} alt="" loading="lazy" />
             ) : (
               <span className="cast-photo poster-blank" aria-hidden />

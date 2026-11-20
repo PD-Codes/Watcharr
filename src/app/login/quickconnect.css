@@ -1,0 +1,91 @@
+/* Jellyfin Quick Connect on the sign-in card. Neutral throughout: a code waiting for approval is
+   neither "playing" nor data, so nothing here is amber. */
+
+.qc-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 14px;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.qc-divider::before,
+.qc-divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
+.qc-panel > button {
+  width: 100%;
+}
+
+.qc-intro {
+  margin: 0 0 10px;
+}
+
+.qc-code {
+  margin: 0;
+  padding: 14px 10px;
+  border-radius: var(--shape-md);
+  background: var(--surface-container-high);
+  font-family: var(--font-mono-stack);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(30px, 9vw, 40px);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-align: center;
+  color: var(--text);
+  user-select: all;
+}
+
+.qc-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 10px 0 12px;
+  font-size: 13px;
+}
+
+.qc-clock {
+  font-family: var(--font-mono-stack);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* A slow neutral pulse says "still asking" without borrowing the live colour. */
+.qc-wait {
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: var(--shape-full);
+  background: var(--text-dim);
+  animation: qc-pulse 1.6s var(--ease-standard) infinite;
+}
+
+@keyframes qc-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qc-wait {
+    animation: none;
+  }
+}
+
+.qc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.qc-actions > * {
+  min-height: 44px;
+}

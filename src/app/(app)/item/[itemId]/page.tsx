@@ -5,7 +5,7 @@ import { Icon } from '@/components/Icons';
 import OpenInServer from '@/components/OpenInServer';
 import Poster from '@/components/Poster';
 import { Backdrop, CastStrip, Overview, TmdbFacts } from '@/components/TitleMeta';
-import { artUrl, formatDate, formatDuration, formatMinutes } from '@/components/format';
+import { artUrl, formatBytes, formatDate, formatDuration, formatMinutes } from '@/components/format';
 import { getSettings } from '@/server/config';
 import { getItemDetail, getItemMedia } from '@/server/titles';
 import { getTitleMeta } from '@/server/tmdb';
@@ -15,12 +15,6 @@ import { getLocale, getT } from '@/i18n/server';
 // No loading.tsx in this segment: streaming pins the status at 200 and this route has to
 // be able to answer 404. See the note in CLAUDE.md.
 export const dynamic = 'force-dynamic';
-
-/** Bytes as GB/MB — a raw byte count next to a resolution reads as noise. */
-function formatBytes(bytes: number): string {
-  const mb = bytes / 1_048_576;
-  return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${Math.round(mb)} MB`;
-}
 
 /** One episode or one movie — the level below /title/[label]. */
 export default async function ItemPage({

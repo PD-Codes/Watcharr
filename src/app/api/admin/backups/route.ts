@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import {
   cancelRestore,
   canRestart,
@@ -9,6 +9,7 @@ import {
   verifyBackup,
 } from '@/server/backups';
 import { getSession } from '@/server/session';
+import { apiError, badBody, globalAdminRequired } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 // quick_check on a large backup runs in a child process, but the request waits for it.
@@ -19,9 +20,7 @@ const ACTIONS = ['create', 'verify', 'restore', 'cancelRestore', 'delete', 'rest
 /** One endpoint for the Backups page; downloads stay on GET /api/admin/backup?name=. */
 export async function POST(request: Request) {
   const session = await getSession();
-  if (!session?.user.globalAdmin) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!session?.user.globalAdmin) return globalAdminRequired();
   const body = await readBody(request, { action: 'string', name: 'string' });
   const action = ACTIONS.find((a) => a === body?.action);
   if (!body || !action) return badBody();
@@ -37,7 +36,7 @@ export async function POST(request: Request) {
         const result = await stageRestore(name);
         return result.ok
           ? NextResponse.json({ ok: true, result, canRestart: canRestart() })
-          : NextResponse.json({ error: result.error ?? 'The backup failed its integrity check', result }, { status: 422 });
+          : apiError(422, 'backup-invalid', 'err.backupInvalid', { message: result.error, extra: { result } });
       }
       case 'cancelRestore':
         await cancelRestore();
@@ -45,15 +44,17 @@ export async function POST(request: Request) {
       case 'delete':
         return (await deleteBackup(name))
           ? NextResponse.json({ ok: true })
-          : NextResponse.json({ error: 'No such backup' }, { status: 404 });
+          : apiError(404, 'backup-not-found', 'err.backupNotFound');
       case 'restart':
-        if (!canRestart()) return NextResponse.json({ error: 'Restart the app yourself' }, { status: 409 });
+        if (!canRestart()) return apiError(409, 'restart-unavailable', 'err.restartManually');
         // After the response is out: the compose restart policy brings the container back, and
         // the start script applies the staged restore before the server opens the database.
         setTimeout(() => process.exit(0), 500);
         return NextResponse.json({ ok: true });
     }
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed' }, { status: 500 });
+    return apiError(500, 'backup-failed', 'err.actionFailed', {
+      message: error instanceof Error ? error.message : null,
+    });
   }
 }

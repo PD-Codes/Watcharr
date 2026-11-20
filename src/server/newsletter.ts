@@ -1,5 +1,5 @@
 import 'server-only';
-import { eq, sql } from 'drizzle-orm';
+import { asc, count, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { newsletterSubscriptions, users } from '@/db/schema';
 import type { LibraryItem } from './adapters';
@@ -8,7 +8,7 @@ import { createAdapter, type ServerType } from './adapters';
 import { getSettings, listServers, updateSettings, type ServerRow } from './config';
 import { DEFAULT_LOCALE, isLocale, LOCALES, translator, type Locale } from '@/i18n';
 import { getDefaultLocale } from '@/i18n/server';
-import { sectionKey } from './library';
+import { getSections, resolveSectionKey, sectionKey, userSectionAccess } from './library';
 import { sendMail } from './notifications';
 import { buildNewsletterHtml, type MailCard, type MailModel } from './newsletter-html';
 import { cachedMeta, getTitleMeta, localizedMeta, type TmdbMeta } from './tmdb';
@@ -22,9 +22,66 @@ import { globalState } from './state';
 const PER_LIBRARY_LIMIT = 60;
 
 export interface NewsletterEntry {
+  serverId: number;
   serverLabel: string;
   serverSlug: string;
   items: LibraryItem[];
+}
+
+/** Library key of a title in an issue; `<serverId>:?` when its library is not known. */
+export const UNKNOWN_SECTION = '?';
+const itemKey = (serverId: number, item: Pick<LibraryItem, 'sectionId'>) =>
+  sectionKey(serverId, item.sectionId ?? UNKNOWN_SECTION);
+
+/** Every library an issue draws from, as keys. What the archive page checks a reader against. Pure. */
+export function issueLibraries(entries: NewsletterEntry[]): string[] {
+  const keys = new Set<string>();
+  for (const entry of entries) for (const item of entry.items) keys.add(itemKey(entry.serverId, item));
+  return [...keys].sort();
+}
+
+/** The issue cut down to these libraries; servers left with nothing drop out. Pure. */
+export function narrowEntries(entries: NewsletterEntry[], allowed: ReadonlySet<string>): NewsletterEntry[] {
+  return entries
+    .map((entry) => ({ ...entry, items: entry.items.filter((item) => allowed.has(itemKey(entry.serverId, item))) }))
+    .filter((entry) => entry.items.length > 0);
+}
+
+/**
+ * Whether somebody who is not an admin may read a stored issue: only when they may open every
+ * library it drew from. An issue from before libraries were recorded (null) says nothing about
+ * what it contains, and a title of unknown library could be from any, so both stay closed. Pure.
+ */
+export function canReadIssue(libraries: string[] | null, visible: ReadonlySet<string>): boolean {
+  return libraries?.every((key) => visible.has(key)) ?? false;
+}
+
+/**
+ * Who gets which cut of the issue. Admins (of their server, or global) get all of it, everybody
+ * else the libraries they may open within the admin's selection (empty selection = all). People
+ * with the same set share one rendering; an empty set gets nothing. Pure, so the grouping is
+ * testable; `visible` is null for the full issue.
+ */
+export function groupRecipients<T extends { full: boolean; visible: ReadonlySet<string> }>(
+  recipients: T[],
+  selection: string[],
+): Map<string, { allowed: ReadonlySet<string> | null; members: T[] }> {
+  const chosen = selection.length ? new Set(selection) : null;
+  const groups = new Map<string, { allowed: ReadonlySet<string> | null; members: T[] }>();
+  for (const recipient of recipients) {
+    let key = '*';
+    let allowed: ReadonlySet<string> | null = null;
+    if (!recipient.full) {
+      const keys = [...recipient.visible].filter((k) => !chosen || chosen.has(k)).sort();
+      if (!keys.length) continue;
+      key = keys.join('|');
+      allowed = new Set(keys);
+    }
+    const group = groups.get(key) ?? { allowed, members: [] };
+    group.members.push(recipient);
+    groups.set(key, group);
+  }
+  return groups;
 }
 
 /**
@@ -70,11 +127,27 @@ async function collectForServer(
   );
 
   // No configured sections means "everything the server reports", which is also what a
-  // fresh install does before anyone has opened the settings page.
-  const sources = sectionIds.length ? sectionIds : [undefined];
+  // fresh install does before anyone has opened the settings page. Still asked per library
+  // (from the cached section list): every title needs its library, or it could only go to
+  // admins — the server-wide feed carries none on Jellyfin, and not reliably on Plex. Only
+  // without a section list does the server-wide feed stand in, matched against the cached
+  // library listing as far as that knows the titles.
+  let sources: (string | undefined)[] = sectionIds;
+  if (!sources.length) {
+    const sections = await getSections(server.id).catch(() => []);
+    sources = sections.filter((section) => section.mediaType !== 'audio').map((section) => section.id);
+    if (!sources.length) sources = [undefined];
+  }
   const batches = await Promise.all(
-    sources.map((sectionId) =>
-      adapter.getRecentlyAdded(PER_LIBRARY_LIMIT, sectionId).catch(() => [] as LibraryItem[]),
+    sources.map(async (sectionId) =>
+      (await adapter.getRecentlyAdded(PER_LIBRARY_LIMIT, sectionId).catch(() => [] as LibraryItem[])).map(
+        (item) => {
+          if (item.sectionId) return item;
+          if (sectionId) return { ...item, sectionId };
+          const key = resolveSectionKey(server.id, { itemId: item.itemId, title: item.title });
+          return key ? { ...item, sectionId: key.slice(`${server.id}:`.length) } : item;
+        },
+      ),
     ),
   );
 
@@ -114,6 +187,7 @@ export async function collectNewsletter(draft: NewsletterDraft = {}): Promise<Ne
     servers.map(async (server) => {
       const sectionIds = sectionsForServer(selection, server.id);
       return {
+        serverId: server.id,
         serverLabel: server.label,
         serverSlug: server.slug,
         items: sectionIds ? await collectForServer(server, sectionIds, since) : [],
@@ -177,16 +251,31 @@ function applyMeta(card: MailCard, raw: TmdbMeta | null | undefined, locale: Loc
   if (!card.genres.length) card.genres = meta.genres;
 }
 
-/** The titles watched most inside the period — counts only, never who watched. */
-async function mostWatched(since: Date) {
+/**
+ * The titles watched most inside the period — counts only, never who watched. With `allowed`
+ * (a reader who may not open every library) only titles the cached library listing places in
+ * one of those libraries: the list spans every library, and a title from one the reader cannot
+ * open is exactly what their cut of the issue must not mention. Unplaceable titles are left out.
+ */
+async function mostWatched(since: Date, allowed?: ReadonlySet<string> | null) {
   const rows = await db.all<{ label: string; plays: number }>(sql`
     SELECT coalesce(grandparent_title, title) AS label, count(*) AS plays
     FROM watch_history
     WHERE watched_at >= ${since.getTime()} AND duration_ms >= 60000
     GROUP BY label
     ORDER BY plays DESC, label
-    LIMIT ${POPULAR_LIMIT}`);
-  return rows.filter((row) => row.plays >= 2);
+    LIMIT ${allowed ? POPULAR_LIMIT * 10 : POPULAR_LIMIT}`);
+  const popular = rows.filter((row) => row.plays >= 2);
+  if (!allowed) return popular;
+  const serverIds = [...new Set([...allowed].map((key) => Number(key.split(':')[0])))];
+  return popular
+    .filter((row) =>
+      serverIds.some((serverId) => {
+        const key = resolveSectionKey(serverId, { title: row.label });
+        return key !== null && allowed.has(key);
+      }),
+    )
+    .slice(0, POPULAR_LIMIT);
 }
 
 /**
@@ -197,6 +286,8 @@ export async function renderNewsletter(
   entries: NewsletterEntry[],
   locale: Locale = DEFAULT_LOCALE,
   draft: NewsletterDraft = {},
+  /** The libraries this cut is for (see groupRecipients); null or absent = the full issue. */
+  allowed: ReadonlySet<string> | null = null,
 ): Promise<string> {
   const settings = await getSettings();
   const days = draft.days ?? settings.newsletterDays;
@@ -210,7 +301,9 @@ export async function renderNewsletter(
   const fetched = await Promise.all(
     head.map((c) => getTitleMeta(apiKey, c.title, c.kind === 'movie' ? 'movie' : 'show', c.year, locale).catch(() => null)),
   );
-  head.forEach((c, i) => applyMeta(c, fetched[i], locale));
+  head.forEach((c, i) => {
+    applyMeta(c, fetched[i], locale);
+  });
   const rest = cards.slice(ENRICH_LIMIT);
   const cached = await cachedMeta(rest.map(asRef));
   for (const c of rest) applyMeta(c, cached.get(c.itemId), locale);
@@ -236,7 +329,8 @@ export async function renderNewsletter(
   for (const c of cards) for (const g of c.genres) genreCount.set(g, (genreCount.get(g) ?? 0) + 1);
   const topGenres = [...genreCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([g]) => g);
 
-  const popularRows = cards.length || entries.length ? await mostWatched(new Date(Date.now() - days * 86_400_000)) : [];
+  const popularRows =
+    cards.length || entries.length ? await mostWatched(new Date(Date.now() - days * 86_400_000), allowed) : [];
   const popularMeta = await cachedMeta(popularRows.map((r) => ({ itemId: r.label, title: r.label, mediaType: 'show' })));
   const popularMovieMeta = await cachedMeta(popularRows.map((r) => ({ itemId: r.label, title: r.label, mediaType: 'movie' })));
 
@@ -265,10 +359,14 @@ export async function renderNewsletter(
 }
 
 /** Everyone who asked for it. */
-export async function listSubscribers(): Promise<
+/**
+ * Subscribers, ordered by name so the admin list pages stably. Without `page` every row is
+ * returned: the sender and the per-language preview need all of them.
+ */
+export async function listSubscribers(page?: { limit: number; offset: number }): Promise<
   { userId: number; username: string; email: string; locale: string | null }[]
 > {
-  return db
+  const query = db
     .select({
       userId: newsletterSubscriptions.userId,
       username: users.username,
@@ -276,7 +374,18 @@ export async function listSubscribers(): Promise<
       locale: users.locale,
     })
     .from(newsletterSubscriptions)
+    .innerJoin(users, eq(users.id, newsletterSubscriptions.userId))
+    .orderBy(asc(users.username), asc(newsletterSubscriptions.userId));
+  return page ? query.limit(page.limit).offset(page.offset) : query;
+}
+
+/** How many rows listSubscribers() pages through. */
+export async function countSubscribers(): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(newsletterSubscriptions)
     .innerJoin(users, eq(users.id, newsletterSubscriptions.userId));
+  return row?.n ?? 0;
 }
 
 /** How many subscribers each language would get — what the preview offers to switch between. */
@@ -313,42 +422,82 @@ export async function unsubscribe(userId: number): Promise<void> {
  * Builds and sends one issue to every subscriber, and keeps the rendered HTML so the
  * static URL can serve exactly what was sent rather than rebuilding it later from a
  * library that has moved on.
+ *
+ * Nobody gets titles from a library they cannot open on the media server: admins get the whole
+ * issue, everybody else the part their libraries cover (groupRecipients), and somebody whose
+ * libraries are not in it at all gets nothing. Access is looked up without a request, the way a
+ * background mail has to (library.ts::userSectionAccess, stored answer included).
  */
 export async function sendNewsletter(): Promise<{ ok: boolean; sent: number; error?: string }> {
   const settings = await getSettings();
   const subscribers = await listSubscribers();
   const entries = await collectNewsletter();
   const fallback = await getDefaultLocale();
-
-  // Rendered once per language actually subscribed to, not once per subscriber: the issue
-  // is identical apart from three sentences, and a deployment realistically has one or two
-  // languages in play. Recipients stay in BCC per group, so nobody learns another's address.
-  const byLocale = new Map<Locale, string[]>();
-  for (const subscriber of subscribers) {
-    const locale = isLocale(subscriber.locale) ? subscriber.locale : fallback;
-    byLocale.set(locale, [...(byLocale.get(locale) ?? []), subscriber.email]);
-  }
+  const servers = await listServers();
+  const selection = normalizeLibraries(settings.newsletterLibraries, servers.map((server) => server.id));
 
   // The static URL is read by whoever opens it, so every app language is kept (two today);
-  // the deployment's own language stays the plain column, for readers of an unknown one.
+  // the deployment's own language stays the plain column, for readers of an unknown one. It is
+  // the full issue; the archive page only shows it to readers who may open all of its libraries.
   const rendered: Record<string, string> = {};
   for (const locale of LOCALES) rendered[locale] = await renderNewsletter(entries, locale);
   const stored = rendered[fallback];
   await updateSettings({
     newsletterLastHtml: stored,
     newsletterLastHtmlByLocale: rendered,
+    newsletterLastLibraries: issueLibraries(entries),
     newsletterLastSentAt: new Date(),
   });
   if (!subscribers.length) return { ok: true, sent: 0 };
 
+  const viewers = new Map(
+    (
+      await db
+        .select({
+          id: users.id,
+          serverId: users.serverId,
+          serverUserId: users.serverUserId,
+          isAdmin: users.isAdmin,
+          globalAdmin: users.globalAdmin,
+        })
+        .from(users)
+        .where(inArray(users.id, subscribers.map((s) => s.userId)))
+    ).map((viewer) => [viewer.id, viewer]),
+  );
+  const recipients = await Promise.all(
+    subscribers.map(async (subscriber) => {
+      const viewer = viewers.get(subscriber.userId);
+      const full = !!viewer && (viewer.isAdmin || viewer.globalAdmin);
+      const visible = new Set<string>();
+      if (viewer && !full) {
+        const access = await userSectionAccess(viewer).catch(() => null);
+        if (access && !access.all) for (const id of access.ids) visible.add(sectionKey(viewer.serverId, id));
+      }
+      return { ...subscriber, full, visible };
+    }),
+  );
+
+  // Rendered once per group and language actually subscribed to, not once per subscriber: a
+  // deployment realistically has one or two languages and a handful of library sets in play.
+  // Recipients stay in BCC per batch, so nobody learns another's address.
   let error: string | undefined;
-  for (const [locale, recipients] of byLocale) {
-    const html = rendered[locale] ?? stored;
-    const result = await sendMail(recipients, settings.newsletterSubject, html);
-    // One broken group must not hide that the others went out.
-    if (!result.ok) error ??= result.error;
+  let sent = 0;
+  for (const group of groupRecipients(recipients, selection).values()) {
+    const byLocale = new Map<Locale, string[]>();
+    for (const member of group.members) {
+      const locale = isLocale(member.locale) ? member.locale : fallback;
+      byLocale.set(locale, [...(byLocale.get(locale) ?? []), member.email]);
+    }
+    const cut = group.allowed ? narrowEntries(entries, group.allowed) : entries;
+    for (const [locale, addresses] of byLocale) {
+      const html = group.allowed ? await renderNewsletter(cut, locale, {}, group.allowed) : (rendered[locale] ?? stored);
+      const result = await sendMail(addresses, settings.newsletterSubject, html);
+      // One broken group must not hide that the others went out.
+      if (result.ok) sent += addresses.length;
+      else error ??= result.error;
+    }
   }
-  return error ? { ok: false, sent: 0, error } : { ok: true, sent: subscribers.length };
+  return error ? { ok: false, sent, error } : { ok: true, sent };
 }
 
 const sending = globalState('newsletter', () => ({ busy: false }));

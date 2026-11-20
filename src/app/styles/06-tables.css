@@ -1,0 +1,87 @@
+/* ============================================================
+   Tables
+   ============================================================ */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th {
+  text-align: left;
+  padding: 9px 12px;
+  /* An inset shadow, not a border: in a collapsed table a border stays behind when the
+     header sticks, leaving rows sliding under a header with no edge. */
+  box-shadow: inset 0 -1px 0 var(--line);
+  white-space: nowrap;
+  /* A horizontally scrolled table on a phone loses its headers otherwise. */
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: var(--state-hover);
+}
+
+td a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--text-faint);
+  text-underline-offset: 3px;
+}
+
+/*
+ * The timestamp column. Kept on one line where there is room, because a broken date is
+ * harder to scan than a wide one — but it is the widest cell in every table, and on a
+ * phone it pushed the column carrying the actual answer off the card. A class rather than
+ * an inline style so the phone breakpoint below can relax it; an inline style could not
+ * be overridden by a media query.
+ */
+.when-cell {
+  white-space: nowrap;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* A key/value table: the value column carries URLs and dates, so it must wrap instead of
+   widening the page; on a phone each row stacks the label above its value. */
+table.kv td {
+  overflow-wrap: anywhere;
+}
+
+table.kv th {
+  position: static;
+}
+
+@media (max-width: 520px) {
+  table.kv,
+  table.kv tbody,
+  table.kv tr,
+  table.kv th,
+  table.kv td {
+    display: block;
+    width: auto;
+  }
+
+  table.kv th {
+    white-space: normal;
+    background: none;
+    padding-bottom: 0;
+    box-shadow: none;
+    color: var(--text-dim);
+  }
+}

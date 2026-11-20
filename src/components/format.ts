@@ -125,6 +125,17 @@ export function percent(part: number, total: number): number {
   return total > 0 ? Math.min(100, Math.max(0, Math.round((part / total) * 100))) : 0;
 }
 
+/** Bytes as GB/MB: a raw byte count reads as noise. A dash when the size is unknown. */
+export function formatBytes(bytes?: number | null): string {
+  if (!bytes) return '—';
+  const mb = bytes / 1_048_576;
+  return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${Math.round(mb)} MB`;
+}
+
+/** A title's page; `server` opens the server-wide view an admin sees instead of the personal one. */
+export const titleHref = (label: string, server = false) =>
+  `/title/${encodeURIComponent(label)}${server ? '?scope=server' : ''}`;
+
 /**
  * Artwork always goes through the proxy, so a media server token never reaches the
  * browser. The slug picks the server; an item from a different one simply has no poster.

@@ -8,7 +8,8 @@ const root = globalThis as unknown as { __watcharrState?: Map<string, unknown> }
 
 /** The process-wide value for `key`, created by `init` on first use. Keys are plain literals. */
 export function globalState<T>(key: string, init: () => T): T {
-  const store = (root.__watcharrState ??= new Map());
+  root.__watcharrState ??= new Map();
+  const store = root.__watcharrState;
   if (!store.has(key)) store.set(key, init());
   return store.get(key) as T;
 }

@@ -1,12 +1,12 @@
 import 'server-only';
-import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { and, desc, eq, gt, lt, ne, notExists, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, inArray, lt, ne, notExists, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { authSessions, loginHistory, users } from '@/db/schema';
 import { isLocale } from '@/i18n';
-import { decryptSecret, encryptSecret } from './crypto';
+import { decryptSecret, encryptSecret, hmacSign, hmacVerify, type KeyPurpose } from './crypto';
 import type { MediaServerUser } from './adapters';
 import { getServer } from './config';
 import { lookupCountry } from './geoip';
@@ -20,24 +20,57 @@ const COOKIE = 'watcharr_session';
 export const VIEW_AS_COOKIE = 'watcharr_view_as';
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
-function secret(): string {
-  const s = process.env.SESSION_SECRET;
-  if (!s) throw new Error('SESSION_SECRET is not set');
-  return s;
+function sign(purpose: KeyPurpose, value: string): string {
+  return `${value}.${hmacSign(purpose, value)}`;
 }
 
-function sign(id: string): string {
-  return `${id}.${createHmac('sha256', secret()).update(id).digest('hex')}`;
+/** Returns the signed value if the signature is valid (current or pre-split key), otherwise null. */
+function unsign(purpose: KeyPurpose, signed: string): string | null {
+  const dot = signed.lastIndexOf('.');
+  if (dot <= 0) return null;
+  const value = signed.slice(0, dot);
+  return hmacVerify(purpose, value, signed.slice(dot + 1)) ? value : null;
 }
 
-/** Returns the session id if the signature is valid, otherwise null. */
-function unsign(value: string): string | null {
-  const [id, mac] = value.split('.');
-  if (!id || !mac) return null;
-  const expected = createHmac('sha256', secret()).update(id).digest('hex');
-  const a = Buffer.from(mac, 'hex');
-  const b = Buffer.from(expected, 'hex');
-  return a.length === b.length && timingSafeEqual(a, b) ? id : null;
+/*
+ * auth_sessions holds sha256(cookie id), never the id itself. The table travels in every
+ * backup download and in a copied data volume; with raw ids in it, anyone holding such a copy
+ * could still not sign a cookie (that needs SESSION_SECRET), but the ids were the one half
+ * of a live sign-in that sat in the database in plain text. The hash is also the handle the
+ * UI and the revoke API use, so a raw id never leaves the browser it belongs to.
+ *
+ * Rows from before carry the raw id: 64 lowercase hex characters, which a base64url hash
+ * (43 characters) can never be. They are rewritten the first time they are seen.
+ */
+export function sessionHandle(rawId: string): string {
+  return createHash('sha256').update(rawId).digest('base64url');
+}
+
+const isLegacyId = (id: string) => /^[0-9a-f]{64}$/.test(id);
+
+/** Rewrites one pre-hash row to its handle. Losing a race to another request is harmless. */
+async function upgradeLegacyRow(rawId: string): Promise<boolean> {
+  if (!isLegacyId(rawId)) return false;
+  const changed = await db
+    .update(authSessions)
+    .set({ id: sessionHandle(rawId) })
+    .where(eq(authSessions.id, rawId))
+    .returning({ id: authSessions.id });
+  return changed.length > 0;
+}
+
+/**
+ * Rewrites every pre-hash row. Run before ids are listed or looked up by handle, so a legacy
+ * row is never shown with its raw id and its handle still finds it.
+ */
+export async function upgradeLegacySessionIds(): Promise<number> {
+  const rows = await db
+    .select({ id: authSessions.id })
+    .from(authSessions)
+    .where(sql`length(${authSessions.id}) = 64 AND ${authSessions.id} NOT GLOB '*[^0-9a-f]*'`);
+  let upgraded = 0;
+  for (const row of rows) if (await upgradeLegacyRow(row.id)) upgraded += 1;
+  return upgraded;
 }
 
 // The Plex PIN flow: plex.tv hands the token of an approved PIN to anyone who knows its
@@ -46,10 +79,10 @@ function unsign(value: string): string | null {
 const PIN_COOKIE = 'watcharr_plex_pin';
 
 export async function bindPlexPin(pinId: string): Promise<void> {
-  (await cookies()).set(PIN_COOKIE, sign(pinId), {
+  (await cookies()).set(PIN_COOKIE, sign('plex-pin', pinId), {
     httpOnly: true,
     sameSite: 'lax',
-    secure: await useSecureCookie(),
+    secure: await isSecureRequest(),
     path: '/api/auth/plex',
     maxAge: 20 * 60, // plex.tv lets a PIN expire after about fifteen minutes
   });
@@ -57,7 +90,35 @@ export async function bindPlexPin(pinId: string): Promise<void> {
 
 export async function isPlexPinBound(pinId: string): Promise<boolean> {
   const raw = (await cookies()).get(PIN_COOKIE)?.value;
-  return !!raw && unsign(raw) === pinId;
+  return !!raw && unsign('plex-pin', raw) === pinId;
+}
+
+// Jellyfin Quick Connect: the pending request (code, secret, device) stays in server memory under
+// a random handle (server/quickconnect.ts), and only the browser that started it holds
+// the handle, signed. The secret alone redeems the sign-in, so it never reaches a browser, and
+// without the binding anybody who learned the six-digit code from a shoulder could poll for it.
+const QUICK_CONNECT_COOKIE = 'watcharr_quickconnect';
+const QUICK_CONNECT_PATH = '/api/auth/quickconnect';
+
+export async function bindQuickConnect(handle: string, maxAgeSeconds: number): Promise<void> {
+  (await cookies()).set(QUICK_CONNECT_COOKIE, sign('quick-connect', handle), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: await isSecureRequest(),
+    path: QUICK_CONNECT_PATH,
+    maxAge: maxAgeSeconds,
+  });
+}
+
+/** The handle this browser started, if its signature holds. */
+export async function boundQuickConnect(): Promise<string | null> {
+  const raw = (await cookies()).get(QUICK_CONNECT_COOKIE)?.value;
+  return raw ? unsign('quick-connect', raw) : null;
+}
+
+export async function clearQuickConnect(): Promise<void> {
+  // Same path as when it was set, or the browser keeps it.
+  (await cookies()).set(QUICK_CONNECT_COOKIE, '', { httpOnly: true, path: QUICK_CONNECT_PATH, maxAge: 0 });
 }
 
 /**
@@ -70,8 +131,10 @@ export async function isPlexPinBound(pinId: string): Promise<boolean> {
  * the flag follows the scheme the request really arrived with. Next sets X-Forwarded-Proto
  * itself ("http" when nothing in front sent one), so a TLS-terminating proxy has to send
  * "https" for the flag to be set. (http://localhost is a secure context either way.)
+ *
+ * Not named use…(): it is no React hook, and the hook rules treat that prefix as one.
  */
-async function useSecureCookie(): Promise<boolean> {
+async function isSecureRequest(): Promise<boolean> {
   return (await headers()).get('x-forwarded-proto')?.split(',')[0]?.trim() === 'https';
 }
 
@@ -109,8 +172,12 @@ export async function recordLogin(
   }
 }
 
-/** A user's active (non-expired) sessions, newest first. Never includes the token itself. */
+/**
+ * A user's active (non-expired) sessions, newest first. Never includes the token itself, and
+ * `id` is the handle (sha256 of the cookie id) that revokeSession() takes.
+ */
 export async function listUserSessions(userId: number) {
+  await upgradeLegacySessionIds();
   return db
     .select({ id: authSessions.id, createdAt: authSessions.createdAt, expiresAt: authSessions.expiresAt })
     .from(authSessions)
@@ -129,19 +196,40 @@ export async function setUserLocale(userId: number, locale: string | null): Prom
     .where(eq(users.id, userId));
 }
 
-/** Signs one session out remotely — the "someone has my login" button. */
+/**
+ * Signs one session out remotely — the "someone has my login" button, and sync.ts when the
+ * media server rejects the token. Takes the handle (Session.id / listUserSessions().id).
+ */
 export async function revokeSession(id: string): Promise<void> {
   await db.delete(authSessions).where(eq(authSessions.id, id));
 }
 
-/** Most recent login attempts. Scoped to one server unless the caller is a global admin. */
-export async function listLoginHistory(serverId?: number, limit = 200) {
+/** Signs a person out everywhere, e.g. when their media server role or share changed. */
+export async function revokeUserSessions(userId: number): Promise<number> {
+  return (await db.delete(authSessions).where(eq(authSessions.userId, userId)).returning({ id: authSessions.id }))
+    .length;
+}
+
+const loginScope = (serverId?: number) => (serverId ? eq(loginHistory.serverId, serverId) : sql`1 = 1`);
+
+/**
+ * Most recent login attempts. Scoped to one server unless the caller is a global admin.
+ * `offset` pages further back; the defaults are the first page the security page shows.
+ */
+export async function listLoginHistory(serverId?: number, limit = 200, offset = 0) {
   return db
     .select()
     .from(loginHistory)
-    .where(serverId ? eq(loginHistory.serverId, serverId) : sql`1 = 1`)
-    .orderBy(desc(loginHistory.createdAt))
-    .limit(limit);
+    .where(loginScope(serverId))
+    .orderBy(desc(loginHistory.createdAt), desc(loginHistory.id))
+    .limit(limit)
+    .offset(offset);
+}
+
+/** How many login attempts listLoginHistory() can page through, same scope. */
+export async function countLoginHistory(serverId?: number): Promise<number> {
+  const [row] = await db.select({ n: count() }).from(loginHistory).where(loginScope(serverId));
+  return row?.n ?? 0;
 }
 
 /** Upserts the media server user locally and issues a signed session cookie. */
@@ -223,16 +311,16 @@ export async function createSession(
 
   const id = randomBytes(32).toString('hex');
   await db.insert(authSessions).values({
-    id,
+    id: sessionHandle(id),
     userId: row.id,
     serverToken: encryptSecret(serverToken),
     expiresAt: new Date(Date.now() + MAX_AGE_SECONDS * 1000),
   });
 
-  (await cookies()).set(COOKIE, sign(id), {
+  (await cookies()).set(COOKIE, sign('session-cookie', id), {
     httpOnly: true,
     sameSite: 'lax',
-    secure: await useSecureCookie(),
+    secure: await isSecureRequest(),
     path: '/',
     maxAge: MAX_AGE_SECONDS,
   });
@@ -241,7 +329,10 @@ export async function createSession(
 }
 
 export interface Session {
-  /** The auth_sessions row id. Carried so a dead media server token can drop its session. */
+  /**
+   * The session's handle: the auth_sessions row id, sha256 of the cookie's id (never the cookie
+   * id itself). Carried so a dead media server token can drop its session (revokeSession).
+   */
   id: string;
   user: SessionUser;
   serverToken: string;
@@ -253,30 +344,55 @@ export interface Session {
   preview?: { admin: SessionUser };
 }
 
-/** The signed-in person, ignoring any "view as". Use where the real identity matters. */
-export async function getRealSession(): Promise<Session | null> {
+/** The id the session cookie carries, if its signature holds. Never leaves this module. */
+async function cookieSessionId(): Promise<string | null> {
   const raw = (await cookies()).get(COOKIE)?.value;
-  if (!raw) return null;
-  const id = unsign(raw);
-  if (!id) return null;
+  return raw ? unsign('session-cookie', raw) : null;
+}
 
+async function loadSession(handle: string) {
   const [row] = await db
     .select({ user: users, serverToken: authSessions.serverToken })
     .from(authSessions)
     .innerJoin(users, eq(users.id, authSessions.userId))
-    .where(and(eq(authSessions.id, id), gt(authSessions.expiresAt, new Date())));
-  return row ? { id, user: row.user, serverToken: decryptSecret(row.serverToken) } : null;
+    .where(and(eq(authSessions.id, handle), gt(authSessions.expiresAt, new Date())));
+  return row;
+}
+
+/** Resolves a cookie id to its session: by handle, else a pre-hash row that is upgraded on the spot. */
+export async function sessionForCookieId(rawId: string): Promise<Session | null> {
+  const handle = sessionHandle(rawId);
+  let row = await loadSession(handle);
+  // Signed in before ids were hashed: the row still carries the raw id. Upgrading it here
+  // instead of signing everybody out is the whole migration. Looked up again whatever the
+  // upgrade reports: parallel requests with the same old cookie all miss the first lookup,
+  // one of them rewrites the row and the others find nothing left to rewrite, but the row is
+  // there under its handle for all of them.
+  if (!row && isLegacyId(rawId)) {
+    await upgradeLegacyRow(rawId);
+    row = await loadSession(handle);
+  }
+  return row ? { id: handle, user: row.user, serverToken: decryptSecret(row.serverToken) } : null;
+}
+
+/** The signed-in person, ignoring any "view as". Use where the real identity matters. */
+export async function getRealSession(): Promise<Session | null> {
+  const id = await cookieSessionId();
+  return id ? sessionForCookieId(id) : null;
 }
 
 /** The effective session: the real one, or the viewed user's when an admin is previewing. */
 export async function getSession(): Promise<Session | null> {
-  const real = await getRealSession();
+  const rawId = await cookieSessionId();
+  const real = rawId ? await sessionForCookieId(rawId) : null;
   if (!real) return null;
   const raw = (await cookies()).get(VIEW_AS_COOKIE)?.value;
-  const payload = raw ? unsign(raw) : null;
-  // Bound to this very session: a cookie copied from another admin's browser means nothing.
+  const payload = raw ? unsign('view-as', raw) : null;
+  // Bound to this very sign-in: a cookie copied from another admin's browser means nothing.
+  // The binding is the cookie's own id, as before hashing, so proxy.ts can compare the two
+  // cookies without a database and previews started before the update keep working.
   const [boundTo, target] = payload?.split(':') ?? [];
-  if (boundTo !== real.id || !isAdmin(real.user)) return real;
+  if (boundTo !== rawId || !isAdmin(real.user)) return real;
   const [viewed] = await db.select().from(users).where(eq(users.id, Number(target)));
   if (!viewed || viewed.id === real.user.id || !canSee(real.user, viewed)) return real;
   // Never more rights than the person previewing: a server admin looking at the global admin
@@ -286,17 +402,21 @@ export async function getSession(): Promise<Session | null> {
   return { id: real.id, user, serverToken: '', preview: { admin: real.user } };
 }
 
-/** Starts (or, with null, ends) the preview. The caller has already checked `canSee`. */
-export async function setViewAs(sessionId: string, userId: number | null): Promise<void> {
+/**
+ * Starts (or, with null, ends) the preview for the signed-in browser. The caller has already
+ * checked `canSee`. Binds to the session cookie's own id, which only this module reads.
+ */
+export async function setViewAs(userId: number | null): Promise<void> {
   const jar = await cookies();
-  if (userId === null) {
+  const rawId = await cookieSessionId();
+  if (userId === null || !rawId) {
     jar.delete(VIEW_AS_COOKIE);
     return;
   }
-  jar.set(VIEW_AS_COOKIE, sign(`${sessionId}:${userId}`), {
+  jar.set(VIEW_AS_COOKIE, sign('view-as', `${rawId}:${userId}`), {
     httpOnly: true,
     sameSite: 'lax',
-    secure: await useSecureCookie(),
+    secure: await isSecureRequest(),
     path: '/',
     // Session cookie on purpose: closing the browser ends the preview.
   });
@@ -325,6 +445,16 @@ export async function requireAdmin() {
   const session = await requireUser();
   if (!isAdmin(session.user)) redirect('/watchlist');
   return session;
+}
+
+/**
+ * The same gate for API routes: the session of a global admin, or null. A route answers null with
+ * a JSON 403 (apierror.ts::globalAdminRequired); requireGlobalAdmin() below redirects instead,
+ * which a fetch() caller would follow into an HTML page it cannot parse.
+ */
+export async function getGlobalAdminSession(): Promise<Session | null> {
+  const session = await getSession();
+  return session?.user.globalAdmin ? session : null;
 }
 
 /** Server management and cross-server views. A server admin must not get here. */
@@ -374,9 +504,37 @@ export async function claimGlobalAdmin(userId: number): Promise<boolean> {
 }
 
 /**
- * Refuses to remove the last global admin — the deployment would lose the only account
- * that can manage servers and hand the role back out.
+ * Grants or revokes the global admin role. Revoking refuses to remove the last global admin —
+ * the deployment would lose the only account that can manage servers and hand the role back
+ * out. "Is there another one?" lives in the UPDATE itself: with a count first and the update
+ * after, two admins revoking each other at the same moment could both see two and both win.
  */
+export async function setGlobalAdmin(
+  userId: number,
+  globalAdmin: boolean,
+): Promise<'ok' | 'unknown' | 'last-admin'> {
+  const changed = await db
+    .update(users)
+    .set({ globalAdmin })
+    .where(
+      and(
+        eq(users.id, userId),
+        globalAdmin
+          ? sql`1 = 1`
+          : or(
+              eq(users.globalAdmin, false),
+              // Spelled out: inside UPDATE users, a qualified column could bind to the outer row.
+              sql`(SELECT count(*) FROM users WHERE global_admin = 1) > 1`,
+            ),
+      ),
+    )
+    .returning({ id: users.id });
+  if (changed.length) return 'ok';
+  const [exists] = await db.select({ id: users.id }).from(users).where(eq(users.id, userId));
+  return exists ? 'last-admin' : 'unknown';
+}
+
+/** Number of global admins (the emergency account included, as the role check counts it). */
 export async function countGlobalAdmins(): Promise<number> {
   const rows = await db
     .select({ id: users.id })
@@ -387,9 +545,9 @@ export async function countGlobalAdmins(): Promise<number> {
 
 export async function destroySession() {
   const jar = await cookies();
-  const raw = jar.get(COOKIE)?.value;
-  const id = raw ? unsign(raw) : null;
-  if (id) await db.delete(authSessions).where(eq(authSessions.id, id));
+  const id = await cookieSessionId();
+  // Both spellings: a session from before hashing may never have been upgraded.
+  if (id) await db.delete(authSessions).where(inArray(authSessions.id, [sessionHandle(id), id]));
   jar.delete(COOKIE);
   jar.delete(VIEW_AS_COOKIE);
 }

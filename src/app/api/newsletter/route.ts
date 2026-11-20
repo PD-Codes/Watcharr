@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { getT } from '@/i18n/server';
 import { isOwnAddress, sendConfirmation } from '@/server/mailconfirm';
 import { getSubscription, subscribe, unsubscribe } from '@/server/newsletter';
 import { getSession } from '@/server/session';
+import { apiError, badBody, unauthorized, withApiErrors } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,15 +13,15 @@ export const dynamic = 'force-dynamic';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-export async function POST(request: Request) {
+export const POST = withApiErrors(async (request: Request) => {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: 'Sign in first' }, { status: 401 });
+  if (!session) return unauthorized();
 
   const body = await readBody(request, { email: 'string' });
   if (!body) return badBody();
   const address = body.email?.trim() ?? '';
   if (!EMAIL.test(address)) {
-    return NextResponse.json({ error: 'That does not look like an email address' }, { status: 400 });
+    return apiError(400, 'invalid-email', 'err.invalidEmail');
   }
 
   // The account's own address, or the one already confirmed, needs no round trip.
@@ -35,13 +36,13 @@ export async function POST(request: Request) {
     body: t('mail.confirmNewsletter'),
     button: t('mail.confirmButton'),
   });
-  if (!sent.ok) return NextResponse.json({ error: sent.error }, { status: sent.status ?? 400 });
+  if (!sent.ok) return apiError(sent.status ?? 400, 'confirm-failed', 'err.sendFailed', { message: sent.error });
   return NextResponse.json({ ok: true, pending: true });
-}
+});
 
 export async function DELETE() {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: 'Sign in first' }, { status: 401 });
+  if (!session) return unauthorized();
 
   await unsubscribe(session.user.id);
   return NextResponse.json({ ok: true });

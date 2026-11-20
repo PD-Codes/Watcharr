@@ -1,6 +1,6 @@
 // The rules behind the system check, free of I/O so they can be tested. doctor.ts gathers the
 // facts; this decides what they mean. Each check has an id, and the page looks up its texts as
-// `doctor.<id>` (title) and `doctor.<id>.<level>` (message).
+// `doctor.<id>` (title) and `doctor.<id>.<level>` (message), or under the prefix in TEXT_PREFIX.
 
 export type Level = 'ok' | 'warn' | 'fail';
 
@@ -22,7 +22,15 @@ export interface DoctorInput {
   database?: { journalMode: string; remoteFs: string | null; readers: number; walBytes: number };
   /** Hosts paused for overload right now ("plex:32400 — database is locked"). */
   strained?: string[];
+  /**
+   * Plex servers reached right now over plain http at a bare IP ("Label → http://192.168.1.5:32400"),
+   * the detour plexroute.ts falls back to. Absent without a Plex server, so the check is not shown.
+   */
+  plexPlainRoutes?: string[];
 }
+
+/** Checks whose texts live outside `doctor.` (added in a later translation part). */
+export const TEXT_PREFIX: Record<string, string> = { plexPlain: 'fix2.doctor.plexPlain' };
 
 export interface Check {
   id: string;
@@ -41,6 +49,11 @@ export function evaluateDoctor(i: DoctorInput, now = Date.now()): Check[] {
   add('migrations', i.pendingMigrations > 0 ? 'fail' : 'ok', { count: i.pendingMigrations });
   add('servers', i.downServers.length ? 'fail' : 'ok', { servers: i.downServers.join(', ') });
   if (i.strained) add('load', i.strained.length ? 'warn' : 'ok', { hosts: i.strained.join(', ') });
+  // Works, so no failure; but the admin token travels the LAN in the clear, which only the
+  // network (NAT loopback, DNS rebind protection) or the server's own settings can change.
+  if (i.plexPlainRoutes) {
+    add('plexPlain', i.plexPlainRoutes.length ? 'warn' : 'ok', { routes: i.plexPlainRoutes.join(', ') });
+  }
   if (i.database) {
     const d = i.database;
     // Not WAL: every write blocks every read. A share: locks are unreliable ("database is locked").

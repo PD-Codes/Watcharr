@@ -16,7 +16,7 @@ import { globalState } from './state';
  * to compute is kept for 30 s and handed to the next asker. Cheap queries are never cached:
  * they stay live, and a small database behaves exactly as it did before.
  *
- * ponytail: keyed on the SQL text and its parameters, no invalidation on writes — the 30 s is
+ * Trade-off: keyed on the SQL text and its parameters, no invalidation on writes — the 30 s is
  * the whole contract. Needs no change when a query is added, which is why it sits behind
  * db.all rather than at every call site.
  */
@@ -24,16 +24,31 @@ import { globalState } from './state';
 const SLOW_MS = 150;
 const TTL_MS = 30_000;
 const MAX_ENTRIES = 400;
+/**
+ * Answers this long are not kept. The statistics return a handful of rows per chart; a result
+ * of tens of thousands of rows is a listing, and holding it for 30 s per distinct page or
+ * filter is how the cache would grow to hundreds of megabytes.
+ */
+export const MAX_CACHED_ROWS = 10_000;
 
 const dialect = new SQLiteSyncDialect();
 const kept = globalState('readcache', () => new Map<string, { at: number; rows: unknown[] }>());
+
+/** Drops everything past its TTL. Cheap: the map holds at most MAX_ENTRIES slow answers. */
+function evictExpired(now: number) {
+  for (const [k, v] of kept) if (now - v.at >= TTL_MS) kept.delete(k);
+}
 
 async function all<T>(query: SQL): Promise<T[]> {
   const { sql, params } = dialect.sqlToQuery(query);
   // Hashed: a query can carry big parameter lists, and the key is kept for every slow answer.
   const key = createHash('sha1').update(sql).update('\u0000').update(JSON.stringify(params)).digest('base64');
   const hit = kept.get(key);
-  if (hit && Date.now() - hit.at < TTL_MS) return (hit.rows as T[]).slice();
+  if (hit) {
+    if (Date.now() - hit.at < TTL_MS) return (hit.rows as T[]).slice();
+    // Expired entries used to stay until the map was full, holding their rows for nothing.
+    kept.delete(key);
+  }
 
   // On a reader thread when there is one, so a slow aggregate no longer stops every other
   // request; on the main connection otherwise (exclusive locking, readers off or failed).
@@ -44,21 +59,22 @@ async function all<T>(query: SQL): Promise<T[]> {
     const local = await db.all<T>(query);
     return { rows: local, ms: performance.now() - started };
   });
-  if (ms >= SLOW_MS) {
+  if (ms >= SLOW_MS && rows.length <= MAX_CACHED_ROWS) {
+    const now = Date.now();
+    evictExpired(now);
     kept.delete(key);
-    kept.set(key, { at: Date.now(), rows });
-    if (kept.size > MAX_ENTRIES) {
-      const now = Date.now();
-      for (const [k, v] of kept) if (now - v.at >= TTL_MS) kept.delete(k);
-      // Still over: drop the oldest first (a Map iterates in insertion order).
-      for (const k of kept.keys()) {
-        if (kept.size <= MAX_ENTRIES) break;
-        kept.delete(k);
-      }
+    kept.set(key, { at: now, rows });
+    // Still over: drop the oldest first (a Map iterates in insertion order).
+    for (const k of kept.keys()) {
+      if (kept.size <= MAX_ENTRIES) break;
+      kept.delete(k);
     }
   }
   return rows;
 }
+
+/** For the tests and the caches page: how many answers are held right now. */
+export const readCacheSize = () => kept.size;
 
 /** Same call shape as db.all, which is all the statistics modules use. */
 export const readDb = { all };

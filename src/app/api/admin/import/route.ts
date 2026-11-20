@@ -1,21 +1,15 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { getJob, startJob, stopJob, type JobParams } from '@/server/importjob';
 import { UploadError } from '@/server/importupload';
-import { getSession } from '@/server/session';
+import { getGlobalAdminSession } from '@/server/session';
+import { apiError, badBody, globalAdminRequired } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
-async function requireGlobal() {
-  const session = await getSession();
-  return session?.user.globalAdmin ? session : null;
-}
-
-const denied = () => NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-
 /** Progress of the current (or last) import — what the page polls. */
 export async function GET() {
-  if (!(await requireGlobal())) return denied();
+  if (!(await getGlobalAdminSession())) return globalAdminRequired();
   return NextResponse.json({ job: await getJob() });
 }
 
@@ -30,7 +24,7 @@ export async function GET() {
  * id the upload handed out, never by a path.
  */
 export async function POST(request: Request) {
-  if (!(await requireGlobal())) return denied();
+  if (!(await getGlobalAdminSession())) return globalAdminRequired();
 
   const body = await readBody(request, {
     path: 'string',
@@ -64,13 +58,13 @@ export async function POST(request: Request) {
     logins: body.logins !== false,
   };
   if (!params.path === !params.uploadId) {
-    return NextResponse.json({ error: 'Give either a database path or an uploaded file' }, { status: 400 });
+    return apiError(400, 'import-source', 'err.importSource');
   }
 
   try {
     const previous = body.resume ? await getJob() : null;
     if (body.resume && (!previous || previous.status === 'running' || previous.status === 'done')) {
-      return NextResponse.json({ error: 'There is no interrupted import to continue' }, { status: 409 });
+      return apiError(409, 'nothing-to-resume', 'err.nothingToResume');
     }
     // A resumed run keeps the parameters it started with; the request only says "go on".
     const job = previous
@@ -79,15 +73,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, job }, { status: 202 });
   } catch (error) {
     const status = error instanceof UploadError ? error.status : 400;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Import failed' },
-      { status },
-    );
+    return apiError(status, 'import-failed', 'err.importFailed', {
+      message: error instanceof Error ? error.message : null,
+    });
   }
 }
 
 /** Stops the running import after its current batch. What was written stays written. */
 export async function DELETE() {
-  if (!(await requireGlobal())) return denied();
+  if (!(await getGlobalAdminSession())) return globalAdminRequired();
   return NextResponse.json({ ok: stopJob() });
 }

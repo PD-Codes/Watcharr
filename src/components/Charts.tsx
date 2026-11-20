@@ -125,6 +125,7 @@ export function StatCard({
       <p className="stat-label">
         {label}
         {info && (
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: focusable so keyboard users get the tooltip a mouse gets on hover
           <span className="info" role="img" data-tip={info} aria-label={info} tabIndex={0}>
             i
           </span>
@@ -618,6 +619,7 @@ export async function Heatmap({
   const perforations = Math.ceil(cells.length / 7);
 
   return (
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the role is always group or img, both take a label; the conditional is not followed
     <div
       className="filmstrip"
       role={hrefFor ? 'group' : 'img'}
@@ -683,14 +685,14 @@ export async function WeekHourGrid({
   // The busiest cell, as one sentence for assistive technology (see Heatmap).
   let peakDay = 0;
   let peakHour = 0;
-  data.forEach((row, dayIndex) =>
+  data.forEach((row, dayIndex) => {
     row.forEach((value, hour) => {
       if (value > (data[peakDay][peakHour] ?? 0)) {
         peakDay = dayIndex;
         peakHour = hour;
       }
-    }),
-  );
+    });
+  });
   const summary = t('chart.describeWeek', {
     total: format(flat.reduce((sum, value) => sum + value, 0)),
     day: days[peakDay],
@@ -700,6 +702,7 @@ export async function WeekHourGrid({
 
   return (
     <div className="weekgrid-wrap">
+      {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: the role is always group or img, both take a label; the conditional is not followed */}
       <div className="weekgrid" role={hrefFor ? 'group' : 'img'} aria-label={summary}>
         <span />
         {Array.from({ length: 24 }, (_, hour) => (

@@ -1,0 +1,76 @@
+/* ============================================================
+   Posters
+   ============================================================ */
+
+.poster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(44vw, 132px), 1fr));
+  gap: 18px;
+}
+
+.poster {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: var(--shape-md);
+  background: var(--surface-container);
+  border: 1px solid var(--line);
+  box-shadow: var(--elev-1);
+  transition: border-color var(--dur-short) var(--ease-standard),
+    transform var(--dur-medium) var(--ease-emphasized),
+    box-shadow var(--dur-medium) var(--ease-standard);
+}
+
+/* Neutral on hover: amber would claim "playing" or "data", and a hovered poster is neither. */
+a:hover .poster {
+  border-color: var(--line-strong);
+  box-shadow: var(--elev-3);
+  transform: translateY(-3px);
+}
+
+.poster-title {
+  font-size: 13px;
+  margin: 9px 0 2px;
+  overflow-wrap: anywhere;
+}
+
+.poster-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+/* A suggestion card: poster links inward, the small button links out to the server. */
+.poster-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.poster-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.link-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-full);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.link-out:hover {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+.link-out svg {
+  width: 13px;
+  height: 13px;
+}

@@ -1,24 +1,22 @@
 import { NextResponse } from 'next/server';
 import { requestRecoveryCode } from '@/server/adminrecovery';
 import { clientIp } from '@/server/ratelimit';
-import { acceptedHosts } from '@/server/sameorigin';
+import { apiError } from '@/server/apierror';
 
-/** Where the printed link points: APP_URL, else the address the browser used, else a bare path. */
-function origin(request: Request): string {
+/**
+ * Where the printed link points: APP_URL only. The Origin and Host headers belong to whoever
+ * sent this request — a link built from them would be a sign-in link the requester chose the
+ * host of, printed where the admin is told to click it. Without APP_URL the console gets the
+ * path and the code instead.
+ */
+function origin(): string {
   const fromEnv = process.env.APP_URL?.trim().replace(/\/+$/, '');
-  if (fromEnv && /^https?:\/\/[^\s/]+$/.test(fromEnv)) return fromEnv;
-  const header = request.headers.get('origin');
-  try {
-    if (header && acceptedHosts(request.headers).includes(new URL(header).host.toLowerCase())) return header;
-  } catch {
-    // not a URL
-  }
-  return '';
+  return fromEnv && /^https?:\/\/[^\s/]+$/.test(fromEnv) ? fromEnv : '';
 }
 
 /** Prints a one-time admin sign-in code to the server console. Answers the same either way. */
 export async function POST(request: Request) {
-  const ok = await requestRecoveryCode(origin(request), clientIp(request));
-  if (!ok) return NextResponse.json({ error: 'Too many requests', code: 'limited' }, { status: 429 });
+  const ok = await requestRecoveryCode(origin(), clientIp(request));
+  if (!ok) return apiError(429, 'limited', 'err.tooManyRequests');
   return NextResponse.json({ ok: true });
 }

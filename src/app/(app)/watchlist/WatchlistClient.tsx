@@ -106,7 +106,7 @@ export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
             placeholder={t('watchlist.searchPlaceholder')}
           />
         </label>
-        <button>{t('action.search')}</button>
+        <button type="submit">{t('action.search')}</button>
       </form>
 
       {error && (
@@ -128,7 +128,7 @@ export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
               <span>
                 {hit.title} <span className="muted">{hit.year ?? ''}</span>
               </span>
-              <button onClick={() => add(hit)}>{t('watchlist.add')}</button>
+              <button type="button" onClick={() => add(hit)}>{t('watchlist.add')}</button>
             </div>
           ))}
         </div>
@@ -174,7 +174,7 @@ export default function WatchlistClient({ items }: { items: WatchlistItem[] }) {
                     <span className="badge">{item.source}</span>
                   </td>
                   <td>
-                    <button className="link" onClick={() => remove(item.itemId)}>
+                    <button type="button" className="link" onClick={() => remove(item.itemId)}>
                       {t('watchlist.remove')}
                     </button>
                   </td>

@@ -6,7 +6,7 @@ import { useT } from '@/i18n/client';
 
 interface Backup {
   name: string;
-  kind: 'scheduled' | 'manual' | 'pre-restore' | 'pre-import' | 'other';
+  kind: 'scheduled' | 'manual' | 'pre-restore' | 'pre-import' | 'pre-upgrade' | 'other';
   size: number;
   createdAt: string;
 }
@@ -72,11 +72,11 @@ export default function BackupsManager({
           <p className="muted">{canRestart ? t('backups.pendingHintDocker') : t('backups.pendingHint')}</p>
           <div className="row" style={{ gap: 10 }}>
             {canRestart && (
-              <button disabled={busy !== null} onClick={() => window.confirm(t('backups.confirmRestart')) && void act('restart')}>
+              <button type="button" disabled={busy !== null} onClick={() => window.confirm(t('backups.confirmRestart')) && void act('restart')}>
                 {t('backups.restartNow')}
               </button>
             )}
-            <button className="outlined" disabled={busy !== null} onClick={() => void act('cancelRestore')}>
+            <button type="button" className="outlined" disabled={busy !== null} onClick={() => void act('cancelRestore')}>
               {t('backups.cancelRestore')}
             </button>
           </div>
@@ -84,10 +84,10 @@ export default function BackupsManager({
       )}
 
       <div className="row" style={{ gap: 10, margin: '12px 0' }}>
-        <button disabled={busy !== null} onClick={() => void act('create')}>
+        <button type="button" disabled={busy !== null} onClick={() => void act('create')}>
           {busy === 'create' ? t('backups.creating') : t('backups.create')}
         </button>
-        <button className="outlined" onClick={() => window.location.assign("/api/admin/backup")}>{t("system.downloadSnapshot")}</button>
+        <button type="button" className="outlined" onClick={() => window.location.assign("/api/admin/backup")}>{t("system.downloadSnapshot")}</button>
       </div>
       {message && <p className="muted">{message}</p>}
       {error && <p className="error">{error}</p>}
@@ -118,23 +118,27 @@ export default function BackupsManager({
                       </p>
                     )}
                   </td>
-                  <td className="secondary-col">{t(`backups.kind.${b.kind}` as 'backups.kind.manual')}</td>
+                  <td className="secondary-col">
+                    {b.kind === 'pre-upgrade'
+                      ? t('fix2.backups.kindPreUpgrade')
+                      : t(`backups.kind.${b.kind}` as 'backups.kind.manual')}
+                  </td>
                   <td>{size(b.size)}</td>
                   <td className="secondary-col when-cell">{b.createdAt}</td>
                   <td>
                     <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                       <a href={`/api/admin/backup?name=${encodeURIComponent(b.name)}`}>{t('backups.download')}</a>
-                      <button className="link" disabled={busy !== null} onClick={() => void act('verify', b.name, `v:${b.name}`)}>
+                      <button type="button" className="link" disabled={busy !== null} onClick={() => void act('verify', b.name, `v:${b.name}`)}>
                         {busy === `v:${b.name}` ? t('backups.verifying') : t('backups.verify')}
                       </button>
-                      <button
+                      <button type="button"
                         className="link"
                         disabled={busy !== null}
                         onClick={() => window.confirm(t('backups.confirmRestore', { name: b.name })) && void act('restore', b.name)}
                       >
                         {t('backups.restore')}
                       </button>
-                      <button
+                      <button type="button"
                         className="link"
                         disabled={busy !== null}
                         onClick={() => window.confirm(t('backups.confirmDelete', { name: b.name })) && void act('delete', b.name)}

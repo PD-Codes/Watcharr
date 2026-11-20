@@ -10,6 +10,7 @@ import { statfsSync } from 'node:fs';
  * transaction either fail or are slow enough to surface as "database is locked" while a
  * single process is the only one using the file.
  */
+// biome-ignore-start lint/complexity/useSimpleNumberKeys: statfs magic numbers are documented in hex; decimal would make them unrecognisable
 const REMOTE_FS: Record<number, string> = {
   0x6969: 'nfs',
   0x517b: 'smb',
@@ -20,6 +21,7 @@ const REMOTE_FS: Record<number, string> = {
   0x00c36400: 'ceph',
   0x5346414f: 'afs',
 };
+// biome-ignore-end lint/complexity/useSimpleNumberKeys: see above
 
 export type LockingMode = 'normal' | 'exclusive';
 

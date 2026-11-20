@@ -3,6 +3,7 @@ import { getAdapter } from '@/server/config';
 import { supportsTerminate } from '@/server/adapters';
 import { getSession } from '@/server/session';
 import { sessionRowKey } from '@/server/sync';
+import { adminRequired, apiError, withApiErrors } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,17 +14,15 @@ const MAX_REASON_LENGTH = 200;
  * from the stored row: on Plex the two are different values, and a stream that is no longer
  * live cannot be terminated anyway.
  */
-export async function POST(request: Request) {
+export const POST = withApiErrors(async (request: Request) => {
   const session = await getSession();
-  if (!session || !(session.user.isAdmin || session.user.globalAdmin)) {
-    return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
-  }
+  if (!session || !(session.user.isAdmin || session.user.globalAdmin)) return adminRequired();
 
   const body: unknown = await request.json().catch(() => null);
   const sessionKey = (body as { sessionKey?: unknown } | null)?.sessionKey;
   const rawReason = (body as { reason?: unknown } | null)?.reason;
   if (typeof sessionKey !== 'string' || !sessionKey) {
-    return NextResponse.json({ error: 'sessionKey is required' }, { status: 400 });
+    return apiError(400, 'missing-session-key', 'err.sessionKeyRequired');
   }
   const reason =
     typeof rawReason === 'string' && rawReason.trim()
@@ -34,19 +33,16 @@ export async function POST(request: Request) {
   // admin may be looking at a stream on a server they did not sign in through.
   const serverId = Number(sessionKey.split(':')[0]);
   if (!Number.isInteger(serverId) || serverId < 1) {
-    return NextResponse.json({ error: 'Unknown session' }, { status: 400 });
+    return apiError(400, 'unknown-session', 'err.unknownSession');
   }
   if (!session.user.globalAdmin && serverId !== session.user.serverId) {
-    return NextResponse.json({ error: 'Not your server' }, { status: 403 });
+    return apiError(403, 'not-your-server', 'err.notYourServer');
   }
 
   const adapter = await getAdapter(serverId).catch(() => null);
-  if (!adapter) return NextResponse.json({ error: 'Unknown server' }, { status: 404 });
+  if (!adapter) return apiError(404, 'unknown-server', 'err.unknownServer');
   if (!supportsTerminate(adapter)) {
-    return NextResponse.json(
-      { error: `${adapter.type} does not support terminating streams` },
-      { status: 501 },
-    );
+    return apiError(501, 'unsupported', 'err.terminateUnsupported', { vars: { type: adapter.type } });
   }
 
   // Stored keys carry the server prefix; the adapter reports the native one.
@@ -55,13 +51,13 @@ export async function POST(request: Request) {
     (s) => sessionRowKey(serverId, s.sessionKey) === sessionKey,
   );
   if (!target?.terminateKey) {
-    return NextResponse.json({ error: 'That stream is no longer running' }, { status: 404 });
+    return apiError(404, 'stream-gone', 'err.streamGone');
   }
 
   try {
     await adapter.terminateSession(target.terminateKey, reason);
   } catch {
-    return NextResponse.json({ error: 'The media server refused to stop the stream' }, { status: 502 });
+    return apiError(502, 'terminate-refused', 'err.terminateRefused');
   }
   return NextResponse.json({ ok: true });
-}
+});

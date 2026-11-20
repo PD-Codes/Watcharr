@@ -1,7 +1,7 @@
 import 'server-only';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, stat, statfs, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { backupTo, DB_PATH } from '@/db';
@@ -16,7 +16,7 @@ const run = promisify(execFile);
 const MARKER = join(dirname(DB_PATH), 'restore-pending.json');
 const NAME = /^[A-Za-z0-9][\w.-]*\.db$/;
 
-export type BackupKind = 'scheduled' | 'manual' | 'pre-restore' | 'pre-import' | 'other';
+export type BackupKind = 'scheduled' | 'manual' | 'pre-restore' | 'pre-import' | 'pre-upgrade' | 'other';
 
 export interface BackupEntry {
   name: string;
@@ -41,6 +41,8 @@ function kindOf(name: string): BackupKind {
   if (name.startsWith('manual-')) return 'manual';
   if (name.startsWith('pre-restore-')) return 'pre-restore';
   if (name.startsWith('pre-import-')) return 'pre-import';
+  // Taken by scripts/migrate.mjs before an update's first migration: the way back to the old version.
+  if (name.startsWith('pre-upgrade-')) return 'pre-upgrade';
   return 'other';
 }
 
@@ -64,11 +66,8 @@ export async function backupPath(name: string): Promise<string | null> {
 
 export async function createManualBackup(prefix: 'manual' | 'pre-import' = 'manual'): Promise<BackupEntry> {
   await mkdir(BACKUP_DIR, { recursive: true });
-  // A snapshot is about as big as the database; better to refuse than to fill the volume
-  // the live database itself needs to grow in.
-  const [{ size }, fs] = await Promise.all([stat(DB_PATH), statfs(BACKUP_DIR).catch(() => null)]);
-  if (fs && fs.bavail * fs.bsize < size * 1.2) throw new Error('Not enough free disk space for a backup');
-
+  // backupTo refuses when the volume has no room for the snapshot (better than filling the one
+  // the live database needs to grow in) and only gives the file its .db name once complete.
   const name = `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-')}.db`;
   await backupTo(join(BACKUP_DIR, name));
   const info = await stat(join(BACKUP_DIR, name));

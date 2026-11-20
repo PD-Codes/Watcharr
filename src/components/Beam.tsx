@@ -65,7 +65,6 @@ export default async function Beam({
   return (
     <div className={`beam ${paused ? 'paused' : 'live'}`}>
       <Link href={`/title/${encodeURIComponent(label)}`}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="beam-art" src={artUrl(serverSlug, session.itemId)} alt="" />
       </Link>
 

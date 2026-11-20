@@ -28,6 +28,7 @@ export default function PlexLogin({ serverId, askSetupToken }: { serverId: numbe
     onVisible.current = null;
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: unmount cleanup only; stop() works on refs, so the first one is as good as any
   useEffect(() => stop, []);
 
   // Ends the flow with a message and brings the button back, so the user can start over.
@@ -127,7 +128,7 @@ export default function PlexLogin({ serverId, askSetupToken }: { serverId: numbe
         </label>
       )}
       {!pin ? (
-        <button onClick={start}>{t('login.plexButton')}</button>
+        <button type="button" onClick={start}>{t('login.plexButton')}</button>
       ) : (
         <p className="muted">
           {t('login.plexHint')}

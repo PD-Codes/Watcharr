@@ -123,6 +123,12 @@ export const appSettings = sqliteTable('app_settings', {
   newsletterLastHtml: text('newsletter_last_html'),
   /** The same issue in every app language, so a German reader of the static URL gets German. */
   newsletterLastHtmlByLocale: text('newsletter_last_html_by_locale', { mode: 'json' }).$type<Record<string, string>>(),
+  /**
+   * The libraries the last issue drew from, as `<serverId>:<sectionId>` keys (`<serverId>:?` for
+   * titles whose library was unknown). The archive page shows the issue to somebody who is not
+   * an admin only when they may open every one of them. Null: an issue from before this existed.
+   */
+  newsletterLastLibraries: text('newsletter_last_libraries', { mode: 'json' }).$type<string[]>(),
   // Cached result of the upstream release check, see server/update.ts.
   updateCheckedAt: integer('update_checked_at', { mode: 'timestamp_ms' }),
   updateLatestVersion: text('update_latest_version'),
@@ -221,7 +227,12 @@ export const loginHistory = sqliteTable(
     userAgent: text('user_agent'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(now),
   },
-  (t) => ({ createdIdx: index('login_history_created_idx').on(t.createdAt) }),
+  (t) => ({
+    createdIdx: index('login_history_created_idx').on(t.createdAt),
+    // monitor.ts::checkNewAddresses asks per login whether this user came from this address
+    // before; retention keeps the newest row per pair. Both are lookups on exactly this prefix.
+    userIpIdx: index('login_history_user_ip_idx').on(t.userId, t.ip, t.createdAt),
+  }),
 );
 
 /**
@@ -251,6 +262,9 @@ export const users = sqliteTable(
     // the admin's deployment-wide fan-out — this one is owned by the person themselves.
     notifyEmail: text('notify_email'),
     notifyEvents: text('notify_events', { mode: 'json' }).$type<string[]>().notNull().default([]),
+    // 'dark' | 'light', null = follow the system. In the database for the same reason as the
+    // locale: the same account should look the same on every device.
+    theme: text('theme').$type<'dark' | 'light'>(),
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(now),
   },
@@ -274,6 +288,20 @@ export const customBadges = sqliteTable('custom_badges', {
   filterValue: text('filter_value').notNull().default(''),
   tiers: text('tiers', { mode: 'json' }).$type<number[]>().notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(now),
+});
+
+/**
+ * The libraries a person may open, as the media server last answered (library.ts). Plex can only
+ * be asked with the person's own token; without one (their sessions expired, a mail sent in the
+ * background, an admin's preview) the last answer here stands in, instead of showing nothing or
+ * guessing. Written on every successful lookup, never by hand.
+ */
+export const userLibraryAccess = sqliteTable('user_library_access', {
+  userId: integer('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  sectionIds: text('section_ids', { mode: 'json' }).$type<string[]>().notNull(),
+  checkedAt: integer('checked_at', { mode: 'timestamp_ms' }).notNull(),
 });
 
 /** Server-side session store. The cookie only carries a signed session id. */
@@ -405,7 +433,8 @@ export const playbackSessions = sqliteTable(
     progressAt: integer('progress_at', { mode: 'timestamp_ms' }).notNull().default(now),
   },
   (t) => ({
-    userIdx: index('playback_sessions_user_idx').on(t.userId),
+    // No index on user_id alone: user_started_idx below starts with it, so lookups by user and
+    // the foreign key's ON DELETE SET NULL use that one, and a second copy only cost writes.
     // The time axis of every stream chart and list: bucket joins, "last N days", newest first.
     startedIdx: index('playback_sessions_started_idx').on(t.startedAt),
     userStartedIdx: index('playback_sessions_user_started_idx').on(t.userId, t.startedAt),

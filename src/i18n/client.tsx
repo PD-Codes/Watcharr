@@ -15,7 +15,7 @@ import {
 // once from the root layout. That also keeps a translated label from flashing in English
 // before hydration, which a fetch-on-mount approach could not.
 //
-// ponytail: the whole dictionary is serialised into every page payload, including the
+// Trade-off: the whole dictionary is serialised into every page payload, including the
 // keys only server components use — roughly 20 KB raw, a few KB over the wire. Splitting
 // out just the client-used keys would need a build step that scans for useT() call sites;
 // worth it only once the payload actually shows up in a measurement.

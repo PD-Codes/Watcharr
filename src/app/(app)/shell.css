@@ -180,6 +180,193 @@
   }
 }
 
+/* --- Admin navigation groups -------------------------------------------------------- */
+
+/* The head looks like a quiet section label that happens to be clickable: it must not read
+   as a destination, and it must not wear the filled default of every other button. */
+.nav-group-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 12px 4px 14px;
+  border-radius: var(--shape-full);
+  background: none;
+  color: var(--text-dim);
+  font-weight: 500;
+  font-size: 13px;
+  text-align: left;
+  transition: background var(--dur-short) var(--ease-standard),
+    color var(--dur-short) var(--ease-standard);
+}
+
+.nav-group-head:hover {
+  background: var(--state-hover);
+  color: var(--text);
+  box-shadow: none;
+  filter: none;
+}
+
+.nav-group-head:active {
+  background: var(--state-press);
+  filter: none;
+}
+
+.nav-group-head.current {
+  color: var(--text);
+}
+
+.nav-group-head .nav-label {
+  flex: 1;
+}
+
+.nav-group-head svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  opacity: 0.9;
+}
+
+.nav-group-head .nav-chevron {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  opacity: 0.6;
+  transition: transform var(--dur-short) var(--ease-standard);
+}
+
+.nav-group[data-open] .nav-chevron {
+  transform: rotate(90deg);
+}
+
+/* Children hang off a hairline, so it is clear where an open group ends. */
+.nav-group-items {
+  margin: 2px 0 6px 22px;
+  padding-left: 6px;
+  border-left: 1px solid var(--line);
+}
+
+.nav-group-items[hidden] {
+  display: none;
+}
+
+/* Neutral on purpose: an available update is news, not a running stream and not data. */
+.nav-update {
+  padding: 2px 7px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+/* On a desktop pointer the drawer packs tighter, so the whole navigation with one open
+   admin group fits a 1000px window without scrolling. Touch keeps its 44px targets. */
+@media (min-width: 881px) and (pointer: fine) {
+  .sidebar .wordmark {
+    margin-bottom: 10px;
+  }
+
+  .sidebar nav a {
+    min-height: 36px;
+    padding-block: 6px;
+  }
+
+  .sidebar .group {
+    margin: 14px 0 4px;
+  }
+
+  .sidebar-foot {
+    padding-block: 8px 10px;
+  }
+}
+
+/* The modal drawer is a touch surface: full-size heads like its links. */
+.drawer .nav-group-head {
+  min-height: 48px;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+
+@media (min-width: 881px) {
+  /* In the icon rail a head is its icon; the chevron shrinks into a corner mark and the
+     open group sits on a tinted strip so its children do not pass for top-level entries. */
+  html[data-rail='1'] .sidebar .nav-group-head {
+    justify-content: center;
+    padding-inline: 0;
+    min-height: 40px;
+  }
+
+  html[data-rail='1'] .sidebar .nav-group-head .nav-chevron {
+    position: absolute;
+    right: 6px;
+    width: 10px;
+    height: 10px;
+  }
+
+  html[data-rail='1'] .sidebar .nav-group:first-of-type {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+  }
+
+  html[data-rail='1'] .sidebar .nav-group-items {
+    margin: 2px 0 6px;
+    padding: 0;
+    border-left: 0;
+    border-radius: 22px;
+    background: var(--surface-container-low);
+  }
+
+  /* Counts and labels do not fit; a dot keeps the message. */
+  html[data-rail='1'] .sidebar .nav-group-head .badge,
+  html[data-rail='1'] .sidebar nav a .badge.nav-update {
+    display: block;
+    position: absolute;
+    top: 7px;
+    right: 13px;
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    font-size: 0;
+    background: var(--text-dim);
+  }
+
+  html[data-rail='1'] .sidebar .nav-group-head .badge.live {
+    background: var(--beam);
+  }
+}
+
+/* --- Admin notice (weak SESSION_SECRET) ----------------------------------------------- */
+
+.shell-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  margin: 0 0 18px;
+  padding: 10px 16px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--text-dim);
+  border-radius: var(--shape-md);
+  background: var(--surface-container);
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.shell-notice span {
+  flex: 1 1 320px;
+}
+
+.shell-notice a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
 /* --- Page-enter motion --------------------------------------------------------------
    Children of <main> rise in, a hair apart. The end state is `transform: none`, which
    (unlike a leftover translate) creates no containing block, so sticky table heads and

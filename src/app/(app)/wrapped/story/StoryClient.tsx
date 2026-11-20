@@ -166,6 +166,7 @@ function Story({ slides, year, query }: { slides: Slide[]; year: number; query: 
 
   // Auto-advance. The bar is driven here, not by a CSS animation, so pause, hold and a
   // hidden tab all keep the exact same position without two clocks to keep in sync.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the index restarts the frame loop on every slide; the loop reads it through indexRef
   useEffect(() => {
     if (!running) return;
     let raf = 0;
@@ -374,6 +375,7 @@ function Story({ slides, year, query }: { slides: Slide[]; year: number; query: 
           </div>
         </div>
 
+        {/* biome-ignore lint/a11y/useSemanticElements: the ARIA carousel pattern: a slide is a group with a role description, not a form fieldset */}
         <div
           className="story-stage"
           role="group"
@@ -806,7 +808,6 @@ function Outro({ year, card }: { year: number; card: Card }) {
     <>
       <Eyebrow>{t('story.outro.eyebrow')}</Eyebrow>
       <div className="story-card-frame" data-ready={card.preview ? '' : undefined}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         {card.preview && <img src={card.preview} alt={t('story.outro.preview', { year })} />}
       </div>
       <div className="story-actions">

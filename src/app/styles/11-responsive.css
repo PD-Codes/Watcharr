@@ -1,0 +1,233 @@
+/* ============================================================
+   Responsive
+   ============================================================ */
+
+/* Tablet: the drawer narrows before it disappears. */
+@media (max-width: 1080px) {
+  .main {
+    padding: 26px 24px 56px;
+  }
+}
+
+@media (max-width: 880px) {
+  .shell {
+    flex-direction: column;
+  }
+
+  /* The permanent drawer is replaced by the app bar + modal drawer + bottom bar. */
+  .sidebar {
+    display: none;
+  }
+
+  .appbar {
+    display: flex;
+  }
+
+  .bottomnav {
+    display: block;
+  }
+
+  .main {
+    padding: 18px 16px calc(var(--bottomnav-h) + env(safe-area-inset-bottom) + 34px);
+    max-width: none;
+  }
+
+  /* Keeps a focused control from being scrolled in underneath the floating bottom bar. */
+  html {
+    scroll-padding-bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom) + 16px);
+    scroll-padding-top: calc(var(--appbar-h) + 12px);
+  }
+
+  .seg a {
+    min-height: 44px;
+  }
+
+  .subtitle {
+    margin-bottom: 20px;
+  }
+
+  .section {
+    margin-top: 24px;
+  }
+
+  .beam {
+    grid-template-columns: 62px minmax(0, 1fr);
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .beam-art {
+    width: 62px;
+  }
+
+  .title-head {
+    gap: 16px;
+  }
+
+  .title-head .poster {
+    width: 92px;
+    flex: 0 0 92px;
+  }
+
+  .filters {
+    gap: 10px;
+  }
+
+  .filters label,
+  .filters input,
+  .filters select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .filters button {
+    width: 100%;
+  }
+
+  .donut-wrap {
+    gap: 14px;
+  }
+
+  .wrapped-hero {
+    padding: 26px 0 20px;
+  }
+}
+
+/* Phones: tables stop pretending to be tables where a card reads better. */
+@media (max-width: 520px) {
+  .card {
+    padding: 14px;
+  }
+
+  /* A table still scrolls sideways when it has to, but only after the cheap width has
+     been given back: less padding, and the timestamp allowed onto a second line. */
+  table {
+    font-size: 12px;
+  }
+
+  th,
+  td {
+    padding: 8px 8px;
+  }
+
+  .when-cell {
+    white-space: normal;
+  }
+
+  /* Columns that are context rather than answer. A seven-column table cannot fit a phone,
+     and sideways scrolling hides whichever half you are not looking at — so the secondary
+     columns drop out here instead. They are still in the CSV export and on the detail
+     page, which is where anybody comparing them is already going. */
+  .secondary-col {
+    display: none;
+  }
+
+  .stat {
+    padding: 13px 14px 14px;
+  }
+
+  .grid {
+    gap: 10px;
+  }
+
+  /* Two stat cards side by side instead of one per row: at 178px the auto-fit minimum
+     never fit twice into a phone, so five numbers cost five full-width blocks. */
+  .grid.cols-4 {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  }
+
+  .palette-scrim {
+    padding: 0;
+  }
+
+  .palette {
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+    border: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Travel and looping motion go away; state changes stay legible as a quick fade,
+     so "live" still reads as live instead of snapping between frames. */
+  *,
+  *::before,
+  *::after {
+    animation-iteration-count: 1 !important;
+    transition-duration: 120ms !important;
+    transition-timing-function: ease !important;
+  }
+
+  /* Anything that moves or travels stops outright. */
+  .beam-glow,
+  .scrub-head,
+  .spark,
+  [class*='pulse'],
+  [class*='sweep'] {
+    animation: none !important;
+  }
+
+  .stat-link:hover,
+  a:hover .poster {
+    transform: none;
+  }
+}
+
+/* --- weekday x hour grid --- */
+.weekgrid-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.weekgrid {
+  display: grid;
+  grid-template-columns: 34px repeat(24, minmax(14px, 1fr));
+  gap: 3px;
+  align-items: center;
+  min-width: 520px;
+}
+
+.weekgrid-hour,
+.weekgrid-day {
+  font-family: var(--font-mono-stack);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.weekgrid-day {
+  font-size: 11px;
+  padding-right: 6px;
+}
+
+.weekgrid-hour {
+  text-align: center;
+}
+
+.weekgrid-cell {
+  height: 15px;
+  border-radius: 2px;
+  background: var(--beam);
+  display: block;
+}
+
+.weekgrid-cell:hover {
+  outline: 1px solid var(--text);
+}
+
+a.weekgrid-cell {
+  cursor: pointer;
+}
+
+/* A hint that the strip continues past the edge, shown only where it can scroll. */
+.scroll-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+@media (min-width: 881px) {
+  .scroll-hint {
+    display: none;
+  }
+}

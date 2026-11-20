@@ -19,7 +19,7 @@ export default async function SuggestionsPage() {
   const settings = await getSettings();
   if (!isEnabled(settings.features, 'suggestions')) notFound();
   runInBackground(syncHistory(session), 'history sync');
-  const { fromLibrary, fromTmdb } = await getSuggestions(session.user.id, session.user.serverId);
+  const { fromLibrary, fromTmdb } = await getSuggestions(session);
   const posters = await cachedPosters(fromLibrary);
 
   return (

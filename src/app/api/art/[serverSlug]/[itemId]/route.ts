@@ -1,6 +1,7 @@
 import { createAdapter, serverRoute, type ServerType } from '@/server/adapters';
 import { verifyArtSignature } from '@/server/artlink';
 import { getServerBySlug, SERVER_SLUG } from '@/server/config';
+import { itemVisibility } from '@/server/library';
 import { getSession } from '@/server/session';
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,12 @@ export async function GET(
   // another server's slug it would browse that server with its admin token.
   if (session && !session.user.globalAdmin && session.user.serverId !== server.id) {
     return new Response('Not found', { status: 404 });
+  }
+  // A poster from a library the media server does not share with this person is refused. Only
+  // an item the cached listing places in such a library counts: an episode or a brand-new title
+  // is in no listing, and refusing every unknown id would blank the history of everyone.
+  if (session && (await itemVisibility(session, server.id, { itemId }).catch(() => 'unknown')) === 'hidden') {
+    return new Response('Forbidden', { status: 403 });
   }
 
   const adapter = createAdapter(

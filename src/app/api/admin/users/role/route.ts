@@ -1,38 +1,29 @@
 import { NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
-import { db } from '@/db';
-import { users } from '@/db/schema';
-import { badBody, readBody } from '@/server/body';
-import { countGlobalAdmins, getSession } from '@/server/session';
+import { readBody } from '@/server/body';
+import { getSession, setGlobalAdmin } from '@/server/session';
+import { apiError, badBody, globalAdminRequired } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
 /** Grants or revokes the deployment-wide admin role. Only a global admin may do this. */
 export async function POST(request: Request) {
   const session = await getSession();
-  if (!session?.user.globalAdmin) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!session?.user.globalAdmin) return globalAdminRequired();
 
   const body = await readBody(request, { userId: 'number', globalAdmin: 'boolean' });
   if (!body) return badBody();
   const { userId, globalAdmin } = body;
   if (!userId || typeof globalAdmin !== 'boolean') {
-    return NextResponse.json({ error: 'userId and globalAdmin are required' }, { status: 400 });
+    return apiError(400, 'missing-fields', 'err.roleFieldsRequired');
   }
-
-  const [target] = await db.select().from(users).where(eq(users.id, userId));
-  if (!target) return NextResponse.json({ error: 'Unknown user' }, { status: 404 });
 
   // Removing the last global admin would leave nobody able to manage servers or hand the
-  // role back out — the deployment would be locked into its current shape.
-  if (!globalAdmin && target.globalAdmin && (await countGlobalAdmins()) < 2) {
-    return NextResponse.json(
-      { error: 'At least one global admin has to remain' },
-      { status: 400 },
-    );
+  // role back out — the deployment would be locked into its current shape. The check is part
+  // of the UPDATE (setGlobalAdmin), so two concurrent revocations cannot both pass it.
+  const result = await setGlobalAdmin(userId, globalAdmin);
+  if (result === 'unknown') return apiError(404, 'user-not-found', 'err.userNotFound');
+  if (result === 'last-admin') {
+    return apiError(400, 'last-admin', 'err.lastGlobalAdmin');
   }
-
-  await db.update(users).set({ globalAdmin }).where(eq(users.id, userId));
   return NextResponse.json({ ok: true });
 }

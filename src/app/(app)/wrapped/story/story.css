@@ -236,6 +236,7 @@ html:has(.story) {
   white-space: nowrap;
   color: color-mix(in srgb, var(--text) 4%, transparent);
   /* Dark-on-paper reads stronger than light-on-graphite, so the light scheme gets less. */
+  /* biome-ignore lint/suspicious/noDuplicateProperties: the color-mix() line before it is the fallback for browsers without light-dark() */
   color: light-dark(
     color-mix(in srgb, var(--text) 3%, transparent),
     color-mix(in srgb, var(--text) 4.5%, transparent)

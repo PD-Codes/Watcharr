@@ -198,7 +198,7 @@ export default function ImportForm({
 
   const running = job?.status === 'running';
   const summary = job?.summary;
-  const percent = summary && summary.total ? Math.min(100, Math.floor((summary.scanned / summary.total) * 100)) : 0;
+  const percent = summary?.total ? Math.min(100, Math.floor((summary.scanned / summary.total) * 100)) : 0;
   const previewReady = job?.status === 'done' && job.params.dryRun && !stale;
   const canStart = !running && !sending && (source === 'path' || selected !== null);
   const choices = accounts.filter((a) => a.serverId === serverId);

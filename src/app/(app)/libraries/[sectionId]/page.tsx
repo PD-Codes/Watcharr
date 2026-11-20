@@ -3,9 +3,9 @@ import { notFound } from 'next/navigation';
 import { Icon } from '@/components/Icons';
 import { BarChart, StatCard } from '@/components/Charts';
 import Poster from '@/components/Poster';
-import { artUrl, firstParam, formatDate, formatDuration, intParam } from '@/components/format';
+import { artUrl, firstParam, formatBytes, formatDate, formatDuration, intParam } from '@/components/format';
 import Pager, { PAGE_SIZE } from '@/components/Pager';
-import { getLibrary, getRecentlyAdded, getSections } from '@/server/library';
+import { getRecentlyAdded, visibleLibrary, visibleSections } from '@/server/library';
 import { cachedPosters } from '@/server/tmdb';
 import {
   getLibraryTopTitles,
@@ -20,13 +20,6 @@ export const dynamic = 'force-dynamic';
 
 const RECENT_LIMIT = 12;
 
-/** Bytes as GB/MB. A library table full of raw byte counts is unreadable. */
-function formatBytes(bytes?: number): string {
-  if (!bytes) return '—';
-  const mb = bytes / 1_048_576;
-  return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${Math.round(mb)} MB`;
-}
-
 export default async function LibraryDetailPage({
   params,
   searchParams,
@@ -40,7 +33,9 @@ export default async function LibraryDetailPage({
   const { sectionId } = await params;
   const serverId = session.user.serverId;
 
-  const sections = await getSections(serverId).catch(() => []);
+  // A library the media server does not share with this person does not exist for them: the
+  // same 404 as an unknown id, so its name and size do not leak either.
+  const sections = await visibleSections(session).catch(() => []);
   const section = sections.find((s) => s.id === sectionId);
   if (!section) notFound();
 
@@ -54,7 +49,7 @@ export default async function LibraryDetailPage({
     getLibraryTotals(serverId, sectionId, scope, 30),
     getLibraryUsers(serverId, sectionId, scope),
     getLibraryTopTitles(serverId, sectionId, scope),
-    getLibrary(serverId).then((all) => all.filter((item) => item.sectionId === sectionId)),
+    visibleLibrary(session).then((all) => all.filter((item) => item.sectionId === sectionId)),
     getRecentlyAdded(serverId, RECENT_LIMIT, sectionId).catch(() => []),
   ]);
 
@@ -83,7 +78,9 @@ export default async function LibraryDetailPage({
           ? t('libraries.moviesLower')
           : section.mediaType === 'audio'
             ? t('libraries.typeAudio')
-            : t('common.series')}
+            : section.mediaType === 'mixed'
+              ? t('fix2.libraries.typeMixed')
+              : t('common.series')}
         {isAdmin(session.user) ? ` · ${t('library.serverWide')}` : ` · ${t('library.yoursOnly')}`}
       </p>
 
@@ -141,7 +138,7 @@ export default async function LibraryDetailPage({
             {t('action.search')}
             <input name="q" defaultValue={query} placeholder={t('library.searchPlaceholder')} />
           </label>
-          <button>{t('action.apply')}</button>
+          <button type="submit">{t('action.apply')}</button>
         </form>
         {query && items.length > 0 && (
           <p className="muted" style={{ margin: '0 0 14px' }}>

@@ -143,8 +143,7 @@ export function reconcileClock(
   toleranceMs = CLOCK_TOLERANCE_MS,
 ): StreamClock {
   if (
-    prev &&
-    prev.playing &&
+    prev?.playing &&
     next.playing &&
     prev.durationMs === next.durationMs &&
     Math.abs(positionAt(prev, now) - next.positionMs) <= toleranceMs

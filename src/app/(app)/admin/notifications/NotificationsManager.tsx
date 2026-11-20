@@ -303,7 +303,7 @@ export default function NotificationsManager({
               {t('notifications.enabled')}
             </label>
             <div className="row" style={{ gap: 10, marginTop: 12 }}>
-              <button disabled={busy}>{t('action.save')}</button>
+              <button type="submit" disabled={busy}>{t('action.save')}</button>
               <button
                 type="button"
                 className="outlined"
@@ -357,7 +357,7 @@ export default function NotificationsManager({
           </label>
         ))}
         {extras()}
-        <button disabled={busy} style={{ marginTop: 12 }}>
+        <button type="submit" disabled={busy} style={{ marginTop: 12 }}>
           {t('notifications.addButton')}
         </button>
       </form>

@@ -5,8 +5,15 @@ services:
     image: ghcr.io/pd-codes/watcharr:${WATCHARR_TAG:-latest}
     build: .
     restart: unless-stopped
+    # Reaps orphaned child processes, e.g. from a "script" notification channel that forks.
+    init: true
     ports:
-      - "3000:3000"
+      # Bind address on the host. Unset: plain "3000:3000", all interfaces, IPv4 and IPv6 (a
+      # default of 0.0.0.0 would publish IPv4 only). Set WATCHARR_BIND=127.0.0.1 behind a reverse
+      # proxy on the same host: without a proxy in front, X-Forwarded-For is client-controlled and
+      # can be forged, which defeats rate limits and the login/IP history. The ":+" part adds the
+      # separating colon only when an address is set.
+      - "${WATCHARR_BIND:-}${WATCHARR_BIND:+:}3000:3000"
     environment:
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
       APP_URL: ${APP_URL:-http://localhost:3000}
@@ -34,8 +41,11 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      # Migrations (and a VACUUM on a big database) run before the server starts listening.
-      start_period: 60s
+      # Migrations, the pre-upgrade backup and a VACUUM of a big database all run before the
+      # server listens, and on a few gigabytes that takes minutes. Failures inside this window do
+      # not count; the first success marks the container healthy at once, so a quick start is
+      # not held back by it.
+      start_period: 5m
 
 volumes:
   watcharr-data:

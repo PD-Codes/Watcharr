@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
-import { searchLibrary } from '@/server/library';
+import { searchVisibleLibrary } from '@/server/library';
 import { getSession } from '@/server/session';
+import { unauthorized } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session) return unauthorized();
   const query = new URL(request.url).searchParams.get('q') ?? '';
-  // A user searches the library of the server they signed in through.
-  return NextResponse.json({ items: await searchLibrary(session.user.serverId, query) });
+  // A user searches the library of the server they signed in through, and only the parts of it
+  // the media server shares with them.
+  return NextResponse.json({ items: await searchVisibleLibrary(session, query).catch(() => []) });
 }

@@ -308,6 +308,7 @@ function Help({ onClose }: { onClose: () => void }) {
   }, [t, mod]);
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes; the keyboard closes with Escape
     <div
       className="sc-scrim"
       onMouseDown={(event) => {

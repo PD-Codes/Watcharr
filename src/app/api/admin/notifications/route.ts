@@ -1,22 +1,18 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { CHANNEL_TYPES, NOTIFICATION_EVENTS, type ChannelType } from '@/server/features';
 import { createChannel, deleteChannel, updateChannel } from '@/server/notifications';
-import { getSession } from '@/server/session';
+import { getGlobalAdminSession } from '@/server/session';
+import { apiError, badBody, globalAdminRequired } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
-
-async function requireGlobal() {
-  const session = await getSession();
-  return session?.user.globalAdmin ? session : null;
-}
 
 const VALID_TYPES = CHANNEL_TYPES.map((c) => c.type) as ChannelType[];
 const VALID_EVENTS = NOTIFICATION_EVENTS.map((e) => e.key);
 
 function sanitizeEvents(events: unknown): string[] {
   return Array.isArray(events)
-    ? events.filter((e): e is string => typeof e === 'string' && VALID_EVENTS.includes(e as any))
+    ? events.filter((e): e is string => typeof e === 'string' && VALID_EVENTS.includes(e as (typeof VALID_EVENTS)[number]))
     : [];
 }
 
@@ -56,9 +52,7 @@ const sanitizeTemplate = (value: unknown): string =>
   typeof value === 'string' ? value.slice(0, MAX_TEMPLATE_LENGTH) : '';
 
 export async function POST(request: Request) {
-  if (!(await requireGlobal())) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!(await getGlobalAdminSession())) return globalAdminRequired();
   const body = await readBody(request, {
     type: 'string',
     name: 'string',
@@ -69,7 +63,7 @@ export async function POST(request: Request) {
   });
   if (!body) return badBody();
   if (!body.type || !VALID_TYPES.includes(body.type as ChannelType)) {
-    return NextResponse.json({ error: 'Invalid channel type' }, { status: 400 });
+    return apiError(400, 'invalid-channel-type', 'err.invalidChannelType');
   }
   const channel = await createChannel({
     type: body.type,
@@ -83,9 +77,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!(await requireGlobal())) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!(await getGlobalAdminSession())) return globalAdminRequired();
   const body = await readBody(request, {
     id: 'number',
     name: 'string',
@@ -96,9 +88,9 @@ export async function PATCH(request: Request) {
     enabled: 'boolean',
   });
   if (!body) return badBody();
-  if (!body.id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+  if (!body.id) return apiError(400, 'id-required', 'err.idRequired');
 
-  await updateChannel(body.id, {
+  const updated = await updateChannel(body.id, {
     name: body.name?.trim() || undefined,
     config: body.config ?? undefined,
     events: body.events ? sanitizeEvents(body.events) : undefined,
@@ -106,16 +98,17 @@ export async function PATCH(request: Request) {
     template: body.template == null ? undefined : sanitizeTemplate(body.template),
     enabled: body.enabled ?? undefined,
   });
+  // A new SMTP host with the old password left blank: the stored secret is not sent to an
+  // address it was never entered for.
+  if (!updated.ok) return apiError(400, 'invalid-channel', 'err.actionFailed', { message: updated.error });
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(request: Request) {
-  if (!(await requireGlobal())) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!(await getGlobalAdminSession())) return globalAdminRequired();
   const body = await readBody(request, { id: 'number' });
   if (!body) return badBody();
-  if (!body.id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
+  if (!body.id) return apiError(400, 'id-required', 'err.idRequired');
   await deleteChannel(body.id);
   return NextResponse.json({ ok: true });
 }

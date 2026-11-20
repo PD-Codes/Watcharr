@@ -29,7 +29,7 @@ export function itemDeepLink(
       return `${base}/web/index.html#/details?id=${id}`;
     case 'emby':
       return `${base}/web/index.html#!/item?id=${id}`;
-    // ponytail: Plex web links need the server's machine identifier
+    // Trade-off: Plex web links need the server's machine identifier
     // (/index.html#!/server/<machineId>/details?key=…), which we never store. Upgrade path:
     // persist machineIdentifier in app_config during setup, then build the link here.
     default:

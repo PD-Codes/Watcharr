@@ -162,6 +162,20 @@
       "when": 1791661299596,
       "tag": "0022_session_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1795125359688,
+      "tag": "0023_data_indexes_theme",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1795129414391,
+      "tag": "0024_library_access_newsletter_scope",
+      "breakpoints": true
     }
   ]
 }

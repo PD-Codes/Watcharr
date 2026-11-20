@@ -11,7 +11,7 @@ const history = [
 function testProfile() {
   const profile = buildProfile(history);
   assert.equal(profile.genreWeights['Sci-Fi'], 3);
-  assert.equal(profile.genreWeights['Horror'], 1);
+  assert.equal(profile.genreWeights.Horror, 1);
   assert.equal(profile.decadeWeights['1970'], 2);
   assert.equal(profile.typeWeights.movie, 3);
   assert.equal(profile.topTitle, 'Alien'); // watched twice

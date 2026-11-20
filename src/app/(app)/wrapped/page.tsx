@@ -5,6 +5,7 @@ import {
   formatDuration,
   formatMinutes,
   localizeWeekdays,
+  titleHref,
   weekdayName,
 } from '@/components/format';
 import { CastStrip } from '@/components/TitleMeta';
@@ -43,7 +44,6 @@ export default async function WrappedPage({
     viewQuery({ kind: view.kind, server: view.servers.length > 1 ? view.server.slug : undefined }, extra);
   // The history and title pages are personal unless told otherwise; the server view links to
   // the server-wide variant where one exists and not at all where none does.
-  const titleHref = (label: string) => `/title/${encodeURIComponent(label)}${serverView ? '?scope=server' : ''}`;
 
   // Index, not label: the server's labels are English, the names shown are translated.
   const topWeekday = wrapped.weekdays.reduce(
@@ -130,7 +130,7 @@ export default async function WrappedPage({
               <div className="card">
                 {wrapped.firstPlay ? (
                   <>
-                    <Link href={titleHref(wrapped.firstPlay.label)}>
+                    <Link href={titleHref(wrapped.firstPlay.label, serverView)}>
                       {wrapped.firstPlay.label}
                     </Link>
                     {wrapped.firstPlay.title !== wrapped.firstPlay.label && (
@@ -148,7 +148,7 @@ export default async function WrappedPage({
               <div className="card">
                 {wrapped.lastPlay ? (
                   <>
-                    <Link href={titleHref(wrapped.lastPlay.label)}>
+                    <Link href={titleHref(wrapped.lastPlay.label, serverView)}>
                       {wrapped.lastPlay.label}
                     </Link>
                     {wrapped.lastPlay.title !== wrapped.lastPlay.label && (
@@ -188,7 +188,7 @@ export default async function WrappedPage({
                 <Link
                   key={title.label}
                   className="wrapped-rank"
-                  href={titleHref(title.label)}
+                  href={titleHref(title.label, serverView)}
                 >
                   <span className="rank">{String(index + 1).padStart(2, '0')}</span>
                   <span>

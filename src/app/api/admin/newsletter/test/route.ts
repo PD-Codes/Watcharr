@@ -1,28 +1,27 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { isLocale } from '@/i18n';
 import { getDefaultLocale } from '@/i18n/server';
 import { getSettings } from '@/server/config';
 import { collectNewsletter, renderNewsletter } from '@/server/newsletter';
 import { sendMail } from '@/server/notifications';
 import { getSession } from '@/server/session';
+import { apiError, badBody, globalAdminRequired, withApiErrors } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Sends one issue to one address — the admin's own by default — without touching the stored issue. */
-export async function POST(request: Request) {
+export const POST = withApiErrors(async (request: Request) => {
   const session = await getSession();
-  if (!session?.user.globalAdmin) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!session?.user.globalAdmin) return globalAdminRequired();
   const body = await readBody(request, { email: 'string', locale: 'string' });
   if (!body) return badBody();
 
   const to = (body.email ?? session.user.email ?? '').trim();
   if (!EMAIL.test(to)) {
-    return NextResponse.json({ error: 'A valid email address is required' }, { status: 400 });
+    return apiError(400, 'invalid-email', 'err.invalidEmail');
   }
 
   const locale = isLocale(body.locale) ? body.locale : await getDefaultLocale();
@@ -31,5 +30,5 @@ export async function POST(request: Request) {
   const result = await sendMail([to], `[Test] ${settings.newsletterSubject}`, html);
   return result.ok
     ? NextResponse.json({ ok: true, to })
-    : NextResponse.json({ error: result.error ?? 'Could not send' }, { status: 502 });
-}
+    : apiError(502, 'send-failed', 'err.sendFailed', { message: result.error });
+});

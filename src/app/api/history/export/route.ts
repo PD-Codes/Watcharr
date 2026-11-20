@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
 import { desc } from 'drizzle-orm';
 import { db } from '@/db';
 import { watchHistory } from '@/db/schema';
 import { csvResponse, toCsv } from '@/server/csv';
 import { historyFilters } from '@/server/history';
 import { getSession } from '@/server/session';
+import { unauthorized } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +12,7 @@ const MAX_ROWS = 50000;
 
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session) return unauthorized();
 
   const sp = new URL(request.url).searchParams;
   const where = historyFilters(session.user.id, {

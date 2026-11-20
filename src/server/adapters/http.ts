@@ -33,6 +33,19 @@ function strained(url: string, reason: string) {
   }
 }
 
+/**
+ * Origin and path of a request URL, for messages. Never the query: Plex sends X-Plex-Token
+ * there and TMDB api_key, and these messages are logged and shown on the sync status.
+ */
+export function urlForMessage(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.origin + u.pathname;
+  } catch {
+    return 'request';
+  }
+}
+
 /** True when the media server refused the credentials rather than the request. */
 export function isUnauthorized(error: unknown): boolean {
   const status = (error as HttpError | null)?.status;
@@ -59,17 +72,8 @@ export async function apiFetch<T>(
     if ((error as Error | null)?.name === 'TimeoutError') {
       if (!bulk) strained(url, `no answer within ${timeoutMs / 1000} s`);
       // The bare DOMException says neither which host nor which call, so a log line from a
-      // multi-request flow (the Plex sign-in asks three hosts) could not be traced. Origin and
-      // path only: query strings may carry keys.
-      const where = (() => {
-        try {
-          const u = new URL(url);
-          return u.origin + u.pathname;
-        } catch {
-          return 'request';
-        }
-      })();
-      const timeout = new Error(`${init.method ?? 'GET'} ${where} got no answer within ${timeoutMs / 1000} s`);
+      // multi-request flow (the Plex sign-in asks three hosts) could not be traced.
+      const timeout = new Error(`${init.method ?? 'GET'} ${urlForMessage(url)} got no answer within ${timeoutMs / 1000} s`);
       timeout.name = 'TimeoutError';
       throw timeout;
     }
@@ -80,8 +84,10 @@ export async function apiFetch<T>(
     if (isStrainSignal(res.status, body)) {
       strained(url, /database is locked/i.test(body) ? 'database is locked' : `HTTP ${res.status}`);
     }
+    // Same reason as the timeout branch: the message ends up in the log and in sync errors,
+    // and the query of a Plex or TMDB URL carries X-Plex-Token or api_key.
     const error = new Error(
-      `${init.method ?? 'GET'} ${url} failed: ${res.status} ${body.slice(0, 200)}`,
+      `${init.method ?? 'GET'} ${urlForMessage(url)} failed: ${res.status} ${body.slice(0, 200)}`,
     );
     // The status carried as a field, not only inside the message: a caller that has to
     // react to a dead token (see sync.ts) must not parse English prose to find out.

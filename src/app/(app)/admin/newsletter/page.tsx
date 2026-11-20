@@ -1,21 +1,28 @@
 import { formatDate } from '@/components/format';
+import Pager, { pageOf } from '@/components/Pager';
 import { getSettings, listServers } from '@/server/config';
 import { getSections, sectionKey } from '@/server/library';
 import { listChannels } from '@/server/notifications';
-import { listSubscribers, normalizeLibraries } from '@/server/newsletter';
+import { countSubscribers, listSubscribers, normalizeLibraries } from '@/server/newsletter';
 import { requireGlobalAdmin } from '@/server/session';
 import { getLocale, getT } from '@/i18n/server';
 import NewsletterForm, { type LibraryOption } from './NewsletterForm';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminNewsletterPage() {
+export default async function AdminNewsletterPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string | string[] }>;
+}) {
   const { user } = await requireGlobalAdmin();
   const t = await getT();
   const locale = await getLocale();
+  const subscriberCount = await countSubscribers();
+  const { page, pages, offset, limit } = pageOf((await searchParams).page, subscriberCount);
   const [settings, subscribers, channels, servers] = await Promise.all([
     getSettings(),
-    listSubscribers(),
+    listSubscribers({ limit, offset }),
     listChannels(),
     listServers(),
   ]);
@@ -53,12 +60,14 @@ export default async function AdminNewsletterPage() {
         subject={settings.newsletterSubject}
         intro={settings.newsletterIntro}
         uniqueId={settings.newsletterUniqueId}
-        subscriberCount={subscribers.length}
+        subscriberCount={subscriberCount}
         hasEmailChannel={channels.some((c) => c.type === 'email' && c.enabled)}
         adminEmail={user.email}
       />
 
-      <h2 className="section">{t('adminNewsletter.subscribers')}</h2>
+      <h2 className="section" id="subscribers">
+        {t('adminNewsletter.subscribers')}
+      </h2>
       <p className="subtitle" style={{ marginTop: -8 }}>
         {settings.newsletterLastSentAt
           ? t('adminNewsletter.lastSent', { date: formatDate(settings.newsletterLastSentAt, locale) })
@@ -89,6 +98,7 @@ export default async function AdminNewsletterPage() {
           </tbody>
         </table>
       </div>
+      <Pager page={page} pages={pages} hash="subscribers" />
     </>
   );
 }

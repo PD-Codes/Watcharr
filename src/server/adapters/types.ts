@@ -80,6 +80,38 @@ export interface HistoryEntry {
   deviceName?: string;
 }
 
+/**
+ * One call's worth of history.
+ *
+ * A call is capped (pages per call, metadata lookups per call), because a first sync of a long
+ * history would otherwise hold a page render or the tick for minutes. `more` says the cap was
+ * hit: the server has plays newer than the newest entry here. Whenever `more` is true, the
+ * entries are a gap-free run starting right after `since`, so asking again with
+ * `since` = the newest `watchedAt` returned continues exactly where this call stopped. With
+ * `more` false the order of the entries is not specified.
+ */
+export interface HistoryPage {
+  entries: HistoryEntry[];
+  more: boolean;
+}
+
+/**
+ * A pending Jellyfin Quick Connect sign-in. `code` is shown to the person, who enters it in a
+ * signed-in Jellyfin client; `secret` and `deviceId` stay server-side (the secret alone redeems
+ * the sign-in, and the issued token is bound to `deviceId`, which the later calls must repeat).
+ */
+export interface QuickConnectRequest {
+  code: string;
+  secret: string;
+  deviceId: string;
+}
+
+/**
+ * `expired` covers every way the request can no longer succeed: the server forgot the secret
+ * (it keeps them for minutes), or Quick Connect was switched off in the meantime.
+ */
+export type QuickConnectState = 'pending' | 'authorized' | 'expired';
+
 export interface LibraryItem {
   itemId: string;
   title: string;
@@ -106,7 +138,7 @@ export interface LibraryItem {
 export interface LibrarySection {
   id: string;
   name: string;
-  /** 'movie' | 'show' | 'audio' (music and audiobooks, counted in tracks). */
+  /** 'movie' | 'show' | 'audio' (music and audiobooks, counted in tracks) | 'mixed' (Jellyfin/Emby movies and shows). */
   mediaType: string;
   /** Movies, or series — the top level of the library, never its children. */
   itemCount: number;
@@ -147,6 +179,13 @@ export interface MediaServerAdapter {
   /** All users known to the server. Admin only. */
   listUsers(): Promise<MediaServerUser[]>;
 
+  /**
+   * listUsers() plus whether that list names everybody who may use the server. Only a complete
+   * list may be read as "whoever is missing lost access" (userroster.ts::reconcileRoster). An
+   * adapter without this method has a listUsers() that is complete whenever it resolves.
+   */
+  listUsersWithCompleteness?(): Promise<{ users: MediaServerUser[]; complete: boolean }>;
+
   /** Live playback sessions. Pass a token to scope to that user, omit for server-wide. */
   getSessions(token?: string): Promise<PlaybackSession[]>;
 
@@ -154,14 +193,22 @@ export interface MediaServerAdapter {
    * `username` is the fallback identity for servers whose history ids differ from the ids the
    * user signed in with (Plex numbers the owner 1 locally, but by plex.tv id everywhere else).
    */
+  /**
+   * Plays strictly after `since` (everything when omitted), capped per call; see HistoryPage
+   * for `more` and how to continue. Throws on transport and HTTP errors.
+   */
   getHistory(
     token: string,
     serverUserId: string,
     since?: Date,
     username?: string,
-  ): Promise<HistoryEntry[]>;
+  ): Promise<HistoryPage>;
 
-  /** Movies and series in the server's libraries. Used for search and suggestions. */
+  /**
+   * Movies and series in the server's libraries. Used for search and suggestions. When some
+   * libraries could be listed and others not, a backend may throw a PartialLibraryError that
+   * carries the part it got; library.ts keeps the old items of the failed libraries.
+   */
   getLibrary(): Promise<LibraryItem[]>;
 
   /** The libraries themselves, with how many items each holds. */
@@ -187,6 +234,51 @@ export interface MediaServerAdapter {
 
   /** Server-side watchlist, where the backend has one. */
   getWatchlist?(token: string): Promise<WatchlistEntry[]>;
+
+  /**
+   * Writes to that watchlist (Plex: the plex.tv watchlist). `token` is the same user token
+   * getWatchlist() reads with. `itemId` is either an id as getWatchlist() reports it (the global
+   * Plex id, e.g. "5d776825880197001ec967c6", or the full "plex://movie/<id>" guid) or a local
+   * library id (a ratingKey as getLibrary()/history report it), which is resolved to the global
+   * id through the server; an episode or season resolves to its show. Throws when the item
+   * cannot be resolved (not in the library, or matched by a legacy agent without a plex:// guid)
+   * and on any HTTP error; adding an item already listed is not checked here.
+   */
+  addToWatchlist?(token: string, itemId: string): Promise<void>;
+  removeFromWatchlist?(token: string, itemId: string): Promise<void>;
+
+  /**
+   * Ids of the libraries this user may see according to the media server, in exactly the id
+   * format of LibrarySection.id from getLibraries(), and only among the sections getLibraries()
+   * lists (movies, shows, music/audiobooks).
+   *
+   * Plex: `token` is the user's plex.tv token (the one the session holds); the server is asked
+   * for its sections with the server access token plex.tv issues this user (the owner sees all).
+   * An account plex.tv does not list for this server gets []. Jellyfin/Emby: the user's policy
+   * (EnableAllFolders/EnabledFolders), read with the admin token, so `token` is not needed.
+   *
+   * Null only when the server cannot answer the question (no token, plex.tv returned no usable
+   * entry, a policy whose folder ids match no library). HTTP and transport errors throw.
+   */
+  getUserSectionIds?(token: string, serverUserId: string): Promise<string[] | null>;
+
+  /**
+   * Jellyfin Quick Connect. Present on the shared Jellyfin/Emby adapter, but only Jellyfin has
+   * it: check with supportsQuickConnect(), which also looks at the type.
+   *
+   * - quickConnectEnabled(): whether the server has it switched on. Never throws for a server
+   *   that simply lacks it (false).
+   * - initiateQuickConnect(): starts a request; null when Quick Connect is switched off or the
+   *   server does not have it (401/404 from Jellyfin). Other errors throw.
+   * - quickConnectState(): see QuickConnectState. Other errors throw.
+   * - authenticateQuickConnect(): redeems an authorized request; the result has exactly the
+   *   shape of a password login (token + user including isAdmin). Throws when the request is
+   *   not (or no longer) authorized.
+   */
+  quickConnectEnabled?(): Promise<boolean>;
+  initiateQuickConnect?(): Promise<QuickConnectRequest | null>;
+  quickConnectState?(request: QuickConnectRequest): Promise<QuickConnectState>;
+  authenticateQuickConnect?(request: QuickConnectRequest): Promise<AuthResult>;
 
   /** Stops a running stream. Takes the terminateKey of a live session, not a stored row. */
   terminateSession?(terminateKey: string, reason?: string): Promise<void>;
@@ -219,6 +311,28 @@ export function supportsTerminate(
   return typeof a.terminateSession === 'function';
 }
 
+export function supportsWatchlistWrite(
+  a: MediaServerAdapter,
+): a is MediaServerAdapter & Required<Pick<MediaServerAdapter, 'addToWatchlist' | 'removeFromWatchlist'>> {
+  return typeof a.addToWatchlist === 'function' && typeof a.removeFromWatchlist === 'function';
+}
+
+export function supportsUserSections(
+  a: MediaServerAdapter,
+): a is MediaServerAdapter & Required<Pick<MediaServerAdapter, 'getUserSectionIds'>> {
+  return typeof a.getUserSectionIds === 'function';
+}
+
+/** Jellyfin only: Emby shares the adapter class but has no Quick Connect. */
+export function supportsQuickConnect(
+  a: MediaServerAdapter,
+): a is MediaServerAdapter &
+  Required<
+    Pick<MediaServerAdapter, 'quickConnectEnabled' | 'initiateQuickConnect' | 'quickConnectState' | 'authenticateQuickConnect'>
+  > {
+  return a.type === 'jellyfin' && typeof a.initiateQuickConnect === 'function';
+}
+
 /** Plex uses a PIN-based OAuth flow instead of username/password. */
 export interface PinAuthAdapter {
   /** `forwardUrl` is where plex.tv sends the browser after approval; it gets the new pin id. */
@@ -228,4 +342,29 @@ export interface PinAuthAdapter {
 
 export function supportsPinAuth(a: MediaServerAdapter): a is MediaServerAdapter & PinAuthAdapter {
   return typeof (a as Partial<PinAuthAdapter>).startPinAuth === 'function';
+}
+
+/**
+ * getLibrary() could list only some libraries. Thrown rather than returned, so a caller that
+ * does not know it still treats the listing as failed (and keeps its previous copy) instead of
+ * replacing it with a part.
+ */
+export class PartialLibraryError extends Error {
+  constructor(
+    readonly items: LibraryItem[],
+    readonly failedSections: string[],
+    cause: unknown,
+  ) {
+    super(
+      `${failedSections.length} librar${failedSections.length === 1 ? 'y' : 'ies'} could not be listed: ` +
+        (cause instanceof Error ? cause.message : String(cause)),
+      { cause },
+    );
+    this.name = 'PartialLibraryError';
+  }
+}
+
+/** By name, not instanceof: the class can exist once per module graph (see state.ts). */
+export function isPartialLibrary(error: unknown): error is PartialLibraryError {
+  return (error as { name?: string } | null)?.name === 'PartialLibraryError' && Array.isArray((error as PartialLibraryError).failedSections);
 }

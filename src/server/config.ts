@@ -1,6 +1,6 @@
 import 'server-only';
 import { randomBytes } from 'node:crypto';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, getTableColumns } from 'drizzle-orm';
 import { applyTimezone, db, resetTimezone } from '@/db';
 import { appConfig, appSettings, users } from '@/db/schema';
 import { DEFAULT_LOCALE, isLocale } from '@/i18n';
@@ -198,8 +198,6 @@ export interface AppSettings {
   newsletterIntro: string;
   newsletterUniqueId: string;
   newsletterLastSentAt: Date | null;
-  newsletterLastHtml: string | null;
-  newsletterLastHtmlByLocale: Record<string, string> | null;
   updateCheckedAt: Date | null;
   updateLatestVersion: string | null;
 }
@@ -241,15 +239,23 @@ const DEFAULT_SETTINGS: AppSettings = {
   newsletterIntro: '',
   newsletterUniqueId: 'newsletter',
   newsletterLastSentAt: null,
-  newsletterLastHtml: null,
-  newsletterLastHtmlByLocale: null,
   updateCheckedAt: null,
   updateLatestVersion: null,
 };
 
+// Every column except the stored newsletter issues. Those are the whole rendered mail, once per
+// language — tens of kilobytes read, and the JSON one parsed, on every call, while getSettings()
+// runs a few times per page and per sync tick. Only the archive page needs them.
+const {
+  newsletterLastHtml: _archived,
+  newsletterLastHtmlByLocale: _archivedByLocale,
+  newsletterLastLibraries: _archivedLibraries,
+  ...settingsColumns
+} = getTableColumns(appSettings);
+
 /** Deployment-wide settings. The row is created on first write, not at setup time. */
 export async function getSettings(): Promise<AppSettings> {
-  const [row] = await db.select().from(appSettings).where(eq(appSettings.id, 1));
+  const [row] = await db.select(settingsColumns).from(appSettings).where(eq(appSettings.id, 1));
   if (!row) return DEFAULT_SETTINGS;
   return {
     tmdbApiKey: row.tmdbApiKey ? decryptSecret(row.tmdbApiKey) : null,
@@ -288,10 +294,33 @@ export async function getSettings(): Promise<AppSettings> {
     newsletterIntro: row.newsletterIntro,
     newsletterUniqueId: row.newsletterUniqueId,
     newsletterLastSentAt: row.newsletterLastSentAt,
-    newsletterLastHtml: row.newsletterLastHtml,
-    newsletterLastHtmlByLocale: row.newsletterLastHtmlByLocale ?? null,
     updateCheckedAt: row.updateCheckedAt,
     updateLatestVersion: row.updateLatestVersion,
+  };
+}
+
+/** The last sent newsletter issue: the default-language copy plus one per app language. */
+export interface NewsletterArchive {
+  html: string | null;
+  byLocale: Record<string, string> | null;
+  /** The libraries the issue drew from (see the column); null for an issue from before. */
+  libraries: string[] | null;
+}
+
+/** Read on its own because getSettings() leaves these columns out (see settingsColumns). */
+export async function getNewsletterArchive(): Promise<NewsletterArchive> {
+  const [row] = await db
+    .select({
+      html: appSettings.newsletterLastHtml,
+      byLocale: appSettings.newsletterLastHtmlByLocale,
+      libraries: appSettings.newsletterLastLibraries,
+    })
+    .from(appSettings)
+    .where(eq(appSettings.id, 1));
+  return {
+    html: row?.html ?? null,
+    byLocale: row?.byLocale ?? null,
+    libraries: Array.isArray(row?.libraries) ? row.libraries : null,
   };
 }
 
@@ -341,6 +370,7 @@ export async function updateSettings(input: {
   newsletterLastSentAt?: Date;
   newsletterLastHtml?: string;
   newsletterLastHtmlByLocale?: Record<string, string>;
+  newsletterLastLibraries?: string[];
   updateCheckedAt?: Date;
   updateLatestVersion?: string | null;
 }): Promise<void> {
@@ -450,6 +480,7 @@ export async function updateSettings(input: {
   if (input.newsletterLastSentAt) patch.newsletterLastSentAt = input.newsletterLastSentAt;
   if (input.newsletterLastHtml !== undefined) patch.newsletterLastHtml = input.newsletterLastHtml;
   if (input.newsletterLastHtmlByLocale !== undefined) patch.newsletterLastHtmlByLocale = input.newsletterLastHtmlByLocale;
+  if (input.newsletterLastLibraries !== undefined) patch.newsletterLastLibraries = input.newsletterLastLibraries;
   if (input.updateCheckedAt) patch.updateCheckedAt = input.updateCheckedAt;
   if (input.updateLatestVersion !== undefined) patch.updateLatestVersion = input.updateLatestVersion;
   if (!Object.keys(patch).length) return;

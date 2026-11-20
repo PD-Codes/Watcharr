@@ -11,7 +11,7 @@ import { getSettings } from './config';
  * reason half its ecosystem exists; this is the same idea with the smallest possible
  * surface — one key, read-only, deployment-wide, off until an admin issues one.
  *
- * ponytail: one key rather than per-user keys with scopes. The endpoints expose what a
+ * Trade-off: one key rather than per-user keys with scopes. The endpoints expose what a
  * server admin already sees, so a second permission model would guard nothing new. Split
  * it when somebody wants to hand a key to a person rather than to a dashboard.
  */
@@ -34,15 +34,17 @@ function sameKey(a: string, b: string): boolean {
 export async function checkApiKey(request: Request): Promise<NextResponse | null> {
   const { apiKey } = await getSettings();
   if (!apiKey) {
+    // English on purpose, like everything under /api/v1: the caller is a script or a dashboard,
+    // not a person with a language setting. `code` is what it should branch on.
     return NextResponse.json(
-      { error: 'The API is disabled. Generate a key under Settings.' },
+      { error: 'The API is disabled. Generate a key under Settings.', code: 'api-disabled' },
       { status: 403 },
     );
   }
   const url = new URL(request.url);
   const provided = request.headers.get('x-api-key') ?? url.searchParams.get('apikey') ?? '';
   if (!provided || !sameKey(provided, apiKey)) {
-    return NextResponse.json({ error: 'Invalid API key' }, { status: 401 });
+    return NextResponse.json({ error: 'Invalid API key', code: 'invalid-api-key' }, { status: 401 });
   }
   return null;
 }

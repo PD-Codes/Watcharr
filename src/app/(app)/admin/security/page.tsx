@@ -1,15 +1,26 @@
 import { formatDate } from '@/components/format';
 import IpLink from '@/components/IpLink';
-import { listLoginHistory, requireAdmin } from '@/server/session';
+import Pager, { pageOf } from '@/components/Pager';
+import { countLoginHistory, listLoginHistory, requireAdmin } from '@/server/session';
 import { getLocale, getT } from '@/i18n/server';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminSecurityPage() {
+export default async function AdminSecurityPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string | string[] }>;
+}) {
   const { user } = await requireAdmin();
   const t = await getT();
   const locale = await getLocale();
-  const rows = await listLoginHistory(user.globalAdmin ? undefined : user.serverId);
+  // A server admin sees sign-ins to their own server only; a global admin sees all of them.
+  const serverId = user.globalAdmin ? undefined : user.serverId;
+  const { page, pages, offset, limit } = pageOf(
+    (await searchParams).page,
+    await countLoginHistory(serverId),
+  );
+  const rows = await listLoginHistory(serverId, limit, offset);
 
   return (
     <>
@@ -54,6 +65,7 @@ export default async function AdminSecurityPage() {
           </tbody>
         </table>
       </div>
+      <Pager page={page} pages={pages} />
     </>
   );
 }

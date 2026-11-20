@@ -7,6 +7,7 @@ import type { Achievement, AchievementId, Insight } from '@/server/insights-core
 import type { Scope } from '@/server/stats';
 import type { Translate } from '@/i18n';
 import { getLocale, getT } from '@/i18n/server';
+import { titleHref } from './format';
 import './insights.css';
 
 interface Ctx {
@@ -15,9 +16,6 @@ interface Ctx {
   /** One viewer's own plays. Server-wide cards cannot open a single user's history. */
   personal: boolean;
 }
-
-const titleHref = (title: string, personal: boolean) =>
-  `/title/${encodeURIComponent(title)}${personal ? '' : '?scope=server'}`;
 
 // The history page filters on `date`, and only ever for the signed-in user.
 const dayHref = (day: string) => `/history?date=${day}`;
@@ -71,7 +69,7 @@ function InsightCard({ insight, ctx }: { insight: Insight; ctx: Ctx }) {
               <li key={entry.year}>
                 <Link
                   prefetch={false}
-                  href={personal ? dayHref(entry.day) : titleHref(entry.linkTitle, false)}
+                  href={personal ? dayHref(entry.day) : titleHref(entry.linkTitle, true)}
                 >
                   <span className="ins-value num">{entry.year}</span>
                   <span className="ins-label">{entry.name}</span>
@@ -88,7 +86,7 @@ function InsightCard({ insight, ctx }: { insight: Insight; ctx: Ctx }) {
       return (
         <Card eyebrow={t('ins.eyebrow.binge')}>
           <p className="ins-main">
-            <Link prefetch={false} className="ins-link" href={titleHref(insight.show, personal)}>
+            <Link prefetch={false} className="ins-link" href={titleHref(insight.show, !personal)}>
               <span className="ins-value num">{insight.episodes}×</span>
               <span className="ins-label">{insight.show}</span>
             </Link>
@@ -114,7 +112,7 @@ function InsightCard({ insight, ctx }: { insight: Insight; ctx: Ctx }) {
       return (
         <Card eyebrow={t('ins.eyebrow.comfort')}>
           <p className="ins-main">
-            <Link prefetch={false} className="ins-link" href={titleHref(insight.linkTitle, personal)}>
+            <Link prefetch={false} className="ins-link" href={titleHref(insight.linkTitle, !personal)}>
               <span className="ins-value num">{insight.count}×</span>
               <span className="ins-label">{insight.name}</span>
             </Link>
@@ -306,13 +304,14 @@ function Badge({ a, t }: { a: Achievement; t: Translate }) {
   return (
     <li className={`ins-badge${a.unlocked ? ' on' : ''}`}>
       <span className="ins-medal" aria-hidden>
-        <svg className="ins-ring" viewBox="0 0 64 64">
+        <svg className="ins-ring" viewBox="0 0 64 64" aria-hidden="true">
           <Ring tiers={a.tiers} tier={a.tier} />
         </svg>
         {a.custom ? (
           <span className="ins-emoji">{a.custom.icon}</span>
         ) : (
           <svg
+            aria-hidden="true"
             className="ins-glyph"
             viewBox="0 0 24 24"
             fill="none"

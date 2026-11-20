@@ -335,16 +335,26 @@ export async function prefetchTitleMeta(
   const keys = [...wanted.keys()];
   const stale: { key: string; at: number }[] = [];
   for (let i = 0; i < keys.length; i += 500) {
+    // Two flags from SQL instead of the payload itself: every entry carries the full TMDB answer
+    // with cast and every translation, and reading and parsing a few thousand of them per pass
+    // only to look at one field cost more than the lookups it decided on.
     const known = await db
-      .select({ key: tmdbCache.key, payload: tmdbCache.payload, fetchedAt: tmdbCache.fetchedAt })
+      .select({
+        key: tmdbCache.key,
+        miss: sql<number>`${tmdbCache.payload} IS NULL OR ${tmdbCache.payload} = 'null'`,
+        hasText: sql<number>`CASE WHEN json_valid(${tmdbCache.payload})
+          THEN coalesce(json_type(${tmdbCache.payload}, '$.text') NOT IN ('null', 'false'), 0) ELSE 0 END`,
+        fetchedAt: tmdbCache.fetchedAt,
+      })
       .from(tmdbCache)
       .where(inArray(tmdbCache.key, keys.slice(i, i + 500)))
       .catch(() => []);
     for (const row of known) {
+      const miss = Boolean(Number(row.miss));
       // An entry from before translations were stored is renewed like an expired one, so a
       // German synopsis arrives within days instead of after the month-long TTL.
-      const untranslated = row.payload !== null && !(row.payload as TmdbMeta).text;
-      if (untranslated || isStale(row.payload === null, row.fetchedAt)) stale.push({ key: row.key, at: row.fetchedAt.getTime() });
+      const untranslated = !miss && !Number(row.hasText);
+      if (untranslated || isStale(miss, row.fetchedAt)) stale.push({ key: row.key, at: row.fetchedAt.getTime() });
       else wanted.delete(row.key);
     }
   }

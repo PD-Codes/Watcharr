@@ -529,7 +529,7 @@ export default function ConfigForm({
 
       {/* Outside the grid: one save button for the whole form, not one per card. */}
       <div className="row section">
-        <button disabled={busy}>{t('action.save')}</button>
+        <button type="submit" disabled={busy}>{t('action.save')}</button>
         {message && <span className="muted">{message}</span>}
         {error && <span className="error">{error}</span>}
       </div>

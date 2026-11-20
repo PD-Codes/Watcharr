@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { getT } from '@/i18n/server';
 import { isOwnAddress, sendConfirmation } from '@/server/mailconfirm';
 import { selectableEvents, setUserPrefs } from '@/server/notifications';
 import { getSession } from '@/server/session';
+import { apiError, badBody, unauthorized, withApiErrors } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,15 +13,15 @@ export const dynamic = 'force-dynamic';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-export async function POST(request: Request) {
+export const POST = withApiErrors(async (request: Request) => {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: 'Sign in first' }, { status: 401 });
+  if (!session) return unauthorized();
 
   const body = await readBody(request, { email: 'string', events: 'strings' });
   if (!body) return badBody();
   const address = body.email?.trim() || null;
   if (address && !EMAIL.test(address)) {
-    return NextResponse.json({ error: 'That does not look like an email address' }, { status: 400 });
+    return apiError(400, 'invalid-email', 'err.invalidEmail');
   }
 
   // The allowlist is applied here as well as in the form: a non-admin must not be able to
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
   const allowed = selectableEvents(session.user.isAdmin, session.user.globalAdmin) as string[];
   const events = (body.events ?? []).filter((event) => allowed.includes(event));
   if (events.length && !address) {
-    return NextResponse.json({ error: 'An email address is required' }, { status: 400 });
+    return apiError(400, 'email-required', 'err.emailRequired');
   }
 
   // A new address that is not the account's own is confirmed by mail first; the events are
@@ -45,6 +46,6 @@ export async function POST(request: Request) {
     body: t('mail.confirmNotify'),
     button: t('mail.confirmButton'),
   });
-  if (!sent.ok) return NextResponse.json({ error: sent.error }, { status: sent.status ?? 400 });
+  if (!sent.ok) return apiError(sent.status ?? 400, 'confirm-failed', 'err.sendFailed', { message: sent.error });
   return NextResponse.json({ ok: true, pending: true });
-}
+});

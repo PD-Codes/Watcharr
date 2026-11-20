@@ -1,0 +1,323 @@
+/* ============================================================
+   Forms — M3 filled fields
+   ============================================================ */
+
+label {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: color var(--dur-short) var(--ease-standard);
+}
+
+/* The label of the field being edited brightens; one with an invalid value turns to the
+   error color. :has() lets the label react without a class set from script. */
+label:has(:focus-visible) {
+  color: var(--text);
+}
+
+label:has(:user-invalid) {
+  color: var(--danger);
+}
+
+label:has(:disabled) {
+  opacity: 0.6;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  margin-top: 5px;
+  padding: 11px 12px;
+  background: var(--surface-container);
+  border: 1px solid var(--outline);
+  border-radius: var(--shape-sm);
+  color: var(--text);
+  font-family: inherit;
+  /* 16px is the smallest size iOS Safari will not zoom into on focus. */
+  font-size: 16px;
+  min-height: 44px;
+  transition: border-color var(--dur-short) var(--ease-standard),
+    background var(--dur-short) var(--ease-standard);
+}
+
+/* The explanation under the last field of a settings card. Pulled up against the field it
+   belongs to, and with no trailing margin, so cards in a grid end at the same edge. */
+.hint-last {
+  margin-top: -6px;
+  margin-bottom: 0;
+}
+
+/* A checkbox is not a field: the 100% above stretched it into a large square wherever a
+   caller forgot the inline override. The rule belongs here, not on every call site. */
+input[type='checkbox'],
+input[type='radio'] {
+  width: auto;
+  min-height: 0;
+  margin-top: 0;
+  /* Neutral, not amber (accent-color on <html>): a ticked box is a setting, not a stream. */
+}
+
+input:hover,
+select:hover {
+  background: var(--surface-container-high);
+}
+
+/* The focus ring thickens the field's own edge instead of floating two pixels off it. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--focus-ring);
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+input:user-invalid,
+select:user-invalid,
+textarea:user-invalid {
+  border-color: var(--danger);
+}
+
+/* --- Buttons (M3: filled, tonal, outlined, text) --- */
+
+button {
+  padding: 10px 20px;
+  background: var(--text);
+  border: 0;
+  border-radius: var(--shape-full);
+  color: var(--ink);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  min-height: 40px;
+  cursor: pointer;
+  transition: box-shadow var(--dur-medium) var(--ease-standard),
+    filter var(--dur-short) var(--ease-standard);
+}
+
+button:hover {
+  box-shadow: var(--elev-1);
+  filter: brightness(1.08);
+}
+
+button:active {
+  box-shadow: none;
+  filter: brightness(0.95);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  box-shadow: none;
+  filter: none;
+}
+
+button.tonal {
+  background: var(--surface-container-highest);
+  color: var(--text);
+}
+
+button.outlined {
+  background: none;
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+}
+
+button.outlined:hover {
+  background: var(--state-hover);
+  box-shadow: none;
+  filter: none;
+}
+
+/* A link that looks like the outlined button, for navigation that is not an action. */
+a.button.outlined {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 20px;
+  min-height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-full);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+a.button.outlined:hover {
+  background: var(--state-hover);
+}
+
+button.outlined.danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+
+button.link {
+  background: none;
+  color: var(--text-dim);
+  padding: 0;
+  min-height: 0;
+  font-weight: 400;
+  text-decoration: underline;
+  box-shadow: none;
+}
+
+button.link:hover {
+  background: none;
+  color: var(--text);
+  box-shadow: none;
+  filter: none;
+}
+
+.filters {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+/* Section heading with its own control on the right; wraps to two rows on narrow screens. */
+.toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.filters label {
+  margin: 0;
+  /* Label above its field. As blocks they sat side by side, because the field is narrowed
+     to its content here and a narrow block leaves room beside it. */
+  display: grid;
+  gap: 5px;
+}
+
+.filters label input,
+.filters label select {
+  margin-top: 0;
+  /* A select is taller than a text field at the same font size; equal heights keep both
+     labels on one line. */
+  height: 46px;
+}
+
+/* Width shrinks to fit, but the 16px font size stays: anything smaller makes iOS
+   Safari zoom the whole page in on focus and never zoom back out. */
+.filters input,
+.filters select {
+  width: auto;
+  min-width: 152px;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+/* --- Segmented button: the period switcher, one tap per option --- */
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--shape-full);
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.seg a {
+  padding: 8px 14px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text-dim);
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.seg a:last-child {
+  border-right: 0;
+}
+
+.seg a:hover {
+  background: var(--state-hover);
+  color: var(--text);
+}
+
+.seg a.on {
+  background: var(--surface-container-highest);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ============================================================
+   Badges, chips, progress
+   ============================================================ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: var(--shape-sm);
+  font-size: 11px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* An interactive chip is a target, so it gets a target-sized box. */
+a.badge,
+button.badge {
+  min-height: 32px;
+  background: none;
+  font-weight: 400;
+  transition: background var(--dur-short) var(--ease-standard);
+}
+
+a.badge:hover,
+button.badge:hover {
+  background: var(--state-hover);
+  color: var(--text);
+  box-shadow: none;
+  filter: none;
+}
+
+.badge.on {
+  background: var(--surface-container-highest);
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+/* Live is the one thing allowed to glow. */
+.badge.live {
+  color: var(--beam);
+  border-color: var(--beam-dim);
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress {
+  height: 2px;
+  background: var(--line-strong);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 7px;
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--beam-dim);
+}

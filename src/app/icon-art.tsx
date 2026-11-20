@@ -21,6 +21,7 @@ export function BrandMark({ size, variant }: { size: number; variant: MarkVarian
   const scale = SCALE[variant];
   return (
     <div style={{ display: 'flex', width: size, height: size }}>
+      {/* biome-ignore lint/a11y/noSvgWithoutTitle: drawn into a PNG by next/og, never part of a document */}
       <svg
         xmlns="http://www.w3.org/2000/svg"
         width={size}

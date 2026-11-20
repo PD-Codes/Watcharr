@@ -1,0 +1,109 @@
+/* ============================================================
+   Entry transitions
+   ============================================================ */
+
+/* Overlays fade in from their first frame. Where @starting-style is not supported the
+   element simply appears, which is what it did before there was any motion. */
+@starting-style {
+  .scrim,
+  .palette-scrim,
+  .modal-backdrop,
+  .drawer,
+  .palette,
+  .modal,
+  .alert {
+    opacity: 0;
+  }
+}
+
+/* Travel only for people who have not asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  @starting-style {
+    .drawer {
+      transform: translateX(-100%);
+    }
+
+    .palette,
+    .modal {
+      transform: translateY(-10px) scale(0.98);
+    }
+
+    .alert {
+      transform: translateY(-4px);
+    }
+  }
+}
+
+/* ============================================================
+   Touch input
+   ============================================================ */
+
+/* A finger is not a cursor: every control is at least 44px in its short side. Last in the
+   file so it wins over the compact desktop sizes above at equal specificity. */
+@media (pointer: coarse) {
+  button,
+  .search-trigger,
+  .seg a,
+  a.badge,
+  button.badge,
+  .link-out,
+  .back-link {
+    min-height: 44px;
+  }
+
+  /* Text-only buttons are inline in a sentence or a table cell. They get the full target
+     through padding that the negative margin takes back, so a row does not grow. */
+  button.link,
+  .ip-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 8px;
+    margin: -14px -8px;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* The whole line is the target, not just the box. */
+  label:has(> input[type='checkbox']),
+  label:has(> input[type='radio']) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+  }
+
+  /* A ranked row is one tap target high, and its link fills it instead of the text line. */
+  .bar-row {
+    min-height: 44px;
+    padding-block: 0;
+  }
+
+  a.bar-label {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+  }
+
+  /* The week grid is 168 small cells. They cannot all be 44px, but they can reach the 24px
+     floor of WCAG 2.5.8; the strip already scrolls sideways on a phone. */
+  .weekgrid {
+    grid-template-columns: 34px repeat(24, 24px);
+    min-width: max-content;
+  }
+
+  .weekgrid-cell {
+    height: 24px;
+  }
+}
+
+/* Buttons in a table row keep one line: wrapped to two lines they turned into round blobs
+   (View as, Make global) instead of pills. The table scrolls sideways where it must. */
+td button,
+td a.button {
+  white-space: nowrap;
+}

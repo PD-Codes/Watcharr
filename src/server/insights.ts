@@ -23,7 +23,7 @@ function parseGenres(raw: string | null): string[] {
   }
 }
 
-// shortcut: the newest plays only. Reading a whole server's history into memory took 9 s and
+// Trade-off: the newest plays only. Reading a whole server's history into memory took 9 s and
 // a gigabyte on a million rows, once a minute per open dashboard; the observations and badges
 // are about habits and milestones that these rows carry. Upgrade to SQL aggregates if an
 // achievement ever needs a lifetime total past this many plays.

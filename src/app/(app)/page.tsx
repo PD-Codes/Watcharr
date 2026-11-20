@@ -13,7 +13,7 @@ import {
   formatMinutes,
   formatTimeAgo,
 } from '@/components/format';
-import { getRecentlyAdded, getSections } from '@/server/library';
+import { visibleRecentlyAdded, visibleSections } from '@/server/library';
 import { getLibraryTotals } from '@/server/librarystats';
 import { getLiveSessions } from '@/server/livesessions';
 import { getConcurrencyPeak, getClientSessions } from '@/server/playback';
@@ -91,7 +91,9 @@ export default async function DashboardPage({
     by === 'time' ? formatMinutes(value) : t('common.plays', { count: value });
   const viewers = (value: number) => t('dashboard.viewers', { count: value });
 
-  const sections = await getSections(serverId).catch(() => []);
+  // The library tiles, the active-libraries chart and the arrivals only name libraries the media
+  // server shares with this person; for an admin that is all of them.
+  const sections = await visibleSections(session).catch(() => []);
 
   const [
     liveSessions,
@@ -150,7 +152,7 @@ export default async function DashboardPage({
     .sort((a, b) => b.value - a.value)
     .slice(0, TOP_LIBRARIES);
 
-  const added = await getRecentlyAdded(serverId, RECENT_ADDED).catch(() => []);
+  const added = await visibleRecentlyAdded(session, RECENT_ADDED).catch(() => []);
   const posters = await cachedPosters(added);
 
   // A paused stream is live but not playing: only a running one earns the amber light.
@@ -159,6 +161,7 @@ export default async function DashboardPage({
   const movieSections = sections.filter((section) => section.mediaType === 'movie');
   const showSections = sections.filter((section) => section.mediaType === 'show');
   const audioSections = sections.filter((section) => section.mediaType === 'audio');
+  const mixedSections = sections.filter((section) => section.mediaType === 'mixed');
 
   // A show watched five times in a row is one tile on the rail, not five.
   const seen = new Set<string>();
@@ -455,7 +458,7 @@ export default async function DashboardPage({
           <p className="muted">{t('libraries.none')}</p>
         ) : (
           <div className="grid cols-4">
-            {[...movieSections, ...showSections, ...audioSections].map((section) => (
+            {[...movieSections, ...showSections, ...mixedSections, ...audioSections].map((section) => (
               <StatCard
                 key={section.id}
                 label={section.name}
@@ -465,7 +468,9 @@ export default async function DashboardPage({
                     ? t('common.movies')
                     : section.mediaType === 'audio'
                       ? t('libraries.typeAudio')
-                      : t('common.series')
+                      : section.mediaType === 'mixed'
+                        ? t('fix2.libraries.typeMixed')
+                        : t('common.series')
                 }
                 href={`/libraries/${encodeURIComponent(section.id)}`}
               />

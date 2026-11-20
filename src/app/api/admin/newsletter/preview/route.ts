@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { badBody, readBody } from '@/server/body';
+import { readBody } from '@/server/body';
 import { isLocale } from '@/i18n';
 import { getDefaultLocale } from '@/i18n/server';
 import { collectNewsletter, renderNewsletter, subscriberLocales } from '@/server/newsletter';
 import { getSession } from '@/server/session';
+import { badBody, globalAdminRequired, withApiErrors } from '@/server/apierror';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,11 +12,9 @@ export const dynamic = 'force-dynamic';
  * Renders the issue exactly as it would go out now, from the form's unsaved values, and sends
  * nothing. The page shows the HTML in a sandboxed iframe, so a hostile title cannot run.
  */
-export async function POST(request: Request) {
+export const POST = withApiErrors(async (request: Request) => {
   const session = await getSession();
-  if (!session?.user.globalAdmin) {
-    return NextResponse.json({ error: 'Global admin access required' }, { status: 403 });
-  }
+  if (!session?.user.globalAdmin) return globalAdminRequired();
   const body = await readBody(request, {
     days: 'number',
     libraries: 'strings',
@@ -39,4 +38,4 @@ export async function POST(request: Request) {
     locales: await subscriberLocales(),
     locale,
   });
-}
+});
