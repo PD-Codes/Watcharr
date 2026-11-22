@@ -226,10 +226,16 @@ in an `X-Api-Key` header or as `?apikey=`, whichever your dashboard can do:
 curl -H "X-Api-Key: $KEY" http://localhost:3000/api/v1/activity
 curl -H "X-Api-Key: $KEY" "http://localhost:3000/api/v1/stats?days=30"
 curl -H "X-Api-Key: $KEY" "http://localhost:3000/api/v1/history?days=7&limit=50"
+curl -H "X-Api-Key: $KEY" http://localhost:3000/api/v1/watchlist
 ```
 
 Read-only and deployment-wide. Nothing that changes anything is reachable with a key, and
 the activity endpoint deliberately leaves out client IP addresses.
+
+The watchlist endpoint lists every user's watchlist, newest first: `planned` and `watching`
+unless `?status=planned,watching,done` asks for more, narrowed with `?user=`, `?server=` (the
+server's slug) and `?type=movie,show`. Item ids are the server's own, also for titles that came
+from a Plex watchlist, so a cleanup tool can recognize what somebody still wants to watch.
 
 ### Importing from Tautulli
 

@@ -322,6 +322,83 @@ async function watchlistPushChecks(): Promise<number> {
   return failures;
 }
 
+/**
+ * The read-only watchlist against a faked Plex server, in this process like the check above
+ * (the HTTP stub is a Jellyfin). A row pulled from plex.tv carries plex.tv's global id; a tool
+ * working on the server only knows ratingKeys, so it must come out under the library's key.
+ * Returns the number of failed checks.
+ */
+async function watchlistApiPlexChecks(): Promise<number> {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    if (url.host !== 'plex-api.test:32400') return new Response('not faked', { status: 404 });
+    if (url.pathname === '/') {
+      return Response.json({ MediaContainer: { machineIdentifier: 'plex-api-machine', friendlyName: 'Plex API', version: '1.42.0' } });
+    }
+    if (url.pathname === '/library/sections') {
+      return Response.json({ MediaContainer: { Directory: [{ key: '1', type: 'movie', title: 'Movies' }] } });
+    }
+    if (url.pathname === '/library/sections/1/all') {
+      return Response.json({
+        MediaContainer: {
+          Metadata: [
+            { ratingKey: '456', title: 'Ronin', type: 'movie', year: 1998, guid: 'plex://movie/5d77000000000000000000aa' },
+            { ratingKey: '789', title: 'Le Samouraï', type: 'movie', year: 1967, guid: 'com.plexapp.agents.imdb://tt0062229?lang=en' },
+          ],
+        },
+      });
+    }
+    return new Response('not faked', { status: 404 });
+  }) as typeof fetch;
+
+  let failures = 0;
+  const report = (label: string, ok: boolean) => {
+    console.log(`${ok ? 'ok  ' : 'FAIL'} - /api/v1/watchlist on Plex: ${label}`);
+    if (!ok) failures += 1;
+  };
+
+  try {
+    const { db } = await import('../db');
+    const { appConfig, users, watchlist } = await import('../db/schema');
+    const { encryptSecret } = await import('../server/crypto');
+    const { rotateApiKey, updateSettings } = await import('../server/config');
+    const route = await import('../app/api/v1/watchlist/route');
+
+    const [server] = await db
+      .insert(appConfig)
+      .values({ serverType: 'plex', serverUrl: 'http://plex-api.test:32400', serverToken: encryptSecret('admin-token'), label: 'Plex API', slug: 'plex-api' })
+      .returning();
+    const [anna] = await db.insert(users).values({ serverId: server.id, serverUserId: 'plex-api-anna', username: 'anna' }).returning();
+    await db.insert(watchlist).values([
+      { userId: anna.id, itemId: '5d77000000000000000000aa', title: 'Ronin', mediaType: 'movie', year: 1998, source: 'plex' },
+      { userId: anna.id, itemId: '5d7700000000000000000bbb', title: 'Le Samouraï', mediaType: 'movie', year: 1967, source: 'plex' },
+      { userId: anna.id, itemId: '5d7700000000000000000ddd', title: 'Thief', mediaType: 'movie', year: 1981, source: 'plex' },
+      { userId: anna.id, itemId: '123', title: 'Heat', mediaType: 'movie', year: 1995 },
+    ]);
+
+    const key = await rotateApiKey();
+    const res = await route.GET(new Request('http://app/api/v1/watchlist?server=plex-api', { headers: { 'x-api-key': key } }));
+    const body = (await res.json()) as { items: { itemId: string; title: string; source: string; server: { type: string; machineIdentifier: string | null } }[] };
+    const byTitle = new Map(body.items.map((item) => [item.title, item]));
+    report('a title from plex.tv comes out under the library ratingKey', byTitle.get('Ronin')?.itemId === '456');
+    report('a legacy-agent item is found by its title', byTitle.get('Le Samouraï')?.itemId === '789');
+    report('a title the library does not have keeps its plex.tv id', byTitle.get('Thief')?.itemId === '5d7700000000000000000ddd');
+    report('a local key stays as it is', byTitle.get('Heat')?.itemId === '123' && byTitle.get('Heat')?.source === 'local');
+    report(
+      "carries the server's machineIdentifier",
+      body.items.length === 4 && body.items.every((item) => item.server.type === 'plex' && item.server.machineIdentifier === 'plex-api-machine'),
+    );
+    await updateSettings({ apiKey: null });
+  } catch (error) {
+    console.log(`FAIL - watchlist API checks threw: ${(error as Error).stack ?? error}`);
+    failures += 1;
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  return failures;
+}
+
 async function waitForServer(url: string, attempts = 60) {
   for (let i = 0; i < attempts; i += 1) {
     try {
@@ -1324,7 +1401,7 @@ async function main() {
     // so the checks are: closed until a key exists, closed to the wrong key, and open to
     // the right one — in that order, because the first two are what protect the third.
     {
-      for (const path of ['/api/v1/activity', '/api/v1/stats', '/api/v1/history']) {
+      for (const path of ['/api/v1/activity', '/api/v1/stats', '/api/v1/history', '/api/v1/watchlist']) {
         const off = await fetch(base + path);
         const ok = off.status === 403;
         console.log(`${ok ? 'ok  ' : 'FAIL'} - GET ${path} without a key configured → ${off.status}`);
@@ -1362,6 +1439,72 @@ async function main() {
       console.log(`${statsOk ? 'ok  ' : 'FAIL'} - /api/v1/stats accepts the key as a parameter`);
       if (!statsOk) failures += 1;
 
+      // The watchlist, for a tool that must leave alone what somebody still wants to watch.
+      {
+        const json = { Cookie: cookie, 'Content-Type': 'application/json' };
+        const add = (itemId: string, title: string, year: number) =>
+          fetch(`${base}/api/watchlist`, { method: 'POST', headers: json, body: JSON.stringify({ itemId, title, mediaType: 'movie', year }) });
+        await add('wl-planned', 'Arrival', 2016);
+        await add('wl-done', 'Sicario', 2015);
+        await fetch(`${base}/api/watchlist`, { method: 'PATCH', headers: json, body: JSON.stringify({ itemId: 'wl-done', status: 'done' }) });
+
+        type Listed = { count: number; items: { itemId: string; year: unknown; addedAt: unknown; server: Record<string, unknown> }[] };
+        const listed = async (query = '') => {
+          const res = await fetch(`${base}/api/v1/watchlist${query}`, { headers: { 'x-api-key': key ?? '' } });
+          const body = (await res.json()) as Listed;
+          return { res, body, ids: body.items.map((item) => item.itemId) };
+        };
+        const check = (label: string, ok: boolean) => {
+          console.log(`${ok ? 'ok  ' : 'FAIL'} - /api/v1/watchlist ${label}`);
+          if (!ok) failures += 1;
+        };
+
+        const anonymous = await fetch(`${base}/api/v1/watchlist`);
+        check(`without a key → ${anonymous.status}`, anonymous.status === 401);
+
+        const plain = await listed();
+        const mine = plain.body.items.find((item) => item.itemId === 'wl-planned');
+        check(
+          'lists planned and watching by default, not done',
+          plain.res.status === 200 && plain.body.count === plain.body.items.length && plain.ids.includes('wl-planned') && !plain.ids.includes('wl-done'),
+        );
+        check('is never cached', plain.res.headers.get('cache-control') === 'no-store');
+        check(
+          'answers with the agreed fields and nothing else',
+          !!mine &&
+            Object.keys(mine).sort().join() === 'addedAt,itemId,mediaType,server,source,status,title,user,year' &&
+            Object.keys(mine.server).sort().join() === 'label,machineIdentifier,slug,type' &&
+            mine.server.type === 'jellyfin' && mine.server.machineIdentifier === null &&
+            mine.year === 2016 && typeof mine.addedAt === 'string' && !Number.isNaN(Date.parse(String(mine.addedAt))),
+        );
+
+        const all = await listed('?status=planned,watching,done');
+        check(
+          '?status= widens it, newest first',
+          all.ids.includes('wl-planned') && all.ids.includes('wl-done') && all.ids.indexOf('wl-done') < all.ids.indexOf('wl-planned'),
+        );
+        const bogus = await listed('?status=bogus');
+        check('an unknown status falls back to the default', bogus.ids.includes('wl-planned') && !bogus.ids.includes('wl-done'));
+
+        const slug = String(mine?.server.slug ?? '');
+        const narrowed = [
+          ['?user=admin', true],
+          ['?user=nobody', false],
+          [`?server=${encodeURIComponent(slug)}`, true],
+          ['?server=no-such-server', false],
+          ['?type=movie,bogus', true],
+          ['?type=show', false],
+        ] as const;
+        for (const [query, expected] of narrowed) {
+          const { ids } = await listed(query);
+          check(`${query} ${expected ? 'keeps' : 'drops'} the entry`, ids.includes('wl-planned') === expected);
+        }
+
+        for (const itemId of ['wl-planned', 'wl-done']) {
+          await fetch(`${base}/api/watchlist?itemId=${itemId}`, { method: 'DELETE', headers: { Cookie: cookie } });
+        }
+      }
+
       // Turned off again so nothing after this runs against an open API.
       await fetch(`${base}/api/admin/apikey`, { method: 'DELETE', headers: { Cookie: cookie } });
     }
@@ -1386,6 +1529,7 @@ async function main() {
     stub.close();
     stub2.close();
     failures += await watchlistPushChecks();
+    failures += await watchlistApiPlexChecks();
     try {
       rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     } catch (err) {

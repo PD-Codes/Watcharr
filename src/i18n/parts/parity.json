@@ -48,8 +48,8 @@
   "config.apiKeyClear": { "en": "Turn the API off", "de": "API abschalten" },
   "config.apiKeyCleared": { "en": "The API is off.", "de": "Die API ist abgeschaltet." },
   "config.apiHint": {
-    "en": "For dashboards and scripts: {code}, /api/v1/stats and /api/v1/history, with the key in an X-Api-Key header or an ?apikey= parameter. Read-only, deployment-wide.",
-    "de": "Für Dashboards und Skripte: {code}, /api/v1/stats und /api/v1/history, mit dem Schlüssel im Header X-Api-Key oder als Parameter ?apikey=. Nur lesend, deploymentweit."
+    "en": "For dashboards and scripts: {code}, /api/v1/stats, /api/v1/history and /api/v1/watchlist, with the key in an X-Api-Key header or an ?apikey= parameter. Read-only, deployment-wide.",
+    "de": "Für Dashboards und Skripte: {code}, /api/v1/stats, /api/v1/history und /api/v1/watchlist, mit dem Schlüssel im Header X-Api-Key oder als Parameter ?apikey=. Nur lesend, deploymentweit."
   },
 
   "notifications.conditions": { "en": "Conditions", "de": "Bedingungen" },

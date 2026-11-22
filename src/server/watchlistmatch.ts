@@ -1,5 +1,6 @@
 // The rules that tie a local watchlist row to the media server's watchlist (Plex: plex.tv).
-// No 'server-only': pure, so the tests import it. sync.ts::pullWatchlist and api/watchlist use it.
+// No 'server-only': pure, so the tests import it. sync.ts::pullWatchlist, api/watchlist and
+// api/v1/watchlist use it.
 
 /** Movie, series, or something else (an episode, a season, unknown). */
 export function watchlistKind(mediaType: string | null | undefined): 'movie' | 'show' | null {
@@ -40,4 +41,44 @@ export function sameWatchlistTitle(row: WatchlistRowLike, entry: WatchlistRowLik
   const b = watchlistKind(entry.mediaType);
   if (row.year && entry.year) return row.year === entry.year && (!a || !b || a === b);
   return a !== null && a === b;
+}
+
+/** plex.tv names titles by 24 hex digits; a Plex library's own keys are short integers. */
+export function isPlexGlobalId(itemId: string): boolean {
+  return /^[0-9a-f]{24}$/i.test(itemId);
+}
+
+export interface PlexLibraryEntry extends WatchlistRowLike {
+  globalId?: string;
+}
+
+/**
+ * Maps watchlist rows to the id the Plex server itself uses. A row pulled from plex.tv carries
+ * the global id, which no tool that works on the server (and lists ratingKeys) can match; to
+ * that tool a title on somebody's Plex watchlist would look unclaimed. Rows that already hold a
+ * local key come back unchanged, and so does a global id the library does not have.
+ *
+ * By global id first. By title only for library items without one (legacy agents give no
+ * plex:// guid): an item whose global id differs is a different title, whatever its name.
+ */
+export function plexItemIdResolver(library: PlexLibraryEntry[]): (row: WatchlistRowLike) => string {
+  const byGlobalId = new Map<string, string>();
+  const byTitle = new Map<string, PlexLibraryEntry[]>();
+  for (const item of library) {
+    if (item.globalId) {
+      byGlobalId.set(item.globalId.toLowerCase(), item.itemId);
+      continue;
+    }
+    const key = item.title.trim().toLowerCase();
+    const list = byTitle.get(key);
+    if (list) list.push(item);
+    else byTitle.set(key, [item]);
+  }
+  return (row) => {
+    if (!isPlexGlobalId(row.itemId)) return row.itemId;
+    const exact = byGlobalId.get(row.itemId.toLowerCase());
+    if (exact) return exact;
+    const named = byTitle.get(row.title.trim().toLowerCase())?.find((item) => sameWatchlistTitle(item, row));
+    return named?.itemId ?? row.itemId;
+  };
 }

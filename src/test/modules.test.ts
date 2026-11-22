@@ -282,8 +282,34 @@ async function watchlistRules() {
   console.log('ok - watchlist: only movies and shows go to Plex, a title without a year needs the same kind');
 }
 
+// --- the read-only API's watchlist: plex.tv ids become the server's own ratingKeys ----------
+async function watchlistIdMapping() {
+  const { isPlexGlobalId, plexItemIdResolver } = await import('../server/watchlistmatch');
+  assert.ok(isPlexGlobalId('5d776825880197001ec967c6'));
+  assert.ok(!isPlexGlobalId('48213'), 'a library key is short');
+  assert.ok(!isPlexGlobalId('a8f5e1c2b3d4e5f6a7b8c9d0e1f2a3b4'), 'a Jellyfin id has 32 digits, not 24');
+
+  const resolve = plexItemIdResolver([
+    { itemId: '456', title: 'Ronin', mediaType: 'movie', year: 1998, globalId: '5d77000000000000000000AA' },
+    { itemId: '789', title: 'Le Samouraï', mediaType: 'movie', year: 1967 },
+    { itemId: '790', title: 'Heat', mediaType: 'movie', year: 1995, globalId: '5d7700000000000000000ccc' },
+  ]);
+  const row = (itemId: string, title: string, year: number | null = null) => ({ itemId, title, mediaType: 'movie', year });
+  assert.equal(resolve(row('5d77000000000000000000aa', 'Ronin', 1998)), '456', 'by global id, in any case');
+  assert.equal(resolve(row('5d7700000000000000000bbb', 'le samouraï ', 1967)), '789', 'a legacy-agent item is found by its title');
+  assert.equal(
+    resolve(row('5d776825880197001ec967c6', 'Heat', 1995)),
+    '5d776825880197001ec967c6',
+    'an item with another global id is another title, however it is named',
+  );
+  assert.equal(resolve(row('5d7700000000000000000ddd', 'Thief', 1981)), '5d7700000000000000000ddd', 'not in the library: unchanged');
+  assert.equal(resolve(row('123', 'Collateral', 2004)), '123', 'a local key stays as it is');
+  console.log('ok - watchlist API: plex.tv ids map to the library key, by guid first, by title only without one');
+}
+
 main()
   .then(watchlistRules)
+  .then(watchlistIdMapping)
   .then(() => process.exit(0))
   .catch((error) => {
     console.error(error);

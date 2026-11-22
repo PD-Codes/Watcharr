@@ -123,6 +123,11 @@ export interface LibraryItem {
   addedAt?: Date;
   /** Which library the item belongs to, where the backend reports it. */
   sectionId?: string;
+  /**
+   * Plex only: the global id behind the item's plex:// guid, which is how plex.tv's watchlist
+   * names it. Undefined for items matched by a legacy agent.
+   */
+  globalId?: string;
 
   // Media info, for the per-library table. Optional throughout: a backend that does not
   // report a field leaves it out rather than reporting a zero that would be aggregated.
@@ -168,7 +173,8 @@ export interface MediaServerAdapter {
   readonly type: ServerType;
 
   /** Verify the configured server URL/token. Returns the server's display name. */
-  ping(): Promise<{ ok: boolean; serverName?: string; version?: string }>;
+  /** `machineIdentifier`: Plex only, the id plex.tv and Plex clients know this server by. */
+  ping(): Promise<{ ok: boolean; serverName?: string; version?: string; machineIdentifier?: string }>;
 
   /** Exchange credentials for a user token. Not used by Plex (see PinAuthAdapter). */
   login(credentials: LoginCredentials): Promise<AuthResult>;

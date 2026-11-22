@@ -242,7 +242,7 @@
   "common.watchTime": "Watch time",
   "common.year": "Year",
   "config.api": "Read-only API",
-  "config.apiHint": "For dashboards and scripts: {code}, /api/v1/stats and /api/v1/history, with the key in an X-Api-Key header or an ?apikey= parameter. Read-only, deployment-wide.",
+  "config.apiHint": "For dashboards and scripts: {code}, /api/v1/stats, /api/v1/history and /api/v1/watchlist, with the key in an X-Api-Key header or an ?apikey= parameter. Read-only, deployment-wide.",
   "config.apiKeyClear": "Turn the API off",
   "config.apiKeyCleared": "The API is off.",
   "config.apiKeyGenerate": "Generate key",

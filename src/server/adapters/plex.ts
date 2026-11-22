@@ -223,6 +223,7 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
         ok: true,
         serverName: res.MediaContainer.friendlyName,
         version: res.MediaContainer.version,
+        machineIdentifier: res.MediaContainer.machineIdentifier,
       };
     } catch {
       return { ok: false };
@@ -533,6 +534,7 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
       genres: (m.Genre ?? []).map((g) => g.tag),
       posterUrl: this.posterUrl(m.ratingKey),
       sectionId,
+      globalId: plexGlobalId(m.guid),
       // Shows have no Media block of their own — only their episodes do — so these
       // stay undefined there rather than reporting a misleading zero.
       fileSizeBytes: media?.Part?.[0]?.size,
