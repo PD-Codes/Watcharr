@@ -176,6 +176,13 @@
       "when": 1795129414391,
       "tag": "0024_library_access_newsletter_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1795368685388,
+      "tag": "0025_plex_tokens",
+      "breakpoints": true
     }
   ]
 }

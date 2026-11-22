@@ -2,7 +2,7 @@ import 'server-only';
 import { and, eq, gte, inArray, like, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { appConfig, playbackSessions, users, watchHistory, watchlist } from '@/db/schema';
-import { createAdapter, serverRoute, type ServerType } from './adapters';
+import { createAdapter, serverRoute, type ServerType, type WatchlistEntry } from './adapters';
 import { isUnauthorized } from './adapters/http';
 import { getAdapter, getServer, getSettings, listServers, type ServerRow } from './config';
 import { isEnabled } from './features';
@@ -15,7 +15,7 @@ import { checkRetention } from './retention';
 import { lastServerPlayAt, recordPlays, type PlayInput } from './plays';
 import { cachedLibrary, cachedSectionName, getLibrary, resolveSectionKey, warmLibraryCache } from './library';
 import { artworkCoverage, prefetchTitleMeta } from './tmdb';
-import { revokeSession, type Session } from './session';
+import { dropPlexToken, keptPlexTokens, revokeSession, type Session, type SessionUser } from './session';
 import { notify } from './notifications';
 import { ensureUsers, loadRoster } from './userroster';
 import { globalState } from './state';
@@ -27,6 +27,10 @@ import { sameWatchlistTitle } from './watchlistmatch';
 const TMDB_URL = 'https://api.themoviedb.org';
 /** How often a strained server is still asked what is playing. */
 const STRAINED_POLL_MS = 30_000;
+/** How often the watchlist behind every kept plex.tv token is pulled; see syncStoredWatchlists. */
+const WATCHLIST_ROUND_MS = 15 * 60_000;
+/** Watchlist rows per INSERT, well under SQLite's 32766 bound variables. */
+const WATCHLIST_INSERT_BATCH = 500;
 
 // Shared across Next's module graphs (see state.ts): the throttles and the failed-server memory
 // below used to exist once for the background tick and once for page renders, and one server
@@ -264,6 +268,11 @@ async function runActivity() {
   // socket frame that arrived meanwhile joined a pass that had read the sessions long before,
   // and a new stream waited for the next tick — or for the backup to finish.
   runInBackground(singleFlight('housekeeping', () => timed('housekeeping', housekeeping)), 'housekeeping');
+  // Beside housekeeping rather than in it: plex.tv is asked once per person, and a slow answer
+  // must not hold up the backup and retention checks.
+  if (!throttled('watchlists', WATCHLIST_ROUND_MS)) {
+    runInBackground(singleFlight('watchlists', () => timed('watchlist sync', syncStoredWatchlists)), 'watchlist sync');
+  }
 }
 
 async function housekeeping() {
@@ -754,27 +763,63 @@ async function recordFinishedPlays(
 }
 
 /** Mirrors the server-side watchlist (Plex only) into the local watchlist. */
-export function syncWatchlist(session: Session): Promise<void> {
-  return singleFlight(`watchlist:${session.user.id}`, () => pullWatchlist(session));
+export async function syncWatchlist(session: Session): Promise<void> {
+  if (session.preview) return; // see syncHistory
+  // Same dead-token rule as syncHistory: the session holding it is the thing to drop.
+  await singleFlight(`watchlist:${session.user.id}`, () =>
+    pullWatchlist(session.user, session.serverToken, () => revokeSession(session.id)),
+  );
 }
 
-async function pullWatchlist(session: Session) {
-  if (session.preview || !session.serverToken) return; // see syncHistory
-  const user = session.user;
+/**
+ * The watchlist of everybody on a Plex server who ever signed in, every WATCHLIST_ROUND_MS, with
+ * the plex.tv token kept from their last Plex sign-in (plex_tokens). It used to be pulled only
+ * while its owner had the watchlist or the pick page open, so the public API (a cleanup tool
+ * asking what somebody still wants to watch) got whatever was mirrored the last time that person
+ * looked, for most people nothing. Exported for the route checks; runActivity() starts it.
+ */
+export async function syncStoredWatchlists() {
+  if (!isEnabled((await getSettings()).features, 'watchlistSync')) return;
+  const plex = (await listServers()).filter((server) => server.serverType === 'plex').map((server) => server.id);
+  for (const { user, token } of await keptPlexTokens(plex)) {
+    // A refused token is forgotten, not the person's sessions: nobody asked for this run, and
+    // their next sign-in keeps a fresh one.
+    const answered = await singleFlight(`watchlist:${user.id}`, () =>
+      pullWatchlist(user, token, () => dropPlexToken(user.id, token)),
+    );
+    // plex.tv did not answer for one person, so it will not for the next: the rest wait for the
+    // next round instead of each waiting out the same timeout.
+    if (!answered) break;
+  }
+}
+
+/**
+ * Pulls one person's watchlist with `token`, their plex.tv token. False only when plex.tv could
+ * not be asked (down, too slow, an error page): that is logged, where it used to pass for an
+ * empty list. `refused` runs when plex.tv rejects the token.
+ */
+async function pullWatchlist(user: SessionUser, token: string, refused: () => Promise<unknown>): Promise<boolean> {
+  if (!token) return true; // signed in through /adminlogin: nothing to act with
   const userId = user.id;
   const settings = await getSettings();
-  if (!isEnabled(settings.features, 'watchlistSync')) return;
+  if (!isEnabled(settings.features, 'watchlistSync')) return true;
 
   const adapter = await getAdapter(user.serverId);
-  if (!adapter.getWatchlist) return;
-  if (throttled(`watchlist:${userId}`, 300_000)) return;
+  if (!adapter.getWatchlist) return true;
+  if (throttled(`watchlist:${userId}`, 300_000)) return true;
 
-  // Same dead-token rule as syncHistory: the session holding it is the thing to drop.
-  const entries = await adapter.getWatchlist(session.serverToken).catch(async (error: unknown) => {
-    if (isUnauthorized(error)) await revokeSession(session.id).catch(() => {});
-    return [];
-  });
-  if (!entries.length) return;
+  let entries: WatchlistEntry[];
+  try {
+    entries = await adapter.getWatchlist(token);
+  } catch (error) {
+    if (!isUnauthorized(error)) {
+      reportSyncError('watchlist sync')(error);
+      return false;
+    }
+    await refused().catch(() => {});
+    return true;
+  }
+  if (!entries.length) return true;
 
   // A title added here goes to plex.tv under its local library id (api/watchlist pushes it) and
   // comes back from plex.tv under its global id: two ids, one title. The unique index only knows
@@ -785,22 +830,27 @@ async function pullWatchlist(session: Session) {
     .where(eq(watchlist.userId, userId));
   // Same title and year, or same title and kind where a year is missing: see sameWatchlistTitle.
   const fresh = entries.filter((e) => !existing.some((row) => row.itemId === e.itemId || sameWatchlistTitle(row, e)));
-  if (!fresh.length) return;
+  if (!fresh.length) return true;
 
-  await db
-    .insert(watchlist)
-    .values(
-      fresh.map((e) => ({
-        userId,
-        itemId: e.itemId,
-        title: e.title,
-        mediaType: e.mediaType,
-        year: e.year,
-        posterUrl: e.posterUrl,
-        source: 'plex' as const,
-      })),
-    )
-    .onConflictDoNothing();
+  // In slices: the first pull of a long watchlist, now that every page is read, would pass
+  // SQLite's limit of bound variables in a single INSERT (see plays.ts).
+  for (let i = 0; i < fresh.length; i += WATCHLIST_INSERT_BATCH) {
+    await db
+      .insert(watchlist)
+      .values(
+        fresh.slice(i, i + WATCHLIST_INSERT_BATCH).map((e) => ({
+          userId,
+          itemId: e.itemId,
+          title: e.title,
+          mediaType: e.mediaType,
+          year: e.year,
+          posterUrl: e.posterUrl,
+          source: 'plex' as const,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+  return true;
 }
 
 /** Marks watchlist rows as done once a matching history entry exists. */

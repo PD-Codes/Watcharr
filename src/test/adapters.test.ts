@@ -1115,6 +1115,64 @@ async function testPlexWatchlistWrite() {
   await assert.rejects(() => plex.removeFromWatchlist!('t', '5d776825880197001ec967c6'), /401/, 'HTTP errors reach the caller');
 }
 
+/**
+ * The watchlist is read from discover.provider.plex.tv (metadata.provider.plex.tv answers 404
+ * since Plex moved it), with the person's own token, every page of it.
+ */
+async function testPlexWatchlistReadsEveryPage() {
+  const watchlist = Array.from({ length: 230 }, (_, i) => ({
+    ratingKey: `5d77${String(i).padStart(20, '0')}`,
+    title: `Title ${i}`,
+    type: i % 2 ? 'show' : 'movie',
+    year: 2000 + (i % 20),
+    thumb: `https://metadata-static.plex.tv/${i}.jpg`,
+  }));
+  const requests: { host: string; path: string; start: number; size: number; token: string | null }[] = [];
+  let mode: 'paged' | 'ignores-offset' | 'no-total' | 'gone' = 'paged';
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const start = Number(url.searchParams.get('X-Plex-Container-Start'));
+    const size = Number(url.searchParams.get('X-Plex-Container-Size'));
+    requests.push({ host: url.host, path: url.pathname, start, size, token: new Headers(init?.headers).get('X-Plex-Token') });
+    if (mode === 'gone') return new Response('Not Found', { status: 404 });
+    if (mode === 'no-total') return Response.json({ MediaContainer: { size: 3, Metadata: watchlist.slice(0, 3) } });
+    // Never more than 60 per page, whatever was asked for: the total has to drive the paging.
+    const from = mode === 'ignores-offset' ? 0 : start;
+    const Metadata = watchlist.slice(from, from + Math.min(size, 60));
+    return Response.json({ MediaContainer: { totalSize: watchlist.length, size: Metadata.length, Metadata } });
+  }) as typeof fetch;
+
+  const plex = createAdapter('plex', 'http://plex-watchlist-read:32400', 'admin-token');
+  const all = await plex.getWatchlist!('user-plex-tv-token');
+  assert.equal(all.length, 230, 'every page is read, also when plex.tv sends fewer than asked for');
+  assert.deepEqual(all[1], {
+    itemId: watchlist[1].ratingKey,
+    title: 'Title 1',
+    mediaType: 'show',
+    year: 2001,
+    posterUrl: 'https://metadata-static.plex.tv/1.jpg',
+  });
+  assert.ok(
+    requests.every((r) => r.host === 'discover.provider.plex.tv' && r.path === '/library/sections/watchlist/all'),
+    'read from the discover host',
+  );
+  assert.ok(requests.every((r) => r.token === 'user-plex-tv-token'), 'with the person\'s own plex.tv token');
+  assert.deepEqual(requests.map((r) => r.start), [0, 60, 120, 180], 'each page starts where the last one ended');
+
+  requests.length = 0;
+  mode = 'ignores-offset';
+  assert.equal((await plex.getWatchlist!('t')).length, 60, 'an ignored offset ends the paging');
+  assert.equal(requests.length, 2, 'after the first page that brought nothing new');
+
+  requests.length = 0;
+  mode = 'no-total';
+  assert.equal((await plex.getWatchlist!('t')).length, 3);
+  assert.equal(requests.length, 1, 'without a total, a short page is the last one');
+
+  mode = 'gone';
+  await assert.rejects(() => plex.getWatchlist!('t'), /404/, 'an error page is an error, not an empty watchlist');
+}
+
 async function main() {
   for (const test of [
   testUnauthorizedDetection,
@@ -1145,6 +1203,7 @@ async function main() {
   testUserSectionIds,
   testJellyfinQuickConnect,
   testPlexWatchlistWrite,
+  testPlexWatchlistReadsEveryPage,
 ]) {
     await test();
     console.log(`ok - ${test.name}`);

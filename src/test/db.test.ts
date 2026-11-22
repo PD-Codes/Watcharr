@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { eq, inArray, like } from 'drizzle-orm';
 import { execFileSync } from 'node:child_process';
 import Database from 'better-sqlite3';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -108,6 +108,55 @@ console.log('ok - migrations are idempotent');
   check.close();
   rmSync(upgradeDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   console.log('ok - migrations apply to a database that already has rows');
+}
+
+// 0025 keeps the plex.tv token of everybody's newest live session in plex_tokens, so the
+// watchlist sync goes on after the update without anybody signing in again.
+{
+  const tokenDir = mkdtempSync(join(tmpdir(), 'watcharr-plex-tokens-'));
+  const tokenPath = join(tokenDir, 'tokens.db');
+  const sqlite = new Database(tokenPath);
+  sqlite.exec('CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)');
+  for (const file of readdirSync('drizzle').filter((f) => f.endsWith('.sql') && f < '0025').sort()) {
+    for (const statement of readFileSync(join('drizzle', file), 'utf8').split('--> statement-breakpoint')) {
+      if (statement.trim()) sqlite.exec(statement);
+    }
+    sqlite.prepare('INSERT INTO _migrations (name, applied_at) VALUES (?, ?)').run(file, Date.now());
+  }
+  const addServer = sqlite.prepare(
+    "INSERT INTO app_config (id, server_type, server_url, server_token, slug) VALUES (?, ?, ?, 'x', ?)",
+  );
+  addServer.run(1, 'plex', 'http://plex', 'plex');
+  addServer.run(2, 'jellyfin', 'http://jellyfin', 'jellyfin');
+  const addUser = sqlite.prepare('INSERT INTO users (id, server_id, server_user_id, username) VALUES (?, ?, ?, ?)');
+  addUser.run(1, 1, 'plex-1', 'signed-in');
+  addUser.run(2, 1, 'plex-2', 'expired');
+  addUser.run(3, 2, 'jf-3', 'jellyfin');
+  addUser.run(4, 1, 'watcharr:recovery', 'watcharr-admin');
+  const minute = 60_000;
+  const addSession = sqlite.prepare(
+    'INSERT INTO auth_sessions (id, user_id, server_token, created_at, expires_at) VALUES (?, ?, ?, ?, ?)',
+  );
+  const now = Date.now();
+  addSession.run('a', 1, 'stored-older', now - 30 * minute, now + minute);
+  addSession.run('b', 1, 'stored-newest-live', now - 20 * minute, now + minute);
+  addSession.run('c', 1, 'stored-expired', now - 10 * minute, now - minute);
+  addSession.run('d', 2, 'stored-gone', now - 10 * minute, now - minute);
+  addSession.run('e', 3, 'stored-jellyfin', now - 10 * minute, now + minute);
+  addSession.run('f', 4, 'stored-recovery', now - 10 * minute, now + minute);
+  sqlite.close();
+
+  execFileSync('node', ['scripts/migrate.mjs'], { stdio: 'ignore', env: { ...process.env, DATABASE_PATH: tokenPath } });
+  const check = new Database(tokenPath, { readonly: true });
+  const kept = check.prepare('SELECT user_id, token, updated_at FROM plex_tokens ORDER BY user_id').all();
+  assert.deepEqual(
+    kept,
+    [{ user_id: 1, token: 'stored-newest-live', updated_at: now - 20 * minute }],
+    'the newest live Plex session only: no expired one, no Jellyfin, not the emergency account',
+  );
+  check.close();
+  rmSync(tokenDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  console.log('ok - the update keeps the plex.tv token of every live Plex session');
 }
 
 async function main() {

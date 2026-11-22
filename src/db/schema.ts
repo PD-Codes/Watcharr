@@ -304,6 +304,21 @@ export const userLibraryAccess = sqliteTable('user_library_access', {
   checkedAt: integer('checked_at', { mode: 'timestamp_ms' }).notNull(),
 });
 
+/**
+ * The plex.tv token of each person who signed in with Plex, kept beyond the sign-in itself: a
+ * session ends after 30 days, while the watchlist sync (sync.ts) keeps asking plex.tv on the
+ * person's behalf with nobody's page open. Replaced on every Plex sign-in; removed with the
+ * person, when the media server no longer lists them, or when plex.tv refuses it. Encrypted at
+ * rest like every token, and never sent to a browser.
+ */
+export const plexTokens = sqliteTable('plex_tokens', {
+  userId: integer('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  token: text('token').notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(now),
+});
+
 /** Server-side session store. The cookie only carries a signed session id. */
 export const authSessions = sqliteTable(
   'auth_sessions',

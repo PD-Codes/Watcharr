@@ -4,7 +4,7 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { and, count, desc, eq, gt, inArray, lt, ne, notExists, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { authSessions, loginHistory, users } from '@/db/schema';
+import { authSessions, loginHistory, plexTokens, users } from '@/db/schema';
 import { isLocale } from '@/i18n';
 import { decryptSecret, encryptSecret, hmacSign, hmacVerify, type KeyPurpose } from './crypto';
 import type { MediaServerUser } from './adapters';
@@ -185,6 +185,56 @@ export async function listUserSessions(userId: number) {
     .orderBy(desc(authSessions.createdAt));
 }
 
+/** A plex.tv token kept beyond its sign-in (see plex_tokens), with the person it belongs to. */
+export interface KeptPlexToken {
+  user: SessionUser;
+  token: string;
+}
+
+/**
+ * The kept plex.tv tokens of everybody on the given servers, most recently signed in first, for
+ * work done on their behalf while nobody has a page open (sync.ts pulls watchlists with them).
+ * One that no longer decrypts (a changed SESSION_SECRET) is skipped and never fails the others.
+ */
+export async function keptPlexTokens(serverIds: number[]): Promise<KeptPlexToken[]> {
+  if (!serverIds.length) return [];
+  const rows = await db
+    .select({ user: users, token: plexTokens.token })
+    .from(plexTokens)
+    .innerJoin(users, eq(users.id, plexTokens.userId))
+    .where(inArray(users.serverId, serverIds))
+    .orderBy(desc(plexTokens.updatedAt), desc(plexTokens.userId));
+  const kept: KeptPlexToken[] = [];
+  for (const row of rows) {
+    let token: string;
+    try {
+      token = decryptSecret(row.token);
+    } catch {
+      continue;
+    }
+    if (token) kept.push({ user: row.user, token });
+  }
+  return kept;
+}
+
+/**
+ * Forgets a person's kept plex.tv token after plex.tv refused it, unless a sign-in has replaced
+ * it since: the new one has not been refused. Compared as stored, so a sign-in that lands
+ * between the check and the delete is not lost either.
+ */
+export async function dropPlexToken(userId: number, refused: string): Promise<void> {
+  const [row] = await db.select({ token: plexTokens.token }).from(plexTokens).where(eq(plexTokens.userId, userId));
+  if (!row) return;
+  let kept = '';
+  try {
+    kept = decryptSecret(row.token);
+  } catch {
+    // Unreadable is as good as refused.
+  }
+  if (kept && kept !== refused) return;
+  await db.delete(plexTokens).where(and(eq(plexTokens.userId, userId), eq(plexTokens.token, row.token)));
+}
+
 /**
  * The user's own language. Null means "follow the deployment default", which is also what
  * an unknown tag falls back to — the value reaches the dictionary lookup directly.
@@ -316,6 +366,15 @@ export async function createSession(
     serverToken: encryptSecret(serverToken),
     expiresAt: new Date(Date.now() + MAX_AGE_SECONDS * 1000),
   });
+  // A Plex sign-in's plex.tv token also outlives this session (see plex_tokens). Other servers'
+  // tokens have no use beyond the session and are not kept.
+  if (serverToken && (await getServer(serverId))?.serverType === 'plex') {
+    const kept = encryptSecret(serverToken);
+    await db
+      .insert(plexTokens)
+      .values({ userId: row.id, token: kept, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: plexTokens.userId, set: { token: kept, updatedAt: new Date() } });
+  }
 
   (await cookies()).set(COOKIE, sign('session-cookie', id), {
     httpOnly: true,

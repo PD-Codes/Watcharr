@@ -236,17 +236,24 @@ async function watchlistPushChecks(): Promise<number> {
 
   const calls: { method: string; url: string; token: string | null }[] = [];
   let watchlistReply: unknown[] = [];
+  // Per plex.tv token, for the background round: a list, or how plex.tv answers instead.
+  const watchlistOf = new Map<string, unknown[] | 'refused' | 'unreachable'>();
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
-    calls.push({ method: init?.method ?? 'GET', url: url.href, token: new Headers(init?.headers).get('X-Plex-Token') });
+    const token = new Headers(init?.headers).get('X-Plex-Token');
+    calls.push({ method: init?.method ?? 'GET', url: url.href, token });
     if (url.host === 'plex-push.test:32400' && url.pathname === '/library/metadata/123') {
       return Response.json({ MediaContainer: { Metadata: [{ ratingKey: '123', title: 'Heat', type: 'movie', guid: 'plex://movie/5d776825880197001ec967c6' }] } });
     }
-    if (url.host === 'discover.provider.plex.tv') return new Response(null, { status: 200 });
+    // The read before the writes: both go to discover.provider.plex.tv.
     if (url.pathname.endsWith('/library/sections/watchlist/all')) {
-      return Response.json({ MediaContainer: { Metadata: watchlistReply } });
+      const own = watchlistOf.get(token ?? '');
+      if (own === 'refused') return new Response('Unauthorized', { status: 401 });
+      if (own === 'unreachable') throw new TypeError('fetch failed');
+      return Response.json({ MediaContainer: { Metadata: own ?? watchlistReply } });
     }
+    if (url.host === 'discover.provider.plex.tv') return new Response(null, { status: 200 });
     return new Response('not faked', { status: 404 });
   }) as typeof fetch;
 
@@ -260,7 +267,7 @@ async function watchlistPushChecks(): Promise<number> {
   };
 
   try {
-    const { and, eq } = await import('drizzle-orm');
+    const { and, eq, inArray } = await import('drizzle-orm');
     const { db } = await import('../db');
     const { appConfig, watchlist } = await import('../db/schema');
     const { encryptSecret } = await import('../server/crypto');
@@ -299,11 +306,77 @@ async function watchlistPushChecks(): Promise<number> {
       'a pushed title comes back from plex.tv without a duplicate',
       rows.length === 2 && rows.filter((r) => r.title === 'Heat').length === 1 && rows.some((r) => r.title === 'Ronin' && r.source === 'plex'),
     );
+    report(
+      'the watchlist is read from discover.provider.plex.tv with the person\'s own token',
+      calls.some((c) => c.url.startsWith('https://discover.provider.plex.tv/library/sections/watchlist/all?') && c.token === 'friend-plex-tv-token'),
+    );
 
     calls.length = 0;
     const removed = await route.DELETE(new Request('http://app/api/watchlist?itemId=123', { method: 'DELETE' }));
     await settle(() => puts().length > 0);
     report('removing takes it off plex.tv too', removed.ok && puts().some((c) => c.url.includes('/actions/removeFromWatchlist?ratingKey=5d776825880197001ec967c6')));
+
+    // The background round: everybody whose plex.tv token is kept, not only whoever opens a page.
+    // Rows written straight away, so the cookie jar keeps the friend's session.
+    {
+      const { authSessions, plexTokens, users } = await import('../db/schema');
+      const { sessionHandle } = await import('../server/session');
+      const { syncStoredWatchlists } = await import('../server/sync');
+      const keptFor = async (userId: number) =>
+        (await db.select().from(plexTokens).where(eq(plexTokens.userId, userId))).length;
+      report('a Plex sign-in keeps the plex.tv token beyond the session', (await keptFor(user.id)) === 1);
+
+      const kept = async (name: string, ageMs: number) => {
+        const [person] = await db.insert(users).values({ serverId: server.id, serverUserId: `plex-${name}`, username: name }).returning();
+        await db.insert(plexTokens).values({
+          userId: person.id,
+          token: encryptSecret(`${name}-plex-tv-token`),
+          updatedAt: new Date(Date.now() - ageMs),
+        });
+        return person;
+      };
+      const rowsOf = async (userId: number) => db.select().from(watchlist).where(eq(watchlist.userId, userId));
+
+      // Most recently kept first: the refused token is asked before the neighbor's.
+      const neighbor = await kept('neighbor', 60_000);
+      const refused = await kept('refused', 30_000);
+      // Signed in as well: a refused token in the background must not end that session.
+      await db.insert(authSessions).values({
+        id: sessionHandle('refused-cookie'),
+        userId: refused.id,
+        serverToken: encryptSecret('refused-plex-tv-token'),
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+      watchlistOf.set('neighbor-plex-tv-token', [{ ratingKey: '5d77000000000000000000bb', title: 'Thief', type: 'movie', year: 1981 }]);
+      watchlistOf.set('refused-plex-tv-token', 'refused');
+      calls.length = 0;
+      await syncStoredWatchlists();
+      const mirrored = await rowsOf(neighbor.id);
+      report(
+        'the background round mirrors somebody without any session',
+        mirrored.length === 1 && mirrored[0].title === 'Thief' && mirrored[0].source === 'plex',
+      );
+      const sessionsLeft = (await db.select().from(authSessions).where(eq(authSessions.userId, refused.id))).length;
+      report('a token plex.tv refuses is forgotten, its owner stays signed in', (await keptFor(refused.id)) === 0 && sessionsLeft === 1);
+      report('whoever synced a moment ago is not asked again', !calls.some((c) => c.token === 'friend-plex-tv-token'));
+
+      // plex.tv unreachable for the most recent one: the round ends there.
+      const later = await kept('later', 20_000);
+      const unreachable = await kept('unreachable', 10_000);
+      watchlistOf.set('later-plex-tv-token', [{ ratingKey: '5d77000000000000000000cc', title: 'Manhunter', type: 'movie', year: 1986 }]);
+      watchlistOf.set('unreachable-plex-tv-token', 'unreachable');
+      calls.length = 0;
+      await syncStoredWatchlists();
+      report(
+        'an unreachable plex.tv ends the round instead of being asked for everybody',
+        calls.some((c) => c.token === 'unreachable-plex-tv-token') &&
+          !calls.some((c) => c.token === 'later-plex-tv-token') &&
+          (await rowsOf(later.id)).length === 0 &&
+          (await keptFor(unreachable.id)) === 1,
+      );
+      // Their tokens, sessions and rows go with them (cascade), so the checks after this see the friend only.
+      await db.delete(users).where(inArray(users.id, [neighbor.id, refused.id, later.id, unreachable.id]));
+    }
 
     // Switched off, the lists stay separate.
     await updateSettings({ features: { watchlistSync: false } });

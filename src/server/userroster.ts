@@ -1,7 +1,7 @@
 import 'server-only';
 import { and, eq, gt } from 'drizzle-orm';
 import { db } from '@/db';
-import { authSessions, users } from '@/db/schema';
+import { authSessions, plexTokens, users } from '@/db/schema';
 import { RECOVERY_SERVER_USER_ID } from './recoveryaccount';
 import type { MediaServerAdapter, MediaServerUser } from './adapters/types';
 
@@ -78,7 +78,10 @@ export async function ensureUsers(
 export interface RosterChanges {
   /** Rows whose admin flag now follows the media server. */
   roleChanged: number;
-  /** People with live sessions who are no longer in the list (share removed, account deleted). */
+  /**
+   * People with live sessions or a kept plex.tv token who are no longer in the list (share
+   * removed, account deleted).
+   */
   removed: number;
   /** Sessions ended by either of the above. */
   sessionsRevoked: number;
@@ -92,7 +95,8 @@ export interface RosterChanges {
  *
  * - `is_admin` follows the list for rows matched by id; a change ends that person's sessions,
  *   so the next request goes through a fresh sign-in with fresh rights.
- * - Somebody with live sessions who is in the list neither by id nor by name is signed out.
+ * - Somebody with live sessions who is in the list neither by id nor by name is signed out, and
+ *   their kept plex.tv token (plex_tokens) is dropped; a kept token alone counts as signed in.
  * - A list that names no admin is skipped as a whole, roles included: every media server has
  *   one, so such a list is incomplete (Plex falling back to its local account table when
  *   plex.tv does not answer — that fallback has no owner), and acting on it would demote or
@@ -131,15 +135,24 @@ export async function reconcileRoster(serverId: number, people: RosterPerson[]):
     })
     .from(users)
     .where(eq(users.serverId, serverId));
-  const live = new Set(
-    (
+  // A kept plex.tv token counts like a live session: it outlives every session, and the watchlist
+  // sync keeps asking with it, so somebody whose share ended would otherwise be asked for forever.
+  const live = new Set([
+    ...(
       await db
         .selectDistinct({ userId: authSessions.userId })
         .from(authSessions)
         .innerJoin(users, eq(users.id, authSessions.userId))
         .where(and(eq(users.serverId, serverId), gt(authSessions.expiresAt, new Date())))
     ).map((r) => r.userId),
-  );
+    ...(
+      await db
+        .select({ userId: plexTokens.userId })
+        .from(plexTokens)
+        .innerJoin(users, eq(users.id, plexTokens.userId))
+        .where(eq(users.serverId, serverId))
+    ).map((r) => r.userId),
+  ]);
 
   const signOut = async (userId: number) =>
     (await db.delete(authSessions).where(eq(authSessions.userId, userId)).returning({ id: authSessions.id }))
@@ -183,6 +196,9 @@ export async function reconcileRoster(serverId: number, people: RosterPerson[]):
 
   for (const row of gone) {
     const ended = await signOut(row.id);
+    // No longer on the server, so nothing is asked on their behalf any more either. A changed
+    // role above keeps it: the same person, still with access, only signed in afresh.
+    await db.delete(plexTokens).where(eq(plexTokens.userId, row.id));
     changes.removed += 1;
     changes.sessionsRevoked += ended;
     console.log(

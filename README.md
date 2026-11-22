@@ -309,7 +309,9 @@ After setup, everyone else signs in with their own media server account:
 - **Jellyfin / Emby** — their normal username and password, verified by the server.
 
 Watcharr never stores a password. The token the media server hands back is encrypted and
-kept server-side; the browser only ever gets a signed session id.
+kept server-side; the browser only ever gets a signed session id. The plex.tv token of a Plex
+sign-in is also kept after the session ends, so the Plex watchlist keeps syncing in the
+background; it is dropped when plex.tv refuses it or the person is no longer on the server.
 
 ---
 

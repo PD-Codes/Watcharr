@@ -175,6 +175,7 @@ function holdsSecrets(db) {
   return (
     count('SELECT count(*) FROM app_config') +
       count('SELECT count(*) FROM auth_sessions') +
+      count('SELECT count(*) FROM plex_tokens') +
       count('SELECT count(*) FROM notification_channels') +
       count('SELECT count(*) FROM app_settings WHERE tmdb_api_key IS NOT NULL OR api_key IS NOT NULL') >
     0

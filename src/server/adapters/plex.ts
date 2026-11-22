@@ -18,9 +18,15 @@ import type {
 } from './types';
 
 const PLEX_TV = 'https://plex.tv/api/v2';
-const PLEX_METADATA = 'https://metadata.provider.plex.tv';
-/** Watchlist writes; python-plexapi's MyPlexAccount.addToWatchlist uses the same host. */
+/**
+ * The plex.tv watchlist, reads and writes; python-plexapi's MyPlexAccount.watchlist and
+ * addToWatchlist use the same host. Reads used to go to metadata.provider.plex.tv, where Plex
+ * retired the watchlist in 2025: it answers 404 there, and the sync took that for an empty list.
+ */
 const PLEX_DISCOVER = 'https://discover.provider.plex.tv';
+/** Watchlist entries per plex.tv request, and how many requests one pull may make at most. */
+const WATCHLIST_PAGE = 100;
+const MAX_WATCHLIST_PAGES = 50;
 const PRODUCT = 'Watcharr';
 const CLIENT_ID = 'watcharr-server';
 /**
@@ -769,12 +775,37 @@ export class PlexAdapter implements MediaServerAdapter, PinAuthAdapter {
     return found;
   }
 
+  /**
+   * Every page of the plex.tv watchlist `token` belongs to. plex.tv pages it like a library
+   * section: X-Plex-Container-Start/-Size in the query (as Overseerr and watchlistarr send them),
+   * totalSize in the answer. One request used to take whatever the first page held.
+   */
   async getWatchlist(token: string): Promise<WatchlistEntry[]> {
-    const res = await apiFetch<PlexContainer>(
-      `${PLEX_METADATA}/library/sections/watchlist/all`,
-      { headers: this.plexHeaders(token) },
-    );
-    return (res.MediaContainer.Metadata ?? []).map((m) => ({
+    const items: PlexMeta[] = [];
+    const seen = new Set<string>();
+    let start = 0;
+    for (let page = 0; page < MAX_WATCHLIST_PAGES; page += 1) {
+      const params = new URLSearchParams({
+        'X-Plex-Container-Start': String(start),
+        'X-Plex-Container-Size': String(WATCHLIST_PAGE),
+      });
+      const res = await apiFetch<PlexContainer>(`${PLEX_DISCOVER}/library/sections/watchlist/all?${params}`, {
+        headers: this.plexHeaders(token),
+      });
+      const batch = res.MediaContainer.Metadata ?? [];
+      const before = items.length;
+      for (const m of batch) {
+        if (seen.has(m.ratingKey)) continue;
+        seen.add(m.ratingKey);
+        items.push(m);
+      }
+      start += batch.length;
+      const total = res.MediaContainer.totalSize;
+      // The total says when to stop; without one, a short page is the last. A page that adds
+      // nothing new (an offset the endpoint ignored) ends it as well, rather than looping.
+      if (items.length === before || (total !== undefined ? start >= total : batch.length < WATCHLIST_PAGE)) break;
+    }
+    return items.map((m) => ({
       itemId: m.ratingKey,
       title: m.title,
       mediaType: m.type ?? 'unknown',

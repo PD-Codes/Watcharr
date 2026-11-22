@@ -423,6 +423,89 @@ async function main() {
     assert.equal(alive, false, 'the process the script started in the background was ended too');
     console.log('ok - a script that times out is ended with everything it started');
   }
+
+  // --- Kept plex.tv tokens: who the watchlist sync asks for, and when a token is dropped ----
+  // Servers of their own, so nobody the checks above created or counted is involved.
+  {
+    const { appConfig, plexTokens } = await import('../db/schema');
+    const { encryptSecret } = await import('../server/crypto');
+    const addServer = async (slug: string) =>
+      (
+        await db
+          .insert(appConfig)
+          .values({ serverType: 'plex', serverUrl: `http://${slug}.test:32400`, serverToken: encryptSecret('admin'), label: slug, slug })
+          .returning()
+      )[0];
+    const [asked, other] = [await addServer('kept-asked'), await addServer('kept-other')];
+    const person = async (serverId: number, name: string) =>
+      (await db.insert(users).values({ serverId, serverUserId: `kept-${name}`, username: name }).returning())[0];
+    const keep = (userId: number, token: string, ageMs: number) =>
+      db.insert(plexTokens).values({ userId, token: encryptSecret(token), updatedAt: new Date(Date.now() - ageMs) });
+    const keptFor = async (userId: number) =>
+      (await db.select().from(plexTokens).where(eq(plexTokens.userId, userId))).length;
+
+    const recent = await person(asked.id, 'recent');
+    await keep(recent.id, 'recent-token', day);
+    // Every session long expired: the kept token does not depend on one.
+    const lapsed = await person(asked.id, 'lapsed');
+    await keep(lapsed.id, 'lapsed-token', 60 * day);
+    await db.insert(authSessions).values({
+      id: session.sessionHandle(randomBytes(32).toString('hex')),
+      userId: lapsed.id,
+      serverToken: encryptSecret('lapsed-token'),
+      createdAt: new Date(Date.now() - 60 * day),
+      expiresAt: new Date(Date.now() - 30 * day),
+    });
+    const empty = await person(asked.id, 'empty');
+    await keep(empty.id, '', day);
+    const unreadable = await person(asked.id, 'unreadable');
+    await db.insert(plexTokens).values({ userId: unreadable.id, token: `${encryptSecret('x').slice(0, -4)}AAAA` });
+    const elsewhere = await person(other.id, 'elsewhere');
+    await keep(elsewhere.id, 'elsewhere-token', day);
+
+    const kept = await session.keptPlexTokens([asked.id]);
+    assert.deepEqual(
+      kept.map((k) => [k.user.username, k.token]),
+      [
+        ['recent', 'recent-token'],
+        ['lapsed', 'lapsed-token'],
+      ],
+      'most recent first, with or without a live session; empty, unreadable and other servers left out',
+    );
+    assert.deepEqual(await session.keptPlexTokens([]), []);
+
+    // A refused token is dropped; one a sign-in has replaced in the meantime is not.
+    await session.dropPlexToken(lapsed.id, 'lapsed-token');
+    assert.equal(await keptFor(lapsed.id), 0, 'a refused token is forgotten');
+    await session.dropPlexToken(recent.id, 'an-older-token');
+    assert.equal(await keptFor(recent.id), 1, 'a newer token than the refused one stays');
+    await session.dropPlexToken(unreadable.id, 'whatever');
+    assert.equal(await keptFor(unreadable.id), 0, 'an unreadable one goes too');
+
+    // The roster: a kept token alone counts as signed in. Gone from the list: dropped. A changed
+    // role keeps it, the person still has access.
+    const roster = await addServer('kept-roster');
+    const [owner, left, promoted] = await db
+      .insert(users)
+      .values([
+        { serverId: roster.id, serverUserId: 'k-owner', username: 'KeptOwner', isAdmin: true },
+        { serverId: roster.id, serverUserId: 'k-left', username: 'KeptLeft', isAdmin: false },
+        { serverId: roster.id, serverUserId: 'k-promoted', username: 'KeptPromoted', isAdmin: false },
+      ])
+      .returning();
+    for (const someone of [owner, left, promoted]) await keep(someone.id, `${someone.username}-token`, day);
+    const printed = await captured(() =>
+      reconcileRoster(roster.id, [
+        { serverUserId: 'k-owner', username: 'KeptOwner', isAdmin: true },
+        { serverUserId: 'k-promoted', username: 'KeptPromoted', isAdmin: true },
+      ]),
+    );
+    assert.match(printed, /KeptLeft is no longer in the media server's user list/);
+    assert.equal(await keptFor(left.id), 0, 'somebody who left the server is no longer asked for');
+    assert.equal(await keptFor(promoted.id), 1, 'a changed role keeps the token');
+    assert.equal(await keptFor(owner.id), 1);
+    console.log('ok - kept plex.tv tokens outlive sessions and go when refused or when the person leaves');
+  }
 }
 
 main().catch((error) => {
